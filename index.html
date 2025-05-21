@@ -5,119 +5,117 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OnChainFest</title>
-  <style>
-    @keyframes slideInLeft {
-      from { transform: translateX(-100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
+  
+<style>
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #0a0420;
+    color: white;
+    overflow-x: hidden;
+  }
+  header {
+    position: fixed;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 1000;
+  }
+  header a {
+    background-color: transparent;
+  }
+  header img {
+    height: 80px;
+    background-color: transparent;
+  }
+  nav {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  nav a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+    text-align: center;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  nav a span {
+    display: block;
+  }
+  section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 120px 8% 40px 8%;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .welcome {
+    font-size: 3.5rem;
+    text-align: center;
+    animation: slideInLeft 1s ease-out;
+  }
+  .fest-gif {
+    height: 240px;
+    display: block;
+    margin: 1rem auto;
+  }
+  .tagline.full {
+    font-size: 1.5rem;
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .carousel-wrapper {
+    width: 48%;
+    overflow: hidden;
+    position: relative;
+    margin: 0;
+  }
+  .carousel-inner {
+    display: flex;
+    animation: infiniteScroll 12s linear infinite;
+  }
+  .carousel-inner img {
+    width: 100%;
+    flex-shrink: 0;
+    border-radius: 10px;
+  }
+  .text-block {
+    width: 48%;
+    font-size: 1.2rem;
+  }
+  @keyframes infiniteScroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-300%); }
+  }
+  .confetti {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: url('confetti.gif'), url('notes.gif');
+    background-repeat: repeat;
+    background-size: 200px;
+    opacity: 0.1;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+  }
+  footer {
+    background-color: #111;
+    color: white;
+    text-align: center;
+    padding: 2rem;
+  }
+</style>
 
-    @keyframes typewriter {
-      from { width: 0 }
-      to { width: 100% }
-    }
-
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background-color: #0a0420;
-      color: white;
-    }
-
-    header {
-      position: fixed;
-      width: 100%;
-      background: rgba(0, 0, 0, 0.9);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 1000;
-    }
-
-    header img {
-      height: 80px;
-    }
-
-    nav {
-      display: flex;
-      gap: 1.5rem;
-    }
-
-    nav a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      text-align: center;
-      line-height: 1.2;
-    }
-
-    nav a span {
-      display: block;
-    }
-
-    section {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      text-align: center;
-      padding: 120px 5% 40px 5%;
-    }
-
-    h1.welcome {
-      font-size: 3.5rem;
-      margin: 0;
-      animation: slideInLeft 1s ease-out;
-    }
-
-    .fest-gif {
-      height: 240px;
-      margin: 1rem 0;
-    }
-
-    .tagline {
-      font-size: 1.5rem;
-      overflow: hidden;
-      white-space: nowrap;
-      border-right: .15em solid #ff2dbb;
-      width: 0;
-      animation: typewriter 2s steps(60, end) forwards;
-    }
-
-    .carousel-wrapper {
-      width: 60%;
-      overflow: hidden;
-      position: relative;
-      margin: 40px auto;
-    }
-
-    .carousel-inner {
-      display: flex;
-      animation: scrollCarousel 12s infinite ease-in-out;
-    }
-
-    .carousel-inner img {
-      width: 100%;
-      flex-shrink: 0;
-      border-radius: 10px;
-    }
-
-    @keyframes scrollCarousel {
-      0%, 10% { transform: translateX(0); }
-      25%, 35% { transform: translateX(-100%); }
-      50%, 60% { transform: translateX(-200%); }
-      75%, 85% { transform: translateX(-300%); }
-      100% { transform: translateX(0); }
-    }
-
-    footer {
-      background-color: #111;
-      color: white;
-      text-align: center;
-      padding: 2rem;
-    }
-  </style>
 </head>
 <body>
   <header>
@@ -131,16 +129,20 @@
     </nav>
   </header>
 
-  <section id="home">
-    <h1 class="welcome">Welcome to OnChain</h1>
-    <img src="fest-animation.gif" class="fest-gif" alt="FEST" />
-    <p class="tagline">
-      Born to revolutionize event infrastructure. OnChainFest offers decentralized, automated, and transparent systems for sports, music, raffles, and legacy tokens. It’s time to enter Web3.
-    </p>
-  </section>
+  
+<section id="home" style="position:relative;">
+  <div class="confetti"></div>
+  <h1 class="welcome">Welcome to OnChain</h1>
+  <img src="fest-animation.gif" class="fest-gif" alt="FEST" />
+  <p class="tagline full">
+    Born to revolutionize event infrastructure. OnChainFest offers decentralized,
+    automated, and transparent systems for sports, music, raffles, and legacy tokens.
+    It’s time to enter Web3 and redefine the way the world organizes events.
+  </p>
+</section>
+
 
   <section id="sports">
-    <h2>Sports Events</h2>
     <div class="carousel-wrapper">
       <div class="carousel-inner">
         <img src="Cancha de Golf.png" alt="Golf" />
@@ -148,13 +150,21 @@
         <img src="Mesa de Poker 2.png" alt="Poker" />
       </div>
     </div>
-    <p>
-      Automate registration, track player stats, and securely distribute prizes via smart contracts. Perfect for tennis, golf, poker, and esports tournaments.
-    </p>
+    <div class="text-block">
+      <h2>Sports Events</h2>
+      <p>
+        Automate your entire tournament with smart contracts. Secure registration, automated scoring, and decentralized prize distribution for golf, tennis, poker and more.
+      </p>
+    </div>
   </section>
 
   <section id="music">
-    <h2>Music Fest Solutions</h2>
+    <div class="text-block">
+      <h2>Music Fest Solutions</h2>
+      <p>
+        Handle ticketing and artist payments on-chain. Prevent scalping, verify attendance with NFTs, and ensure transparent revenue split among organizers and performers.
+      </p>
+    </div>
     <div class="carousel-wrapper">
       <div class="carousel-inner">
         <img src="Music Fest 2.png" alt="Music" />
@@ -162,26 +172,30 @@
         <img src="Music Fest 4.png" alt="Music" />
       </div>
     </div>
-    <p>
-      Say goodbye to ticket scalping and server crashes. With OnChainFest’s NFT ticketing and smart wallet access, your fans experience events seamlessly and securely.
-    </p>
   </section>
 
   <section id="raffles">
-    <h2>Raffles</h2>
     <div class="carousel-wrapper">
       <div class="carousel-inner">
         <img src="Rifa 1.png" alt="Raffle" />
         <img src="Rifa 3.png" alt="Raffle" />
       </div>
     </div>
-    <p>
-      Launch provably fair raffles where the draw is run via tamper-proof blockchain logic. Every entry is recorded, transparent, and trustless.
-    </p>
+    <div class="text-block">
+      <h2>Raffles</h2>
+      <p>
+        Tamper-proof raffles driven by blockchain randomness. No human intervention, just auditable fairness. Ideal for fundraising and community rewards.
+      </p>
+    </div>
   </section>
 
   <section id="brt">
-    <h2>$BRT - Bragging Rights Tokens</h2>
+    <div class="text-block">
+      <h2>$BRT - Bragging Rights Tokens</h2>
+      <p>
+        Champions mint legacy. $BRT tokens are awarded as digital trophies for major wins. Verifiable, collectible, and tradeable across Web3 communities.
+      </p>
+    </div>
     <div class="carousel-wrapper">
       <div class="carousel-inner">
         <img src="Campeon 1.png" alt="BRT 1" />
@@ -189,20 +203,18 @@
         <img src="Campeon 3.png" alt="BRT 3" />
       </div>
     </div>
-    <p>
-      Champions deserve a legacy. $BRT are limited-edition collectible tokens given to winners. Tradable, provable, and eternal — just like your victory.
-    </p>
   </section>
 
   <section id="about">
-    <h2>About Us</h2>
-    <p>
-      We are a Latin American Web3 team competing in BASE LATAM Hackathon. Our mission: to modernize event management and access through open blockchain tools.
-      From whitepapers to working prototypes, we’re building the foundation for decentralized event infrastructure.
-    </p>
-    <p>
-      Contact us: <a href="mailto:vicvalch@onchainfest.xyz" class="contact-button">Write to us</a>
-    </p>
+    <div class="text-block" style="width: 100%; text-align: center;">
+      <h2>About Us</h2>
+      <p>
+        We are builders from Latin America competing in BASE LATAM Hackathon. We believe decentralized tools can transform how people organize, participate, and get rewarded through events.
+      </p>
+      <p>
+        <a href="mailto:vicvalch@onchainfest.xyz" style="color:#ff2dbb;">Contact us</a>
+      </p>
+    </div>
   </section>
 
   <footer>
