@@ -17,7 +17,7 @@
     header {
       position: fixed;
       width: 100%;
-      background: rgba(0, 0, 0, 0.95);
+      background: #0a0420;
       padding: 1rem 2rem;
       display: flex;
       justify-content: space-between;
@@ -26,9 +26,10 @@
     }
 
     header a {
-      background-color: rgba(0, 0, 0, 0.95);
-      padding: 5px;
-      border-radius: 8px;
+      background-color: #0a0420;
+      padding: 6px;
+      border-radius: 6px;
+      display: inline-block;
     }
 
     header img {
@@ -37,9 +38,10 @@
 
     nav {
       display: flex;
-      gap: 1.2rem;
+      gap: 1.5rem;
       flex-wrap: wrap;
       justify-content: flex-start;
+      max-width: 80%;
     }
 
     nav a {
@@ -49,6 +51,7 @@
       text-align: center;
       line-height: 1.2;
       white-space: nowrap;
+      font-size: 0.95rem;
     }
 
     nav a span {
@@ -65,17 +68,24 @@
       position: relative;
     }
 
-    .confetti {
+    .confetti-notes {
       position: absolute;
       width: 100%;
       height: 100%;
-      background: url('confetti.gif'), url('notes.gif');
+      background-image: url('confetti.gif'), url('notes.gif');
       background-repeat: repeat;
-      background-size: 200px;
-      opacity: 0.07;
+      background-size: 180px;
+      animation: floatBG 20s linear infinite;
+      opacity: 0.08;
+      pointer-events: none;
       top: 0;
       left: 0;
-      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes floatBG {
+      from { background-position: 0 0; }
+      to { background-position: 1000px 1000px; }
     }
 
     .headline-wrapper {
@@ -83,6 +93,7 @@
       align-items: center;
       justify-content: center;
       gap: 1rem;
+      z-index: 1;
     }
 
     .headline {
@@ -104,12 +115,14 @@
 
     .fest-gif {
       height: 180px;
-      animation: pulse 2s infinite ease-in-out;
+      animation: bounceScale 2s ease-in-out infinite;
     }
 
-    @keyframes pulse {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.07); }
+    @keyframes bounceScale {
+      0%   { transform: scale(1); }
+      25%  { transform: scale(1.12); }
+      50%  { transform: scale(0.94); }
+      75%  { transform: scale(1.08); }
       100% { transform: scale(1); }
     }
 
@@ -117,8 +130,9 @@
       font-size: 1.3rem;
       text-align: center;
       max-width: 800px;
-      margin-top: 40px;
+      margin-top: 30px;
       animation: fadeUp 1.2s ease-out 0.5s both;
+      z-index: 1;
     }
 
     @keyframes fadeUp {
@@ -153,7 +167,7 @@
   </header>
 
   <section id="home">
-    <div class="confetti"></div>
+    <div class="confetti-notes"></div>
     <div class="headline-wrapper">
       <h1 class="headline">Welcome to OnChain</h1>
       <img src="fest-animation.gif" class="fest-gif" alt="FEST" />
