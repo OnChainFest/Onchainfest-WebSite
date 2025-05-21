@@ -6,12 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OnChainFest</title>
   <style>
+    @keyframes slideInLeft {
+      from { transform: translateX(-100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes typewriter {
+      from { width: 0 }
+      to { width: 100% }
+    }
+
     body {
       margin: 0;
       font-family: 'Segoe UI', sans-serif;
       background-color: #0a0420;
       color: white;
     }
+
     header {
       position: fixed;
       width: 100%;
@@ -22,47 +33,84 @@
       align-items: center;
       z-index: 1000;
     }
+
     header img {
-      height: 40px;
+      height: 80px;
     }
+
+    nav {
+      display: flex;
+      gap: 1.5rem;
+    }
+
     nav a {
       color: white;
       text-decoration: none;
-      margin-left: 1rem;
       font-weight: bold;
+      text-align: center;
+      line-height: 1.2;
     }
+
+    nav a span {
+      display: block;
+    }
+
     section {
       min-height: 100vh;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
+      flex-direction: column;
+      text-align: center;
       padding: 120px 5% 40px 5%;
     }
-    .left, .right {
-      width: 48%;
+
+    h1.welcome {
+      font-size: 3.5rem;
+      margin: 0;
+      animation: slideInLeft 1s ease-out;
     }
-    .carousel {
-      display: flex;
-      overflow-x: auto;
-      gap: 1rem;
-    }
-    .carousel img {
-      height: 300px;
-      border-radius: 10px;
-    }
+
     .fest-gif {
-      height: 80px;
+      height: 240px;
       margin: 1rem 0;
     }
-    .contact-button {
-      background-color: #ff2dbb;
-      padding: 0.75rem 1.5rem;
-      border-radius: 25px;
-      color: white;
-      text-decoration: none;
-      display: inline-block;
-      margin-top: 1rem;
+
+    .tagline {
+      font-size: 1.5rem;
+      overflow: hidden;
+      white-space: nowrap;
+      border-right: .15em solid #ff2dbb;
+      width: 0;
+      animation: typewriter 2s steps(60, end) forwards;
     }
+
+    .carousel-wrapper {
+      width: 60%;
+      overflow: hidden;
+      position: relative;
+      margin: 40px auto;
+    }
+
+    .carousel-inner {
+      display: flex;
+      animation: scrollCarousel 12s infinite ease-in-out;
+    }
+
+    .carousel-inner img {
+      width: 100%;
+      flex-shrink: 0;
+      border-radius: 10px;
+    }
+
+    @keyframes scrollCarousel {
+      0%, 10% { transform: translateX(0); }
+      25%, 35% { transform: translateX(-100%); }
+      50%, 60% { transform: translateX(-200%); }
+      75%, 85% { transform: translateX(-300%); }
+      100% { transform: translateX(0); }
+    }
+
     footer {
       background-color: #111;
       color: white;
@@ -75,79 +123,86 @@
   <header>
     <a href="#home"><img src="Chain Entrelazada - LOGO HOME.png" alt="Logo" /></a>
     <nav>
-      <a href="#about">About Us</a>
-      <a href="#sports">Sport Events</a>
-      <a href="#music">Music Fest Solutions</a>
-      <a href="#raffles">Raffles</a>
-      <a href="#brt">$BRT</a>
+      <a href="#about"><span>About</span><span>Us</span></a>
+      <a href="#sports"><span>Sports</span><span>Events</span></a>
+      <a href="#music"><span>Music</span><span>Fest</span></a>
+      <a href="#raffles"><span>Raffles</span></a>
+      <a href="#brt"><span>$BRT</span></a>
     </nav>
   </header>
 
   <section id="home">
-    <div class="left">
-      <h1>Welcome to OnChainFest</h1>
-      <img src="fest-animation.gif" class="fest-gif" alt="FEST" />
-      <p>
-        Born to revolutionize event infrastructure. OnChainFest offers decentralized,
-        automated, and transparent systems for sports, music, raffles, and legacy tokens.
-        It's time to enter Web3.
-      </p>
-    </div>
+    <h1 class="welcome">Welcome to OnChain</h1>
+    <img src="fest-animation.gif" class="fest-gif" alt="FEST" />
+    <p class="tagline">
+      Born to revolutionize event infrastructure. OnChainFest offers decentralized, automated, and transparent systems for sports, music, raffles, and legacy tokens. It’s time to enter Web3.
+    </p>
   </section>
 
   <section id="sports">
-    <div class="left">
-      <h2>Sport Events</h2>
-      <p>Registration, payments, and prizes through smart contracts. Full traceability and automation.</p>
+    <h2>Sports Events</h2>
+    <div class="carousel-wrapper">
+      <div class="carousel-inner">
+        <img src="Cancha de Golf.png" alt="Golf" />
+        <img src="Cancha de Tenis.png" alt="Tennis" />
+        <img src="Mesa de Poker 2.png" alt="Poker" />
+      </div>
     </div>
-    <div class="right carousel">
-      <img src="Cancha de Golf.png" alt="Golf" />
-      <img src="Cancha de Tenis.png" alt="Tennis" />
-      <img src="Mesa de Poker 2.png" alt="Poker" />
-    </div>
+    <p>
+      Automate registration, track player stats, and securely distribute prizes via smart contracts. Perfect for tennis, golf, poker, and esports tournaments.
+    </p>
   </section>
 
   <section id="music">
-    <div class="right carousel">
-      <img src="Music Fest 2.png" alt="Music 2" />
-      <img src="Music Fest 3.png" alt="Music 3" />
-      <img src="Music Fest 4.png" alt="Music 4" />
+    <h2>Music Fest Solutions</h2>
+    <div class="carousel-wrapper">
+      <div class="carousel-inner">
+        <img src="Music Fest 2.png" alt="Music" />
+        <img src="Music Fest 3.png" alt="Music" />
+        <img src="Music Fest 4.png" alt="Music" />
+      </div>
     </div>
-    <div class="left">
-      <h2>Music Fest Solutions</h2>
-      <p>Prevent scalping and overload. NFT ticketing and decentralized infra at your service.</p>
-    </div>
+    <p>
+      Say goodbye to ticket scalping and server crashes. With OnChainFest’s NFT ticketing and smart wallet access, your fans experience events seamlessly and securely.
+    </p>
   </section>
 
   <section id="raffles">
-    <div class="left">
-      <h2>Raffles</h2>
-      <p>Verifiable, tamper-proof, transparent raffles. Blockchain does the draw, not us.</p>
+    <h2>Raffles</h2>
+    <div class="carousel-wrapper">
+      <div class="carousel-inner">
+        <img src="Rifa 1.png" alt="Raffle" />
+        <img src="Rifa 3.png" alt="Raffle" />
+      </div>
     </div>
-    <div class="right carousel">
-      <img src="Rifa 1.png" alt="Raffle 1" />
-      <img src="Rifa 3.png" alt="Raffle 3" />
-    </div>
+    <p>
+      Launch provably fair raffles where the draw is run via tamper-proof blockchain logic. Every entry is recorded, transparent, and trustless.
+    </p>
   </section>
 
   <section id="brt">
-    <div class="right carousel">
-      <img src="Campeon 1.png" alt="BRT 1" />
-      <img src="Campeon 2.png" alt="BRT 2" />
-      <img src="Campeon 3.png" alt="BRT 3" />
+    <h2>$BRT - Bragging Rights Tokens</h2>
+    <div class="carousel-wrapper">
+      <div class="carousel-inner">
+        <img src="Campeon 1.png" alt="BRT 1" />
+        <img src="Campeon 2.png" alt="BRT 2" />
+        <img src="Campeon 3.png" alt="BRT 3" />
+      </div>
     </div>
-    <div class="left">
-      <h2>$BRT - Bragging Rights Tokens</h2>
-      <p>Celebrate champions with limited-edition, collectible, and tradable Web3 tokens.</p>
-    </div>
+    <p>
+      Champions deserve a legacy. $BRT are limited-edition collectible tokens given to winners. Tradable, provable, and eternal — just like your victory.
+    </p>
   </section>
 
   <section id="about">
-    <div class="left">
-      <h2>About Us</h2>
-      <p>We are participating in BASE LATAM Hackathon and building OnChainFest to reshape event tech. All our innovation is backed by whitepapers and a real mission.</p>
-      <a href="mailto:vicvalch@onchainfest.xyz" class="contact-button">Contact Us</a>
-    </div>
+    <h2>About Us</h2>
+    <p>
+      We are a Latin American Web3 team competing in BASE LATAM Hackathon. Our mission: to modernize event management and access through open blockchain tools.
+      From whitepapers to working prototypes, we’re building the foundation for decentralized event infrastructure.
+    </p>
+    <p>
+      Contact us: <a href="mailto:vicvalch@onchainfest.xyz" class="contact-button">Write to us</a>
+    </p>
   </section>
 
   <footer>
