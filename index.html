@@ -57,17 +57,78 @@
         animation-delay: 0.5s;
       }
 
-      footer { text-align: center; padding: 2rem; background-color: #111; }
+      footer {
+        text-align: center;
+        padding: 2rem;
+        background-color: #111;
+      }
+
       .contact-button {
-        background-color: #ff0080; border: none; padding: 1rem 2rem;
-        color: white; cursor: pointer; font-size: 1rem;
-        border-radius: 8px; text-decoration: none;
+        background-color: #ff0080;
+        border: none;
+        padding: 1rem 2rem;
+        color: white;
+        cursor: pointer;
+        font-size: 1rem;
+        border-radius: 8px;
+        text-decoration: none;
+      }
+
+      .menu-toggle {
+        display: none;
+        font-size: 2rem;
+        color: white;
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+
+      @media (max-width: 768px) {
+        .menu-toggle {
+          display: block;
+        }
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        header nav {
+          display: none;
+          flex-direction: column;
+          width: 100%;
+          margin-top: 1rem;
+        }
+        header nav.active {
+          display: flex;
+        }
+        header a {
+          margin-left: 0;
+          margin-bottom: 0.5rem;
+        }
+        section {
+          flex-direction: column !important;
+          padding-top: 7rem;
+        }
+        .carousel, .text-content {
+          width: 100%;
+          text-align: center;
+          margin: 1rem 0;
+        }
+        .welcome h1 {
+          font-size: 2rem;
+        }
+        .welcome h2 {
+          font-size: 1.2rem;
+        }
+        header img {
+          height: 50px;
+        }
       }
     </style>
   </head>
   <body>
     <header>
       <a href="#home"><img src="img/logo.png" alt="Home Logo" style="height:60px; vertical-align:middle;"></a>
+      <button class="menu-toggle" onclick="document.querySelector('header nav').classList.toggle('active')">☰</button>
       <nav>
         <a href="#sports">Sport Events</a>
         <a href="#music">Music Events</a>
