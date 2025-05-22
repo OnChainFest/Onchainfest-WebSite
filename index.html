@@ -1,121 +1,197 @@
+
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OnChainFest</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background-color: #0a0420;
-      color: white;
-      overflow-x: hidden;
-    }
-    header {
-      position: fixed;
-      width: 100%;
-      background: rgba(0, 0, 0, 0.95);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 1000;
-    }
-    header img {
-      height: 40px;
-      background-color: #0a0420;
-      border-radius: 50%;
-    }
-    nav {
-      display: flex;
-      gap: 1.5rem;
-    }
-    nav a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      display: flex;
-      flex-direction: column;
-      text-align: center;
-    }
-    section {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      text-align: center;
-      position: relative;
-      padding-top: 100px;
-    }
-    h1 {
-      font-size: 3rem;
-      margin-bottom: 0;
-      animation: slideIn 1.2s ease forwards;
-    }
-    .fest {
-      font-size: 4rem;
-      color: #ff2dbb;
-      font-weight: bold;
-      margin-top: 0.5rem;
-      animation: bounce 2s ease infinite;
-    }
-    .tagline {
-      font-size: 1.1rem;
-      max-width: 800px;
-      padding: 1rem;
-      line-height: 1.6;
-      animation: fadeIn 2s ease forwards;
-    }
-    @keyframes slideIn {
-      from { transform: translateX(-100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes bounce {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    .confetti, .music-notes {
-      position: absolute;
-      width: 150px;
-      z-index: 0;
-      opacity: 0.7;
-    }
-    .confetti {
-      top: 10px;
-      right: 10px;
-    }
-    .music-notes {
-      top: 10px;
-      left: 10px;
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <a href="#home"><img src="clean-chain-logo.png" alt="Logo" /></a>
-    <nav>
-      <a href="#about">About<br>Us</a>
-      <a href="#sports">Sports<br>Events</a>
-      <a href="#music">Music<br>Fest</a>
-      <a href="#raffles">Raffles</a>
-      <a href="#brt">$BRT</a>
-    </nav>
-  </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OnChainFest</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: #0d0d0d;
+        color: #fff;
+      }
+      header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 2rem;
+        background-color: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+      }
+      header a {
+        color: white;
+        text-decoration: none;
+        margin-left: 1.5rem;
+        font-weight: bold;
+      }
+      section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 5rem 2rem 2rem 2rem;
+      }
+      .carousel {
+        width: 50%;
+        height: 400px;
+        background-color: #1a1a1a;
+        overflow: hidden;
+        position: relative;
+        margin-right: 2rem;
+      }
+      .carousel img {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 0.5s ease-in-out;
+      }
+      .carousel img.active {
+        opacity: 1;
+      }
+      .text-content {
+        width: 40%;
+      }
+      footer {
+        text-align: center;
+        padding: 2rem;
+        background-color: #111;
+      }
+      .contact-button {
+        background-color: #ff0080;
+        border: none;
+        padding: 1rem 2rem;
+        color: white;
+        cursor: pointer;
+        font-size: 1rem;
+        border-radius: 8px;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        max-width: 400px;
+        margin: auto;
+        padding: 2rem;
+      }
+      form input, form textarea {
+        margin: 0.5rem 0;
+        padding: 1rem;
+        border: none;
+        border-radius: 6px;
+      }
+      form button {
+        padding: 1rem;
+        background-color: #00ccff;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="#home">Home</a>
+      <nav>
+        <a href="#about">About Us</a>
+        <a href="#sports">Sport Events</a>
+        <a href="#music">Music Events</a>
+        <a href="#raffles">Raffles</a>
+        <a href="#brts">$BRT's</a>
+      </nav>
+    </header>
 
-  <section id="home">
-    <img src="confetti.gif" class="confetti" alt="Confetti Animation" />
-    <img src="music-notes.gif" class="music-notes" alt="Music Notes Animation" />
-    <h1>Welcome to OnChain</h1>
-    <div class="fest">FEST</div>
-    <p class="tagline">
-      Born to revolutionize event infrastructure. OnChainFest offers decentralized, automated, and transparent systems for sports, music, raffles, and legacy tokens. It’s time to enter Web3 and redefine the way the world organizes events.
-    </p>
-  </section>
-</body>
+    <section id="about">
+      <div class="carousel" id="carousel-about"></div>
+      <div class="text-content">
+        <h2>About Us</h2>
+        <p>OnChainFest delivers decentralized event technology for a new era of engagement. Secure, transparent, and automated experiences for organizers and attendees alike.</p>
+      </div>
+    </section>
+
+    <section id="sports">
+      <div class="carousel" id="carousel-sports"></div>
+      <div class="text-content">
+        <h2>Sport Events</h2>
+        <p>Our platform simplifies player registration, tournament logic, payments, and bragging rights – all on-chain.</p>
+      </div>
+    </section>
+
+    <section id="music">
+      <div class="carousel" id="carousel-music"></div>
+      <div class="text-content">
+        <h2>Music Events</h2>
+        <p>Issue collectible NFT tickets, prevent overselling, and track revenue split in real-time with smart contracts.</p>
+      </div>
+    </section>
+
+    <section id="raffles">
+      <div class="carousel" id="carousel-raffles"></div>
+      <div class="text-content">
+        <h2>Raffles</h2>
+        <p>Launch provably fair Web3 raffles with secure payouts and real-world or digital prizes.</p>
+      </div>
+    </section>
+
+    <section id="brts">
+      <div class="carousel" id="carousel-brts"></div>
+      <div class="text-content">
+        <h2>$BRT's</h2>
+        <p>Champions deserve more than a trophy. Bragging Rights Tokens ($BRTs) immortalize their legacy in the digital world.</p>
+      </div>
+    </section>
+
+    <footer>
+      <a href="#contact"><button class="contact-button">Contact Us</button></a>
+    </footer>
+
+    <section id="contact">
+      <form action="mailto:vicvalch@onchainfest.xyz" method="POST" enctype="text/plain">
+        <h2>Contact Us</h2>
+        <input type="text" name="name" placeholder="Your Name" required />
+        <input type="email" name="email" placeholder="Your Email" required />
+        <textarea name="message" rows="6" placeholder="Your Message" required></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <script>
+      const setupCarousel = (id, images) => {
+        const container = document.getElementById(id);
+        images.forEach((src, idx) => {
+          const img = document.createElement('img');
+          img.src = src;
+          if (idx === 0) img.classList.add('active');
+          container.appendChild(img);
+        });
+        let index = 0;
+        setInterval(() => {
+          const imgs = container.querySelectorAll('img');
+          imgs.forEach(img => img.classList.remove('active'));
+          index = (index + 1) % imgs.length;
+          imgs[index].classList.add('active');
+        }, 3000);
+      };
+
+      setupCarousel('carousel-about', ['img/about1.jpg', 'img/about2.jpg']);
+      setupCarousel('carousel-sports', ['img/sports1.jpg', 'img/sports2.jpg']);
+      setupCarousel('carousel-music', ['img/music1.jpg', 'img/music2.jpg']);
+      setupCarousel('carousel-raffles', ['img/raffle1.jpg', 'img/raffle2.jpg']);
+      setupCarousel('carousel-brts', ['img/brts1.jpg', 'img/brts2.jpg']);
+    </script>
+  </body>
 </html>
