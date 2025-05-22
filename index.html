@@ -41,6 +41,22 @@
       }
       .welcome h1 { font-size: 3rem; margin-bottom: 1rem; }
       .welcome h2 { font-size: 1.8rem; font-weight: normal; color: #ccc; }
+
+      @keyframes fadeSlideIn {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .welcome h1,
+      .welcome h2 {
+        opacity: 0;
+        animation: fadeSlideIn 1.2s ease-out forwards;
+      }
+
+      .welcome h2 {
+        animation-delay: 0.5s;
+      }
+
       footer { text-align: center; padding: 2rem; background-color: #111; }
       .contact-button {
         background-color: #ff0080; border: none; padding: 1rem 2rem;
