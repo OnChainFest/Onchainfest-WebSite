@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -44,13 +43,16 @@
         min-height: 100vh;
         padding: 5rem 2rem 2rem 2rem;
       }
+      .section-reverse {
+        flex-direction: row-reverse;
+      }
       .carousel {
         width: 50%;
         height: 400px;
         background-color: #1a1a1a;
         overflow: hidden;
         position: relative;
-        margin-right: 2rem;
+        margin: 0 2rem;
       }
       .carousel img {
         position: absolute;
@@ -66,6 +68,23 @@
       .text-content {
         width: 40%;
       }
+      .welcome {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 10rem 2rem 5rem;
+      }
+      .welcome h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+      }
+      .welcome h2 {
+        font-size: 1.8rem;
+        font-weight: normal;
+        color: #ccc;
+      }
       footer {
         text-align: center;
         padding: 2rem;
@@ -79,27 +98,7 @@
         cursor: pointer;
         font-size: 1rem;
         border-radius: 8px;
-      }
-      form {
-        display: flex;
-        flex-direction: column;
-        max-width: 400px;
-        margin: auto;
-        padding: 2rem;
-      }
-      form input, form textarea {
-        margin: 0.5rem 0;
-        padding: 1rem;
-        border: none;
-        border-radius: 6px;
-      }
-      form button {
-        padding: 1rem;
-        background-color: #00ccff;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
+        text-decoration: none;
       }
     </style>
   </head>
@@ -107,19 +106,17 @@
     <header>
       <a href="#home">Home</a>
       <nav>
-        <a href="#about">About Us</a>
         <a href="#sports">Sport Events</a>
         <a href="#music">Music Events</a>
         <a href="#raffles">Raffles</a>
         <a href="#brts">$BRT's</a>
+        <a href="#about">About Us</a>
       </nav>
     </header>
 
-    <section id="about">
-      <div class="text-content">
-        <h2>About Us</h2>
-        <p>OnChainFest delivers decentralized event technology for a new era of engagement. Secure, transparent, and automated experiences for organizers and attendees alike.</p>
-      </div>
+    <section class="welcome" id="home">
+      <h1>Welcome to OnChainFest</h1>
+      <h2>Building real world solutions on Web3</h2>
     </section>
 
     <section id="sports">
@@ -130,7 +127,7 @@
       </div>
     </section>
 
-    <section id="music">
+    <section class="section-reverse" id="music">
       <div class="carousel" id="carousel-music"></div>
       <div class="text-content">
         <h2>Music Events</h2>
@@ -146,7 +143,7 @@
       </div>
     </section>
 
-    <section id="brts">
+    <section class="section-reverse" id="brts">
       <div class="carousel" id="carousel-brts"></div>
       <div class="text-content">
         <h2>$BRT's</h2>
@@ -154,19 +151,16 @@
       </div>
     </section>
 
-    <footer>
-      <a href="#contact"><button class="contact-button">Contact Us</button></a>
-    </footer>
-
-    <section id="contact">
-      <form action="mailto:vicvalch@onchainfest.xyz" method="POST" enctype="text/plain">
-        <h2>Contact Us</h2>
-        <input type="text" name="name" placeholder="Your Name" required />
-        <input type="email" name="email" placeholder="Your Email" required />
-        <textarea name="message" rows="6" placeholder="Your Message" required></textarea>
-        <button type="submit">Send</button>
-      </form>
+    <section id="about">
+      <div class="text-content">
+        <h2>About Us</h2>
+        <p>OnChainFest delivers decentralized event technology for a new era of engagement. Secure, transparent, and automated experiences for organizers and attendees alike.</p>
+      </div>
     </section>
+
+    <footer>
+      <a href="contact.html" class="contact-button">Contact Us</a>
+    </footer>
 
     <script>
       const setupCarousel = (id, images) => {
