@@ -12,7 +12,7 @@
     body { background: #0d0d0d; color: #fff; }
     header {
       position: fixed; top: 0; left: 0; width: 100%;
-      display: flex; justify-content: space-between; align-items: center;
+      display: flex; justify-content: flex-start; align-items: center;
       padding: 1rem 2rem; background-color: rgba(0, 0, 0, 0.85); z-index: 1000;
     }
     header a {
@@ -68,47 +68,7 @@
 </head>
 <body>
 <header>
-  <a href="index.html">
-
-<div style="display: flex; justify-content: center; align-items: center; flex: 1;">
-  <label style="position: relative; display: inline-block; width: 60px; height: 30px;">
-    <input type="checkbox" id="languageToggle" onclick="toggleLanguage()" style="opacity: 0; width: 0; height: 0;">
-    <span style="
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #ccc;
-      transition: .4s;
-      border-radius: 30px;
-    "></span>
-    <span id="toggleBall" style="
-      position: absolute;
-      height: 24px;
-      width: 24px;
-      left: 3px;
-      bottom: 3px;
-      background-color: white;
-      transition: .4s;
-      border-radius: 50%;
-      z-index: 2;
-    "></span>
-    <span style="
-      position: absolute;
-      width: 100%;
-      top: 6px;
-      display: flex;
-      justify-content: space-between;
-      padding: 0 8px;
-      font-size: 0.7rem;
-      font-weight: bold;
-      color: black;
-      z-index: 1;
-    ">
-      <span>ENG</span><span>ESP</span>
-    </span>
-  </label>
-</div>
-<img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
+  <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
 
 <img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
   <nav>
@@ -119,6 +79,36 @@
     <a href="#about">About Us</a>
     <a href="contact.html">Contact</a>
   </nav>
+
+<div class="language-dropdown" style="position: absolute; top: 1rem; right: 2rem;">
+  <button style="
+    background: none;
+    border: none;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+  " onclick="document.getElementById('lang-menu').classList.toggle('show')">
+    🌐 Language ▼
+  </button>
+  <div id="lang-menu" style="
+    display: none;
+    position: absolute;
+    background-color: #1a1a1a;
+    box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+    padding: 0.5rem 0;
+    border-radius: 6px;
+    top: 2rem;
+    right: 0;
+    z-index: 1001;
+  ">
+    <a href="index.html" style="display:block; padding: 0.5rem 1rem; color: white; text-decoration: none;">English</a>
+    <a href="index_es.html" style="display:block; padding: 0.5rem 1rem; color: white; text-decoration: none;">Español</a>
+  </div>
+</div>
+
 </header>
 
 <section class="welcome" id="home">
@@ -197,17 +187,14 @@
 
 
 <script>
-function toggleLanguage() {
-  const isChecked = document.getElementById('languageToggle').checked;
-  window.location.href = isChecked ? 'index_es.html' : 'index.html';
-}
-document.addEventListener("DOMContentLoaded", function() {
-  const toggle = document.getElementById('languageToggle');
-  const ball = document.getElementById('toggleBall');
-  toggle.addEventListener('change', function() {
-    ball.style.transform = this.checked ? "translateX(30px)" : "translateX(0)";
+  window.addEventListener("click", function(e) {
+    const menu = document.getElementById('lang-menu');
+    if (!e.target.matches("button") && !e.target.closest(".language-dropdown")) {
+      if (menu.classList.contains('show')) {
+        menu.classList.remove('show');
+      }
+    }
   });
-});
 </script>
 </body>
 
