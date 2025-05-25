@@ -68,8 +68,8 @@
 </head>
 <body>
 <header>
-  <a href="index.html">
-<div class="language-toggle-center" style="margin-left: 2rem;">
+  <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
+<div style="flex: 1; display: flex; justify-content: center;">
   <label class="switch" style="position: relative; display: inline-block; width: 60px; height: 34px;">
     <input type="checkbox" id="languageToggle" onclick="toggleLanguage()" style="opacity: 0; width: 0; height: 0;">
     <span class="slider" style="
@@ -80,7 +80,18 @@
       transition: .4s;
       border-radius: 34px;
     "></span>
-    <span class="switch-labels" style="
+    <span style="
+      position: absolute;
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+      z-index: 2;
+    " id="toggleBall"></span>
+    <span style="
       position: absolute;
       width: 100%;
       top: 8px;
@@ -90,9 +101,9 @@
       font-size: 0.8rem;
       font-weight: bold;
       color: black;
+      z-index: 1;
     ">
-      <span class="label-left">ENG</span>
-      <span class="label-right">ESP</span>
+      <span>ENG</span><span>ESP</span>
     </span>
   </label>
 </div>
@@ -183,8 +194,16 @@
 <script>
 function toggleLanguage() {
   const isChecked = document.getElementById('languageToggle').checked;
-  window.location.href = isChecked ? 'index.html' : 'index_es.html';
+  window.location.href = isChecked ? 'index_es.html' : 'index.html';
 }
+document.getElementById('languageToggle').addEventListener('change', function() {
+  const ball = document.getElementById('toggleBall');
+  if (this.checked) {
+    ball.style.transform = "translateX(26px)";
+  } else {
+    ball.style.transform = "translateX(0px)";
+  }
+});
 </script>
 </body>
 </html>
