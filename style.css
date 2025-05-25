@@ -15,3 +15,20 @@
     background-color: #f0f0f0;
     cursor: pointer;
 }
+
+.language-toggle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 1rem;
+}
+
+#languageToggle {
+  background: #1e1e1e;
+  color: white;
+  border: 1px solid #555;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
