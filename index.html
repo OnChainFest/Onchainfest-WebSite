@@ -68,7 +68,7 @@
 </head>
 <body>
 <header>
-  <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
+  <a href="index.html">
 <div style="flex: 1; display: flex; justify-content: center;">
   <label class="switch" style="position: relative; display: inline-block; width: 60px; height: 34px;">
     <input type="checkbox" id="languageToggle" onclick="toggleLanguage()" style="opacity: 0; width: 0; height: 0;">
@@ -86,7 +86,7 @@
       width: 26px;
       left: 4px;
       bottom: 4px;
-      background-color: white;
+      background-color: white;" id="toggleBall"
       transition: .4s;
       border-radius: 50%;
       z-index: 2;
@@ -191,7 +191,6 @@
   setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
   setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
 
-<script>
 function toggleLanguage() {
   const isChecked = document.getElementById('languageToggle').checked;
   window.location.href = isChecked ? 'index_es.html' : 'index.html';
