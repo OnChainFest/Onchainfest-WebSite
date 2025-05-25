@@ -91,6 +91,13 @@
     }
 
     .lang-switch button {
+background-color: #444;
+border: none;
+padding: 6px 12px;
+border-radius: 20px;
+font-weight: bold;
+font-size: 13px;
+
   position: relative;
   z-index: 1003;
 
@@ -146,8 +153,8 @@
 
 <body>
 <header>
-  <div class="lang-switch">
-    <button onclick="toggleLang()">ESP / ENG</button>
+  <div class="lang-switch" style="position:fixed;top:10px;right:20px;z-index:1002;">
+    <button onclick="toggleLang()"> / ENG</button>
   </div>
   <div class="menu-toggle" onclick="toggleMenu()">☰</div>
 </header>
@@ -167,7 +174,7 @@
 <header>
 <a href="#home"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
 <nav>
-<a href="index.html"><strong>ENG</strong></a> | <a href="index_es.html">ESP</a>
+<a href="index.html"><strong>ENG</strong></a> | <a href="index_es.html"></a>
 <a href="#sports">Sport Events</a>
 <a href="#music">Music Events</a>
 <a href="#raffles">Raffles</a>
