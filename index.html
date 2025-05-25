@@ -34,7 +34,7 @@
       transition: opacity 0.5s ease-in-out;
     }
     .carousel img.active { opacity: 1; }
-    .text-content { width: 60%; max-width: 900px; line-height: 1.6; }
+    .text-content { width: 40%; }
     .welcome {
       text-align: center; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -68,7 +68,35 @@
 </head>
 <body>
 <header>
-  <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
+  <a href="index.html">
+<div class="language-toggle-center" style="margin-left: 2rem;">
+  <label class="switch" style="position: relative; display: inline-block; width: 60px; height: 34px;">
+    <input type="checkbox" id="languageToggle" onclick="toggleLanguage()" style="opacity: 0; width: 0; height: 0;">
+    <span class="slider" style="
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    "></span>
+    <span class="switch-labels" style="
+      position: absolute;
+      width: 100%;
+      top: 8px;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 8px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: black;
+    ">
+      <span class="label-left">ENG</span>
+      <span class="label-right">ESP</span>
+    </span>
+  </label>
+</div>
+<img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
   <nav>
     <a href="#sports">Sport Events</a>
     <a href="#music">Music Events</a>
@@ -120,7 +148,7 @@
   <div class="text-content">
     <h2>About Us</h2>
     <p>OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We’re already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world’s crypto capital), supporting our international growth strategy.</p>
-    <p><br><br>📄 You can explore our public whitepaper here:<br><br> <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a></p>
+    <p>📄 You can explore our public whitepaper here: <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a></p>
   </div>
 </section>
 
@@ -151,6 +179,12 @@
   setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
   setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
   setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
+
+<script>
+function toggleLanguage() {
+  const isChecked = document.getElementById('languageToggle').checked;
+  window.location.href = isChecked ? 'index.html' : 'index_es.html';
+}
 </script>
 </body>
 </html>
