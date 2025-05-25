@@ -1,11 +1,12 @@
 
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OnChainFest</title>
-  <style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>OnChainFest</title>
+<style>
     body {
       margin: 0;
       font-family: Arial, sans-serif;
@@ -121,53 +122,49 @@
   </style>
 </head>
 <body>
-
 <header>
-  <img src="img/logo.png" alt="Logo" class="logo" />
-  <div class="lang-toggle">
-    <button onclick="toggleLang()">ENG / ESP</button>
-  </div>
-  <div class="menu-toggle" onclick="toggleMenu()">☰</div>
-  <nav class="desktop-menu">
-    <a href="#sport">Sport Events</a>
-    <a href="#music">Music Events</a>
-    <a href="#raffles">Raffles</a>
-    <a href="#brt">$BRT's</a>
-    <a href="#about">About Us</a>
-  </nav>
-</header>
-
-<nav class="mobile-menu" id="mobileMenu">
-  <a href="#sport" onclick="toggleMenu()">Sport Events</a>
-  <a href="#music" onclick="toggleMenu()">Music Events</a>
-  <a href="#raffles" onclick="toggleMenu()">Raffles</a>
-  <a href="#brt" onclick="toggleMenu()">$BRT's</a>
-  <a href="#about" onclick="toggleMenu()">About Us</a>
+<img alt="Logo" class="logo" src="img/logo.png"/>
+<div class="lang-toggle">
+<button onclick="toggleLang()">ENG / ESP</button>
+</div>
+<div class="menu-toggle" onclick="toggleMenu()">☰</div>
+<nav class="desktop-menu">
+<a href="#sport">Sport Events</a>
+<a href="#music">Music Events</a>
+<a href="#raffles">Raffles</a>
+<a href="#brt">$BRT's</a>
+<a href="#about">About Us</a>
 </nav>
-
+</header>
+<nav class="mobile-menu" id="mobileMenu">
+<a href="#sport" onclick="toggleMenu()">Sport Events</a>
+<a href="#music" onclick="toggleMenu()">Music Events</a>
+<a href="#raffles" onclick="toggleMenu()">Raffles</a>
+<a href="#brt" onclick="toggleMenu()">$BRT's</a>
+<a href="#about" onclick="toggleMenu()">About Us</a>
+</nav>
 <main>
-  <section id="sport">
-    <h2>Sport Events</h2>
-    <p>Content for Sport Events section...</p>
-  </section>
-  <section id="music">
-    <h2>Music Events</h2>
-    <p>Content for Music Events section...</p>
-  </section>
-  <section id="raffles">
-    <h2>Raffles</h2>
-    <p>Content for Raffles section...</p>
-  </section>
-  <section id="brt">
-    <h2>$BRT's</h2>
-    <p>Content for BRTs section...</p>
-  </section>
-  <section id="about">
-    <h2>About Us</h2>
-    <p>Content for About Us section...</p>
-  </section>
+<section id="sport">
+<h2>Sport Events</h2>
+<p>Content for Sport Events section...</p>
+</section>
+<section id="music">
+<h2>Music Events</h2>
+<p>Content for Music Events section...</p>
+</section>
+<section id="raffles">
+<h2>Raffles</h2>
+<p>Content for Raffles section...</p>
+</section>
+<section id="brt">
+<h2>$BRT's</h2>
+<p>Content for BRTs section...</p>
+</section>
+<section id="about">
+<h2>About Us</h2>
+<p>Content for About Us section...</p>
+</section>
 </main>
-
 <script>
   function toggleMenu() {
     const menu = document.getElementById("mobileMenu");
@@ -180,6 +177,5 @@
     window.location.href = newLang === "es" ? "index_es.html" : "index.html";
   }
 </script>
-
 </body>
 </html>

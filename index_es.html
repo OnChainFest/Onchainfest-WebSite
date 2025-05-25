@@ -1,11 +1,12 @@
 
 <!DOCTYPE html>
+
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OnChainFest</title>
-  <style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>OnChainFest</title>
+<style>
     body {
       margin: 0;
       font-family: Arial, sans-serif;
@@ -121,53 +122,49 @@
   </style>
 </head>
 <body>
-
 <header>
-  <img src="img/logo.png" alt="Logo" class="logo" />
-  <div class="lang-toggle">
-    <button onclick="toggleLang()">ESP / ENG</button>
-  </div>
-  <div class="menu-toggle" onclick="toggleMenu()">☰</div>
-  <nav class="desktop-menu">
-    <a href="#sport">Eventos Deportivos</a>
-    <a href="#music">Eventos Musicales</a>
-    <a href="#raffles">Rifas</a>
-    <a href="#brt">$BRT's - Tokens de Mérito</a>
-    <a href="#about">Sobre Nosotros</a>
-  </nav>
-</header>
-
-<nav class="mobile-menu" id="mobileMenu">
-  <a href="#sport" onclick="toggleMenu()">Eventos Deportivos</a>
-  <a href="#music" onclick="toggleMenu()">Eventos Musicales</a>
-  <a href="#raffles" onclick="toggleMenu()">Rifas</a>
-  <a href="#brt" onclick="toggleMenu()">$BRT's - Tokens de Mérito</a>
-  <a href="#about" onclick="toggleMenu()">Sobre Nosotros</a>
+<img alt="Logo" class="logo" src="img/logo.png"/>
+<div class="lang-toggle">
+<button onclick="toggleLang()">ESP / ENG</button>
+</div>
+<div class="menu-toggle" onclick="toggleMenu()">☰</div>
+<nav class="desktop-menu">
+<a href="#sport">Eventos Deportivos</a>
+<a href="#music">Eventos Musicales</a>
+<a href="#raffles">Rifas</a>
+<a href="#brt">$BRT's - Tokens de Mérito</a>
+<a href="#about">Sobre Nosotros</a>
 </nav>
-
+</header>
+<nav class="mobile-menu" id="mobileMenu">
+<a href="#sport" onclick="toggleMenu()">Eventos Deportivos</a>
+<a href="#music" onclick="toggleMenu()">Eventos Musicales</a>
+<a href="#raffles" onclick="toggleMenu()">Rifas</a>
+<a href="#brt" onclick="toggleMenu()">$BRT's - Tokens de Mérito</a>
+<a href="#about" onclick="toggleMenu()">Sobre Nosotros</a>
+</nav>
 <main>
-  <section id="sport">
-    <h2>Eventos Deportivos</h2>
-    <p>Content for Eventos Deportivos section...</p>
-  </section>
-  <section id="music">
-    <h2>Eventos Musicales</h2>
-    <p>Content for Eventos Musicales section...</p>
-  </section>
-  <section id="raffles">
-    <h2>Rifas</h2>
-    <p>Content for Rifas section...</p>
-  </section>
-  <section id="brt">
-    <h2>$BRT's - Tokens de Mérito</h2>
-    <p>Contenido para la sección de tokens de mérito...</p>
-  </section>
-  <section id="about">
-    <h2>Sobre Nosotros</h2>
-    <p>Content for Sobre Nosotros section...</p>
-  </section>
+<section id="sport">
+<h2>Eventos Deportivos</h2>
+<p>Content for Sport Events section...</p>
+</section>
+<section id="music">
+<h2>Eventos Musicales</h2>
+<p>Content for Music Events section...</p>
+</section>
+<section id="raffles">
+<h2>Rifas</h2>
+<p>Content for Raffles section...</p>
+</section>
+<section id="brt">
+<h2>$BRT's - Tokens de Mérito</h2>
+<p>Content for BRTs section...</p>
+</section>
+<section id="about">
+<h2>Sobre Nosotros</h2>
+<p>Content for About Us section...</p>
+</section>
 </main>
-
 <script>
   function toggleMenu() {
     const menu = document.getElementById("mobileMenu");
@@ -180,6 +177,5 @@
     window.location.href = newLang === "es" ? "index_es.html" : "index.html";
   }
 </script>
-
 </body>
 </html>
