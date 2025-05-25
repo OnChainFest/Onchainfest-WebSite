@@ -1,33 +1,17 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-    text-align: center;
-}
-
-header {
-    background-color: #111;
-    color: white;
-    padding: 1rem;
-    position: relative;
-}
 
 .language-toggle {
     position: absolute;
     left: 50%;
+    top: 1rem;
     transform: translateX(-50%);
+    z-index: 10;
 }
 
 #languageToggle {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
+    padding: 0.4rem 1rem;
+    font-size: 0.9rem;
+    border-radius: 5px;
+    border: none;
+    background-color: #f0f0f0;
     cursor: pointer;
-}
-
-/* Responsive for mobile */
-@media (max-width: 600px) {
-    #languageToggle {
-        font-size: 0.9rem;
-        padding: 0.4rem 0.8rem;
-    }
 }
