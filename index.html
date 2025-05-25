@@ -91,14 +91,9 @@
       font-size: 18px;
     }
 
-    .desktop-only { display: block; }
-    .mobile-only { display: none; }
-
     @media screen and (max-width: 768px) {
       .menu-toggle { display: block; }
       .desktop-menu { display: none; }
-      .mobile-only { display: block; }
-      .desktop-only { display: none; }
     }
 
     @media screen and (min-width: 769px) {
@@ -108,6 +103,15 @@
 
     main {
       padding: 1em;
+    }
+
+    section {
+      padding: 60px 0;
+      border-bottom: 1px solid #333;
+    }
+
+    h2 {
+      color: #fff;
     }
   </style>
 </head>
@@ -123,36 +127,65 @@
 
 <div class="desktop-menu">
   <a href="#inicio">Inicio</a>
-  <a href="#soluciones">Soluciones</a>
-  <a href="#contacto">Contacto</a>
+  <a href="#sport">Sport Events</a>
+  <a href="#music">Music Events</a>
+  <a href="#raffles">Raffles</a>
+  <a href="#brt">$BRT's</a>
+  <a href="#about">About Us</a>
 </div>
 
 <nav class="mobile-menu" id="mobileMenu">
   <ul>
     <li><a href="#inicio" onclick="toggleMenu()">Inicio</a></li>
-    <li><a href="#soluciones" onclick="toggleMenu()">Soluciones</a></li>
-    <li><a href="#contacto" onclick="toggleMenu()">Contacto</a></li>
+    <li><a href="#sport" onclick="toggleMenu()">Sport Events</a></li>
+    <li><a href="#music" onclick="toggleMenu()">Music Events</a></li>
+    <li><a href="#raffles" onclick="toggleMenu()">Raffles</a></li>
+    <li><a href="#brt" onclick="toggleMenu()">$BRT's</a></li>
+    <li><a href="#about" onclick="toggleMenu()">About Us</a></li>
   </ul>
 </nav>
 
 <main>
   <section id="inicio">
-    <h1>OnChainFest</h1>
+    <h2>OnChainFest</h2>
     <p>
-      <span class="desktop-only">OnChainFest is a Web3 infrastructure that enables the organization of sports events, raffles, and concerts with full transparency, automation, and traceability through smart contracts and NFTs.</span>
-      <span class="mobile-only">OnChainFest makes event organization easier, safer, and transparent with Web3.</span>
+      OnChainFest is a Web3 infrastructure that enables the organization of sports events, raffles, and concerts with full transparency, automation, and traceability through smart contracts and NFTs.
     </p>
   </section>
-  <section id="soluciones">
-    <h2>Soluciones</h2>
+
+  <section id="sport">
+    <h2>Sport Events</h2>
     <p>
-      <span class="desktop-only">Our platform allows any organizer to create verifiable registrations, distribute prizes automatically, and issue NFT tickets to prevent fraud and scalping. Everything is managed from a user-friendly interface integrated with wallets and sponsors.</span>
-      <span class="mobile-only">NFT tickets, prizes and registration all in one Web3 platform.</span>
+      Create decentralized tournaments where entry fees, rebuys, and prize distribution are managed through smart contracts. All results are auditable and recorded immutably.
     </p>
   </section>
-  <section id="contacto">
-    <h2>Contacto</h2>
-    <p>Email: contacto@onchainfest.xyz</p>
+
+  <section id="music">
+    <h2>Music Events</h2>
+    <p>
+      Issue NFT tickets to avoid fraud and scalping. Track attendance, reward superfans, and share revenue transparently among artists, venues, and sponsors.
+    </p>
+  </section>
+
+  <section id="raffles">
+    <h2>Raffles</h2>
+    <p>
+      Host verifiable raffles where winners are selected using on-chain randomness. Funds are locked, distributed instantly, and winners are published transparently.
+    </p>
+  </section>
+
+  <section id="brt">
+    <h2>$BRT’s - Bragging Rights Tokens</h2>
+    <p>
+      Issue NFTs to champions of tournaments. These collectible tokens can be shared or sold, immortalizing each player's victory in a limited digital edition.
+    </p>
+  </section>
+
+  <section id="about">
+    <h2>About Us</h2>
+    <p>
+      We are building real-world Web3 solutions for the events industry. Join us to transform the way people register, pay, win, and remember.
+    </p>
   </section>
 </main>
 
