@@ -151,12 +151,26 @@
   }
 }
 </style>
+
 <script>
   function toggleMenu() {
     const nav = document.querySelector('header nav');
     nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
   }
+
+  // Hide menu on nav link click in mobile
+  document.addEventListener('DOMContentLoaded', () => {
+    const navLinks = document.querySelectorAll('header nav a');
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.querySelector('header nav').style.display = 'none';
+        }
+      });
+    });
+  });
 </script>
+
 </head>
 <body>
 <header>
@@ -242,20 +256,26 @@
 </footer>
 
 
-<script>
-  const setupCarousel = (id, images) => {
-    const container = document.getElementById(id);
-    const img = document.createElement('img');
-    img.src = images[0];
-    img.classList.add('active');
-    container.appendChild(img);
-  };
 
-  setupCarousel('carousel-sports', ['img/sports1.png']);       // maratón
-  setupCarousel('carousel-music', ['img/music2.png']);         // QR fila
-  setupCarousel('carousel-raffles', ['img/raffle3.png']);      // persona celebrando
-  setupCarousel('carousel-brts', ['img/brts3.png']);           // fans mostrando BRTs
+<script>
+  function toggleMenu() {
+    const nav = document.querySelector('header nav');
+    nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  // Hide menu on nav link click in mobile
+  document.addEventListener('DOMContentLoaded', () => {
+    const navLinks = document.querySelectorAll('header nav a');
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.querySelector('header nav').style.display = 'none';
+        }
+      });
+    });
+  });
 </script>
+
 
 </body>
 </html>
