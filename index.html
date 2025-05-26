@@ -152,13 +152,13 @@
 }
 </style>
 
+
 <script>
   function toggleMenu() {
     const nav = document.querySelector('header nav');
     nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
   }
 
-  // Hide menu on nav link click in mobile
   document.addEventListener('DOMContentLoaded', () => {
     const navLinks = document.querySelectorAll('header nav a');
     navLinks.forEach(link => {
@@ -167,9 +167,22 @@
           document.querySelector('header nav').style.display = 'none';
         }
       });
+
+      // Ensure images show on mobile
+      const sections = ['sports', 'music', 'raffles', 'brts'];
+      sections.forEach(id => {
+        const container = document.getElementById('carousel-' + id);
+        if (container && container.children.length === 0) {
+          const img = document.createElement('img');
+          img.src = 'img/' + id + (id === 'music' ? '2' : id === 'raffles' ? '3' : id === 'brts' ? '3' : '1') + '.png';
+          img.classList.add('active');
+          container.appendChild(img);
+        }
+      });
     });
   });
 </script>
+
 
 </head>
 <body>
@@ -257,13 +270,13 @@
 
 
 
+
 <script>
   function toggleMenu() {
     const nav = document.querySelector('header nav');
     nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
   }
 
-  // Hide menu on nav link click in mobile
   document.addEventListener('DOMContentLoaded', () => {
     const navLinks = document.querySelectorAll('header nav a');
     navLinks.forEach(link => {
@@ -272,9 +285,22 @@
           document.querySelector('header nav').style.display = 'none';
         }
       });
+
+      // Ensure images show on mobile
+      const sections = ['sports', 'music', 'raffles', 'brts'];
+      sections.forEach(id => {
+        const container = document.getElementById('carousel-' + id);
+        if (container && container.children.length === 0) {
+          const img = document.createElement('img');
+          img.src = 'img/' + id + (id === 'music' ? '2' : id === 'raffles' ? '3' : id === 'brts' ? '3' : '1') + '.png';
+          img.classList.add('active');
+          container.appendChild(img);
+        }
+      });
     });
   });
 </script>
+
 
 
 </body>
