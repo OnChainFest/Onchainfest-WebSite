@@ -25,6 +25,7 @@ body {
   color: white;
   border: none;
   cursor: pointer;
+  display: none;
 }
 
 .mobile-menu {
@@ -38,6 +39,7 @@ body {
   color: white;
   padding: 8px;
   text-decoration: none;
+  border-bottom: 1px solid #333;
 }
 
 .static-mobile-image {
@@ -52,7 +54,12 @@ body {
   text-align: center;
 }
 
+/* Mostrar menú y hamburguesa en pantallas pequeñas */
 @media screen and (max-width: 768px) {
+  .hamburger {
+    display: block;
+  }
+
   .mobile-menu.show {
     display: flex;
   }
