@@ -113,9 +113,61 @@
     });
   });
 </script>
+
+<style>
+@media screen and (max-width: 768px) {
+  .hamburger {
+    display: block;
+    font-size: 2rem;
+    color: white;
+    cursor: pointer;
+    z-index: 1001;
+  }
+
+  header nav {
+    display: none;
+    flex-direction: column;
+    background-color: #111;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    padding: 1rem;
+    z-index: 1000;
+  }
+
+  header nav a {
+    margin: 0.5rem 0;
+  }
+}
+@media screen and (min-width: 769px) {
+  .hamburger {
+    display: none;
+  }
+}
+</style>
+
+<script>
+  function toggleMenu() {
+    const nav = document.querySelector('header nav');
+    nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const navLinks = document.querySelectorAll('header nav a');
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.querySelector('header nav').style.display = 'none';
+        }
+      });
+    });
+  });
+</script>
 </head>
 <body>
 <header>
+  <span class="hamburger" onclick="toggleMenu()">☰</span>
   <span class="hamburger" onclick="toggleMenu()">☰</span>
   <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
   <nav>
