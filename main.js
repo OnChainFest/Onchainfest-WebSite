@@ -1,13 +1,13 @@
-
-function setupCarousel(id, imagePaths) {
+function setupCarousel(id, imageList) {
   const container = document.getElementById(id);
-  imagePaths.forEach((path) => {
-    const img = document.createElement('img');
-    img.src = path;
-    img.alt = 'Carousel image';
-    img.classList.add('carousel-img');
-    container.appendChild(img);
-  });
+  if (container) {
+    imageList.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.className = "carousel-img";
+      container.appendChild(img);
+    });
+  }
 }
 
 setupCarousel('carousel-sports', ['img/deporte1.png', 'img/deporte2.png', 'img/deporte3.png']);
