@@ -1,14 +1,45 @@
 
 document.addEventListener("DOMContentLoaded", function () {
-  // Only apply if screen is mobile size
+  // Only run on mobile
   if (window.innerWidth <= 768) {
-    // Replace long descriptions with shorter ones
+    // 1. Insert hamburger menu
+    const header = document.querySelector("header");
+    const hamburger = document.createElement("span");
+    hamburger.innerText = "☰";
+    hamburger.id = "hamburgerToggle";
+    hamburger.className = "mobile-hamburger";
+    header.insertBefore(hamburger, header.firstChild);
+
+    const mobileNav = document.createElement("div");
+    mobileNav.id = "mobileNav";
+    mobileNav.className = "mobile-nav";
+    mobileNav.innerHTML = `
+      <a href="#sports">Sport Events</a>
+      <a href="#music">Music Events</a>
+      <a href="#raffles">Raffles</a>
+      <a href="#brts">$BRT's</a>
+      <a href="#about">About Us</a>
+      <a href="contact.html">Contact</a>
+    `;
+    header.parentNode.insertBefore(mobileNav, header.nextSibling);
+
+    document.getElementById("hamburgerToggle").addEventListener("click", () => {
+      mobileNav.style.display = mobileNav.style.display === "flex" ? "none" : "flex";
+    });
+
+    document.querySelectorAll("#mobileNav a").forEach(link => {
+      link.addEventListener("click", () => {
+        mobileNav.style.display = "none";
+      });
+    });
+
+    // 2. Reduce long section texts
     const textMap = {
-      "sports": "OnChainFest automates sports tournaments using Web3. Signups, payments, and prize payouts handled via smart contracts.",
-      "music": "We issue NFT tickets to reduce fraud and cost. Artists sell directly and split revenue automatically.",
-      "raffles": "100% fair raffles on-chain. Results and prizes are automatic and transparent.",
-      "brts": "NFT trophies for champions. Trade, showcase, or collect BRTs as digital legacy.",
-      "about": "We automate events with Web3 from LATAM. Real demos, smart contracts, global growth."
+      "sports": "OnChainFest automates sports tournaments using Web3. Registration, payments, and prizes via smart contracts.",
+      "music": "NFT tickets eliminate fraud and reduce costs. Artists sell directly and split revenue easily.",
+      "raffles": "Fair, transparent raffles on-chain. Public draws, automatic prize delivery.",
+      "brts": "Digital trophies (BRTs) for champions. Fans and players collect and trade wins.",
+      "about": "We automate events with Web3 from LATAM. Real demos, global expansion."
     };
 
     for (const id in textMap) {
@@ -21,7 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
-    // Swap carousels for static images
+    // 3. Replace carousel with static image
     const imageMap = {
       "sports": "img/sports1.png",
       "music": "img/music2.png",

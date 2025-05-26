@@ -1,12 +1,37 @@
 
 @media screen and (max-width: 768px) {
-  section {
-    flex-direction: column !important;
+  .mobile-hamburger {
+    display: block;
+    font-size: 2rem;
+    color: white;
+    cursor: pointer;
+    position: absolute;
+    top: 18px;
+    left: 20px;
+    z-index: 1100;
   }
 
-  .text-content {
+  .mobile-nav {
+    display: none;
+    flex-direction: column;
+    background-color: #111;
+    position: absolute;
+    top: 60px;
+    left: 0;
     width: 100%;
     padding: 1rem;
+    z-index: 1099;
+  }
+
+  .mobile-nav a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 0;
+    font-weight: bold;
+  }
+
+  section {
+    flex-direction: column !important;
   }
 
   .carousel {
@@ -22,6 +47,11 @@
     object-fit: contain;
   }
 
+  .text-content {
+    width: 100%;
+    padding: 1rem;
+  }
+
   #about {
     padding: 2rem 1rem !important;
   }
@@ -30,5 +60,11 @@
     font-size: 0.95rem;
     line-height: 1.5;
     text-align: justify;
+  }
+}
+
+@media screen and (min-width: 769px) {
+  .mobile-hamburger, .mobile-nav {
+    display: none !important;
   }
 }
