@@ -44,8 +44,11 @@ body {
 
 .static-mobile-image {
   width: 100%;
+  max-width: 480px;
   height: auto;
-  margin-bottom: 10px;
+  display: block;
+  margin: 0 auto 10px;
+  border-radius: 12px;
 }
 
 .mobile-text {
