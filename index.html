@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -117,70 +116,9 @@
   </nav>
 </header>
 
-
-
-
-
-<section id="brts" class="section-reverse">
-  <div class="carousel" id="carousel-brts"></div>
-  <div class="text-content">
-    <h2>$BRT's</h2>
-    <p class="full-text">Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner’s wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
-    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">BRTs are exclusive NFTs for champions—unique, verifiable, and tradable. Players and fans can collect, display, or sell them as proof of victory and digital legacy.</p>
-  </div>
+<section class="welcome" id="home">
+  <h1>Welcome to OnChainFest</h1>
+  <h2>Building real world solutions on Web3</h2>
 </section>
 
-
-
-
-<section id="about" style="padding: 4rem 2rem; background-color: #111; color: white;">
-  <div style="max-width: 1000px; margin: 0 auto;">
-    <h2 style="font-size: 2rem; font-weight: bold;">About Us</h2>
-    <p class="full-text" style="margin-top: 1rem; line-height: 1.8; text-align: justify;">
-OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We’re already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world’s crypto capital), supporting our international growth strategy.
-</p>
-<p class="mobile-text" style="margin-top: 1rem; text-align: justify;">OnChainFest helps modernize events using Web3. We’re building real-world demos and expanding globally.</p>
-    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">
-      OnChainFest helps modernize events using Web3. From Costa Rica and Argentina, our team builds secure and automated demos with clubs and festivals. We're expanding globally and reducing organizers' workload by over 50%.
-    </p>
-    <p style="margin-top: 2rem; line-height: 1.6;">
-      📄 You can explore our public whitepaper here:
-    </p>
-    <p style="margin-top: 0.5rem;">
-      <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank" style="color: #61dafb;">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a>
-    </p>
-  </div>
-</section>
-
-
-
-<footer>
-  <a class="contact-button" href="contact.html">Contact Us</a>
-  <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
-</footer>
-
-<script>
-  const setupCarousel = (id, images) => {
-    const container = document.getElementById(id);
-    images.forEach((src, idx) => {
-      const img = document.createElement('img');
-      img.src = src;
-      if (idx === 0) img.classList.add('active');
-      container.appendChild(img);
-    });
-    let index = 0;
-    setInterval(() => {
-      const imgs = container.querySelectorAll('img');
-      imgs.forEach(img => img.classList.remove('active'));
-      index = (index + 1) % imgs.length;
-      imgs[index].classList.add('active');
-    }, 3000);
-  };
-
-  setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-  setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-  setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-  setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
-</script>
-</body>
-</html>
+<!-- Full HTML continues in next cell due to token limit -->
