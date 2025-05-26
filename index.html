@@ -120,9 +120,47 @@
   }
 }
 </style>
+
+<style>
+@media screen and (max-width: 768px) {
+  header nav {
+    display: none;
+    flex-direction: column;
+    background-color: #111;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    padding: 1rem;
+  }
+
+  header nav a {
+    margin: 0.5rem 0;
+  }
+
+  .hamburger {
+    display: block;
+    font-size: 2rem;
+    color: white;
+    cursor: pointer;
+  }
+}
+@media screen and (min-width: 769px) {
+  .hamburger {
+    display: none;
+  }
+}
+</style>
+<script>
+  function toggleMenu() {
+    const nav = document.querySelector('header nav');
+    nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+  }
+</script>
 </head>
 <body>
 <header>
+  <span class="hamburger" onclick="toggleMenu()">☰</span>
   <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
   <nav>
     <a href="#sports">Sport Events</a>
