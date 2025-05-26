@@ -1,49 +1,92 @@
 body {
   margin: 0;
-  font-family: sans-serif;
-  background-color: #000;
+  font-family: Arial, sans-serif;
+  background-color: black;
   color: white;
 }
+
 .mobile-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 10px 20px;
   background-color: black;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
+
 .logo-img {
-  height: 36px;
+  height: 42px;
 }
+
 .hamburger {
   font-size: 30px;
   background: none;
-  color: white;
   border: none;
+  color: white;
+  cursor: pointer;
 }
+
 .mobile-menu {
   display: none;
   flex-direction: column;
   background-color: #111;
+  position: absolute;
+  top: 60px;
+  left: 10px;
+  right: 10px;
+  border-radius: 10px;
+  z-index: 999;
 }
+
+.mobile-menu.show {
+  display: flex;
+}
+
 .mobile-menu a {
-  padding: 0.75rem 1rem;
-  color: white;
+  padding: 14px;
   text-decoration: none;
+  color: white;
 }
-.mobile-section {
+
+.mobile-menu a:hover {
+  background-color: #333;
+}
+
+.mobile-hero {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   text-align: center;
-  padding: 3rem 1rem;
+  padding: 20px;
 }
+
+.mobile-section {
+  padding: 80px 20px;
+  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .static-mobile-image {
   width: 90%;
-  max-width: 600px;
-  border-radius: 12px;
+  max-width: 500px;
+  margin: 0 auto 20px;
+  display: block;
+  border-radius: 10px;
 }
+
 .mobile-text {
-  margin-top: 1rem;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
+
 .whitepaper-link {
   color: cyan;
-  text-decoration: underline;
+  display: block;
+  margin-top: 10px;
 }
