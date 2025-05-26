@@ -72,16 +72,27 @@
 
 
 
+
+
 <style>
 @media screen and (max-width: 768px) {
-  section {
-    flex-direction: column !important;
-  }
-
   .carousel {
     width: 100%;
     height: auto;
     margin: 1rem 0;
+  }
+
+  .carousel img {
+    position: relative !important;
+    opacity: 1 !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 auto;
+  }
+
+  section {
+    flex-direction: column !important;
   }
 
   .text-content {
@@ -192,28 +203,21 @@
   <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
 </footer>
 
+
 <script>
   const setupCarousel = (id, images) => {
     const container = document.getElementById(id);
-    images.forEach((src, idx) => {
-      const img = document.createElement('img');
-      img.src = src;
-      if (idx === 0) img.classList.add('active');
-      container.appendChild(img);
-    });
-    let index = 0;
-    setInterval(() => {
-      const imgs = container.querySelectorAll('img');
-      imgs.forEach(img => img.classList.remove('active'));
-      index = (index + 1) % imgs.length;
-      imgs[index].classList.add('active');
-    }, 3000);
+    const img = document.createElement('img');
+    img.src = images[0];
+    img.classList.add('active');
+    container.appendChild(img);
   };
 
-  setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-  setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-  setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-  setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
+  setupCarousel('carousel-sports', ['img/sports1.png']);       // maratón
+  setupCarousel('carousel-music', ['img/music2.png']);         // QR fila
+  setupCarousel('carousel-raffles', ['img/raffle3.png']);      // persona celebrando
+  setupCarousel('carousel-brts', ['img/brts3.png']);           // fans mostrando BRTs
 </script>
+
 </body>
 </html>
