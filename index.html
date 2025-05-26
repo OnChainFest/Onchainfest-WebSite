@@ -6,106 +6,123 @@
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <title>OnChainFest</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-    html { scroll-behavior: smooth; }
-    body { background: #0d0d0d; color: #fff; }
-    header {
-      position: fixed; top: 0; left: 0; width: 100%;
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 1rem 2rem; background-color: rgba(0, 0, 0, 0.85); z-index: 1000;
-    }
-    header a {
-      color: white; text-decoration: none; margin-left: 1.5rem; font-weight: bold;
-    }
-    section {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; padding: 5rem 2rem 2rem 2rem;
-    }
-    .section-reverse { flex-direction: row-reverse; }
-    .carousel {
-      width: 50%; height: 400px; background-color: #1a1a1a;
-      overflow: hidden; position: relative; margin: 0 2rem;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .carousel img {
-      max-width: 100%; max-height: 100%;
-      object-fit: contain; position: absolute; opacity: 0;
-      transition: opacity 0.5s ease-in-out;
-    }
-    .carousel img.active { opacity: 1; }
-    .text-content { width: 40%; }
-    .welcome {
-      text-align: center; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 10rem 2rem 5rem;
-    }
-    .welcome h1 { font-size: 3rem; margin-bottom: 1rem; }
-    .welcome h2 { font-size: 1.8rem; font-weight: normal; color: #ccc; }
+  
 
-    @keyframes fadeSlideIn {
-      from { opacity: 0; transform: translateY(40px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
 
-    .welcome h1,
-    .welcome h2 {
-      opacity: 0;
-      animation: fadeSlideIn 1.2s ease-out forwards;
-    }
 
-    .welcome h2 {
-      animation-delay: 0.5s;
-    }
 
-    footer { text-align: center; padding: 2rem; background-color: #111; }
-    .contact-button {
-      background-color: #ff0080; border: none; padding: 1rem 2rem;
-      color: white; cursor: pointer; font-size: 1rem;
-      border-radius: 8px; text-decoration: none;
-    }
-  </style>
+
+
+
+
+
+
+
 
 <style>
 @media screen and (max-width: 768px) {
-  #about p {
-    font-size: 0.9rem;
-    line-height: 1.4;
-  }
-
-  #about p.full-text {
+  header nav {
     display: none;
+    flex-direction: column;
+    background-color: #111;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    padding: 1rem;
   }
 
-  #about p.mobile-text {
+  header nav a {
+    margin: 0.5rem 0;
+  }
+
+  .hamburger {
     display: block;
+    font-size: 2rem;
+    color: white;
+    cursor: pointer;
   }
-}
-@media screen and (min-width: 769px) {
-  #about p.mobile-text {
-    display: none;
-  }
-}
-</style>
 
-<style>
-@media screen and (max-width: 768px) {
+  section {
+    flex-direction: column !important;
+  }
+
+  .carousel {
+    width: 100%;
+    height: auto;
+    margin: 1rem 0;
+  }
+
+  .carousel img {
+    position: relative !important;
+    opacity: 1 !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 auto;
+    object-fit: contain !important;
+  }
+
+  .text-content {
+    width: 100%;
+    padding: 0 1rem;
+  }
+
   .full-text {
     display: none;
   }
+
   .mobile-text {
     display: block;
   }
 }
+
 @media screen and (min-width: 769px) {
+  .hamburger {
+    display: none;
+  }
+
   .mobile-text {
     display: none;
   }
 }
 </style>
+
+<script>
+  function toggleMenu() {
+    const nav = document.querySelector('header nav');
+    nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const navLinks = document.querySelectorAll('header nav a');
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.querySelector('header nav').style.display = 'none';
+        }
+      });
+
+      // Ensure images are injected if missing
+      const sections = ['sports', 'music', 'raffles', 'brts'];
+      sections.forEach(id => {
+        const container = document.getElementById('carousel-' + id);
+        if (container && container.children.length === 0) {
+          const img = document.createElement('img');
+          img.src = 'img/' + id + (id === 'music' ? '2' : id === 'raffles' ? '3' : id === 'brts' ? '3' : '1') + '.png';
+          img.classList.add('active');
+          container.appendChild(img);
+        }
+      });
+    });
+  });
+</script>
 </head>
 <body>
 <header>
+  <span class="hamburger" onclick="toggleMenu()">☰</span>
+  <span class="hamburger" onclick="toggleMenu()">☰</span>
+  <span class="hamburger" onclick="toggleMenu()">☰</span>
   <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
   <nav>
     <a href="#sports">Sport Events</a>
@@ -122,58 +139,62 @@
   <h2>Building real world solutions on Web3</h2>
 </section>
 
+
 <section id="sports">
   <div class="carousel" id="carousel-sports"></div>
   <div class="text-content">
-    <h2>Sport Events</h2>
-    <p>OnChainFest revolutionizes sports event management with a Web3-powered solution that automates the entire flow—from player registration to prize distribution. Participants register through forms connected to smart wallets, enabling automatic validation and fee collection. Payments can be made in fiat or stablecoins. Re-entry logic is governed by smart contracts that enforce limits, pricing, and conditions. Results can be integrated through sports oracles, and prizes are distributed automatically to winners, clubs, and sponsors. Everything is logged on-chain, ensuring full transparency, cutting operational costs, and eliminating unnecessary intermediaries.</p>
+    <h2>Sports</h2>
+    <p class="full-text" style="text-align: justify;">OnChainFest revolutionizes sports event management with a Web3-powered solution that automates the entire flow—from player registration to prize distribution. Participants register through forms connected to smart wallets, enabling automatic validation and fee collection. Payments can be made in fiat or stablecoins. Re-entry logic is governed by smart contracts that enforce limits, pricing, and conditions. Results can be integrated through sports oracles, and prizes are distributed automatically to winners, clubs, and sponsors. Everything is logged on-chain, ensuring full transparency, cutting operational costs, and eliminating unnecessary intermediaries.</p>
+    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">OnChainFest automates tournaments using Web3—player signup, payment, and prizes all run by smart contracts.</p>
   </div>
 </section>
 
-<section class="section-reverse" id="music">
+
+
+<section id="music" class="section-reverse">
   <div class="carousel" id="carousel-music"></div>
   <div class="text-content">
-    <h2>Music Events</h2>
-    <p>We transform traditional ticketing by issuing NFT-based tickets that eliminate fraud, prevent overselling, and unlock collectible fan experiences. Each NFT ticket is verifiable on-chain, transferable between wallets, and can provide exclusive benefits like discounts, VIP access, or post-event content. Our solution enables the decentralization of ticket distribution points, empowering artists and organizers to sell tickets independently without relying on a single central system. This significantly reduces cloud infrastructure costs compared to traditional Web2 ticketing platforms that require heavy server usage and complex backend architectures. Organizers can also automatically split revenues between artists and partners and gain valuable data on ticket usage and resale patterns to optimize future editions.</p>
+    <h2>Music</h2>
+    <p class="full-text" style="text-align: justify;">We transform traditional ticketing by issuing NFT-based tickets that eliminate fraud, prevent overselling, and unlock collectible fan experiences. Each NFT ticket is verifiable on-chain, transferable between wallets, and can provide exclusive benefits like discounts, VIP access, or post-event content. Our solution enables the decentralization of ticket distribution points, empowering artists and organizers to sell tickets independently without relying on a single central system. This significantly reduces cloud infrastructure costs compared to traditional Web2 ticketing platforms that require heavy server usage and complex backend architectures. Organizers can also automatically split revenues between artists and partners and gain valuable data on ticket usage and resale patterns to optimize future editions.</p>
+    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">We issue NFT tickets that reduce fraud and costs while letting artists sell directly and split revenue fairly.</p>
   </div>
 </section>
+
+
 
 <section id="raffles">
   <div class="carousel" id="carousel-raffles"></div>
   <div class="text-content">
     <h2>Raffles</h2>
-    <p>With OnChainFest, raffles become fully transparent and trustworthy. We use smart contracts and verifiable oracles to ensure provably fair and tamper-proof draws. Every ticket is linked to a unique wallet, and the draw is executed publicly with results stored on-chain. Prizes are automatically distributed, removing human error or favoritism. Ideal for fundraising events, brand activations, and secure audience engagement campaigns.</p>
+    <p class="full-text" style="text-align: justify;">With OnChainFest, raffles become fully transparent and trustworthy. We use smart contracts and verifiable oracles to ensure provably fair and tamper-proof draws. Every ticket is linked to a unique wallet, and the draw is executed publicly with results stored on-chain. Prizes are automatically distributed, removing human error or favoritism. Ideal for fundraising events, brand activations, and secure audience engagement campaigns.</p>
+    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">Our raffles are 100% on-chain and public—fair, traceable, and automatic prize delivery with zero bias.</p>
   </div>
 </section>
 
-<section class="section-reverse" id="brts">
+
+
+<section id="brts" class="section-reverse">
   <div class="carousel" id="carousel-brts"></div>
   <div class="text-content">
-    <h2>$BRT's</h2>
-    <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner’s wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
+    <h2>Brts</h2>
+    <p class="full-text" style="text-align: justify;">Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner’s wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
+    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">BRTs are NFTs given to champions. Fans and players can own, trade, and showcase a digital legacy of victory.</p>
   </div>
 </section>
 
 
 
-<section id="about" style="padding: 4rem 2rem; background-color: #111; color: white;">
-  <div style="max-width: 1000px; margin: 0 auto;">
-    <h2 style="font-size: 2rem; font-weight: bold;">About Us</h2>
-    <p class="full-text" style="margin-top: 1rem; line-height: 1.8; text-align: justify;">
-OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We’re already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world’s crypto capital), supporting our international growth strategy.
-</p>
-<p class="mobile-text" style="margin-top: 1rem; text-align: justify;">OnChainFest helps modernize events using Web3. We’re building real-world demos and expanding globally.</p>
-    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">
-      OnChainFest helps modernize events using Web3. From Costa Rica and Argentina, our team builds secure and automated demos with clubs and festivals. We're expanding globally and reducing organizers' workload by over 50%.
-    </p>
-    <p style="margin-top: 2rem; line-height: 1.6;">
-      📄 You can explore our public whitepaper here:
-    </p>
-    <p style="margin-top: 0.5rem;">
-      <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank" style="color: #61dafb;">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a>
-    </p>
+
+
+<section id="about">
+  <div class="carousel" id="carousel-about"></div>
+  <div class="text-content">
+    <h2>About</h2>
+    <p class="full-text" style="text-align: justify;">OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We’re already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world’s crypto capital), supporting our international growth strategy.</p>
+    <p class="mobile-text" style="margin-top: 1rem; text-align: justify;">OnChainFest simplifies events with Web3. Based in LATAM, we automate and scale globally with smart contracts.</p>
   </div>
 </section>
+
 
 
 
@@ -182,28 +203,12 @@ OnChainFest was born as an integral solution to reinvent how organizers and part
   <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
 </footer>
 
-<script>
-  const setupCarousel = (id, images) => {
-    const container = document.getElementById(id);
-    images.forEach((src, idx) => {
-      const img = document.createElement('img');
-      img.src = src;
-      if (idx === 0) img.classList.add('active');
-      container.appendChild(img);
-    });
-    let index = 0;
-    setInterval(() => {
-      const imgs = container.querySelectorAll('img');
-      imgs.forEach(img => img.classList.remove('active'));
-      index = (index + 1) % imgs.length;
-      imgs[index].classList.add('active');
-    }, 3000);
-  };
 
-  setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-  setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-  setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-  setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
-</script>
+
+
+
+
+
+
 </body>
 </html>
