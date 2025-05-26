@@ -1,8 +1,9 @@
 function toggleMenu() {
-  const menu = document.getElementById('mobileMenu');
-  menu.classList.toggle('show');
+  const menu = document.getElementById("mobileMenu");
+  menu.style.display = menu.style.display === "flex" ? "none" : "flex";
 }
 
 function closeMenu() {
-  document.getElementById('mobileMenu').classList.remove('show');
+  const menu = document.getElementById("mobileMenu");
+  menu.style.display = "none";
 }
