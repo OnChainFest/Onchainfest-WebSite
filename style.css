@@ -1,1 +1,79 @@
-// dummy content for deployment
+
+body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #0a0a0a;
+    color: white;
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+}
+
+.logo {
+    font-size: 1.5em;
+    font-weight: bold;
+}
+
+#lang-toggle {
+    background: none;
+    color: white;
+    border: 1px solid white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.hamburger {
+    font-size: 2em;
+    cursor: pointer;
+    display: none;
+}
+
+#mobile-menu {
+    display: none;
+    flex-direction: column;
+    background: #111;
+    padding: 10px;
+}
+
+#mobile-menu a {
+    color: white;
+    text-decoration: none;
+    padding: 10px 0;
+}
+
+main {
+    text-align: center;
+    padding: 50px 20px;
+}
+
+.animated-entry {
+    animation: fadeIn 1s ease-in-out;
+}
+
+.subtext {
+    margin-top: 20px;
+    font-size: 1.1em;
+    opacity: 0.8;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+    .hamburger {
+        display: block;
+    }
+
+    #mobile-menu.show {
+        display: flex;
+    }
+}
