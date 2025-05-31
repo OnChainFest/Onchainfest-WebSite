@@ -42,6 +42,12 @@ body {
 }
 
 #mobile-menu {
+    position: absolute;
+    top: 60px;
+    right: 0;
+    left: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
     display: none;
     flex-direction: column;
     background: #111;
@@ -98,4 +104,17 @@ html {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+}
+
+#welcome {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding-top: 60px;
+    padding-bottom: 40px;
+}
+#welcome h1, #welcome h2, #welcome p {
+    margin: 0.3em 0;
 }
