@@ -55,10 +55,14 @@ body {
 }
 
 #mobile-menu.show {
+    max-height: 250px;
+    overflow-y: auto;
     display: flex;
 }
 
 #mobile-menu a {
+    font-size: 0.9em;
+    padding: 6px 0;
     color: white;
     text-decoration: none;
     padding: 10px 0;
@@ -112,7 +116,7 @@ html {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    padding-top: 20px;
+    padding-top: 0px;
     padding-bottom: 40px;
 }
 #welcome h1, #welcome h2, #welcome p {
