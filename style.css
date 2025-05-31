@@ -122,3 +122,18 @@ html {
 #welcome h1, #welcome h2, #welcome p {
     margin: 0.2em 0;
 }
+
+header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #0a0a0a;
+    z-index: 999;
+    height: 60px;
+}
+
+/* Agregar espacio para que el contenido no se oculte debajo del header */
+main {
+    padding-top: 60px;
+}
