@@ -114,7 +114,40 @@
     }
   }
 </script>
-<a class="lang-toggle" href="index_es.html">ESP</a>
+<a class="lang-toggle" href="index.html">ENG</a>
+<section class="hero">
+<div class="shine-overlay"></div>
+<img alt="Logo OnChainFest" class="animated-logo" src="img/Logo.png"/>
+<div class="hero-content">
+<h1 id="typed-text"></h1>
+<p id="typed-subtext"></p>
+</div>
+</section>
+<script>
+  const mainText = "Bienvenidos a OnChainFest";
+  const subText = "Construyendo soluciones reales en Web3";
+  const typedText = document.getElementById("typed-text");
+  const typedSubtext = document.getElementById("typed-subtext");
+  let index = 0;
+  let subIndex = 0;
+  function typeMain() {
+    if (index < mainText.length) {
+      typedText.innerHTML += mainText.charAt(index);
+      index++;
+      setTimeout(typeMain, 50);
+    } else {
+      setTimeout(typeSub, 300);
+    }
+  }
+  function typeSub() {
+    if (subIndex < subText.length) {
+      typedSubtext.innerHTML += subText.charAt(subIndex);
+      subIndex++;
+      setTimeout(typeSub, 30);
+    }
+  }
+  window.onload = typeMain;
+</script>
 <header>
 <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
 <nav>
