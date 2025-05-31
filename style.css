@@ -11,11 +11,12 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 10px 20px;
+    position: relative;
 }
 
 .logo {
-    font-size: 1.5em;
-    font-weight: bold;
+    height: 40px;
+    width: auto;
 }
 
 #lang-toggle {
@@ -42,6 +43,10 @@ body {
     padding: 10px;
 }
 
+#mobile-menu.show {
+    display: flex;
+}
+
 #mobile-menu a {
     color: white;
     text-decoration: none;
@@ -50,30 +55,27 @@ body {
 
 main {
     text-align: center;
-    padding: 50px 20px;
+    padding: 30px 15px;
 }
 
-.animated-entry {
-    animation: fadeIn 1s ease-in-out;
+.section {
+    margin-bottom: 40px;
+}
+
+.section img {
+    width: 100%;
+    max-width: 300px;
+    margin-bottom: 10px;
+    border-radius: 15px;
 }
 
 .subtext {
-    margin-top: 20px;
     font-size: 1.1em;
     opacity: 0.8;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
 }
 
 @media (max-width: 768px) {
     .hamburger {
         display: block;
-    }
-
-    #mobile-menu.show {
-        display: flex;
     }
 }
