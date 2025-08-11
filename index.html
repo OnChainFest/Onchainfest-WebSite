@@ -487,98 +487,99 @@
   </footer>
 
   <script>
-    // Carousel functionality
-    const setupCarousel = (id, images) => {
-      const container = document.getElementById(id);
-      if (!container) return;
-      
-      images.forEach((src, idx) => {
-        const img = document.createElement('img');
-        img.src = src;
-        img.alt = `${id} image ${idx + 1}`;
-        if (idx === 0) img.classList.add('active');
-        container.appendChild(img);
-      });
-      
-      let index = 0;
-      setInterval(() => {
-        const imgs = container.querySelectorAll('img');
-        if (imgs.length === 0) return;
-        
-        imgs.forEach(img => img.classList.remove('active'));
-        index = (index + 1) % imgs.length;
-        imgs[index].classList.add('active');
-      }, 3000);
-    };
-
-    // Mobile menu functionality
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobile-menu');
-
-    hamburger.addEventListener('click', () => {
-      mobileMenu.classList.toggle('active');
-    });
-
-    // Close mobile menu when clicking a link
-    const mobileLinks = mobileMenu.querySelectorAll('a');
-    mobileLinks.forEach(link => {
-      link.addEventListener('click', () => {
-        mobileMenu.classList.remove('active');
-      });
-    });
-
-    // Close mobile menu when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
-        mobileMenu.classList.remove('active');
-      }
-    });
-
-    // Initialize carousels
-   // Temporalmente comentado para debug
-// setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-// setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-// setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-// setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
-
-// Mobile menu functionality
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobile-menu');
-
-    if (hamburger && mobileMenu) {
-      hamburger.addEventListener('click', () => {
-        mobileMenu.classList.toggle('active');
-      });
-
-      // Close mobile menu when clicking a link
-      const mobileLinks = mobileMenu.querySelectorAll('a');
-      mobileLinks.forEach(link => {
-        link.addEventListener('click', () => {
-          mobileMenu.classList.remove('active');
-        });
-      });
-
-      // Close mobile menu when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
-          mobileMenu.classList.remove('active');
+(function() {
+    'use strict';
+    
+    // Wait for DOM to be ready
+    function ready(fn) {
+        if (document.readyState !== 'loading') {
+            fn();
+        } else {
+            document.addEventListener('DOMContentLoaded', fn);
         }
-      });
     }
-
-    // Smooth scrolling for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-      anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-          target.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-          });
+    
+    ready(function() {
+        // Carousel functionality
+        function setupCarousel(id, images) {
+            var container = document.getElementById(id);
+            if (!container) return;
+            
+            for (var i = 0; i < images.length; i++) {
+                var img = document.createElement('img');
+                img.src = images[i];
+                img.alt = id + ' image ' + (i + 1);
+                if (i === 0) img.classList.add('active');
+                container.appendChild(img);
+            }
+            
+            var index = 0;
+            setInterval(function() {
+                var imgs = container.querySelectorAll('img');
+                if (imgs.length === 0) return;
+                
+                for (var j = 0; j < imgs.length; j++) {
+                    imgs[j].classList.remove('active');
+                }
+                index = (index + 1) % imgs.length;
+                imgs[index].classList.add('active');
+            }, 3000);
         }
-      });
+        
+        // Mobile menu functionality
+        var hamburger = document.getElementById('hamburger');
+        var mobileMenu = document.getElementById('mobile-menu');
+        
+        if (hamburger && mobileMenu) {
+            hamburger.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (mobileMenu.classList.contains('active')) {
+                    mobileMenu.classList.remove('active');
+                } else {
+                    mobileMenu.classList.add('active');
+                }
+            });
+            
+            // Close menu when clicking links
+            var menuLinks = mobileMenu.querySelectorAll('a');
+            for (var i = 0; i < menuLinks.length; i++) {
+                menuLinks[i].addEventListener('click', function() {
+                    mobileMenu.classList.remove('active');
+                });
+            }
+            
+            // Close menu when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
+                    mobileMenu.classList.remove('active');
+                }
+            });
+        }
+
+        // Initialize carousels
+        setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
+        setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
+        setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
+        setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
+
+        // Smooth scrolling for anchor links
+        var anchorLinks = document.querySelectorAll('a[href^="#"]');
+        for (var i = 0; i < anchorLinks.length; i++) {
+            anchorLinks[i].addEventListener('click', function(e) {
+                e.preventDefault();
+                var target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        }
     });
+})();
   </script>
 </body>
 </html>
