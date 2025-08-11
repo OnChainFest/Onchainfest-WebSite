@@ -1,194 +1,557 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script>
-// Detección móvil más robusta
-function isMobileDevice() {
-  // Múltiples métodos de detección
-  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-  
-  // Método 1: User Agent
-  const mobileUserAgent = /android|avantgo|blackberry|bb|meego|iemobile|ip(ad|hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile|netfront|opera m(ob|in)i|palm|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(userAgent);
-  
-  // Método 2: Screen size
-  const smallScreen = window.innerWidth <= 768 || window.innerHeight <= 768;
-  
-  // Método 3: Touch support
-  const touchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  
-  return mobileUserAgent || (smallScreen && touchDevice);
-}
-
-// Agregar delay para asegurar que la página cargue
-window.addEventListener('load', function() {
-  if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
-    console.log('Redirigiendo a móvil...');
-    window.location.href = 'index_mobile.html';
-  }
-});
-
-// También intentar inmediatamente
-if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
-  window.location.href = 'index_mobile.html';
-}
-</script>
-  
   <link href="favicon.ico" rel="icon" type="image/x-icon"/>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <title>OnChainFest</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-    html { scroll-behavior: smooth; }
-    body { background: #0d0d0d; color: #fff; }
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+      font-family: Arial, sans-serif; 
+    }
+    
+    html { 
+      scroll-behavior: smooth; 
+    }
+    
+    body { 
+      background: #0d0d0d; 
+      color: #fff; 
+      line-height: 1.6;
+    }
+
+    /* HEADER STYLES */
     header {
-      position: fixed; top: 0; left: 0; width: 100%;
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 1rem 2rem; background-color: rgba(0, 0, 0, 0.85); z-index: 1000;
+      position: fixed; 
+      top: 0; 
+      left: 0; 
+      width: 100%;
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      padding: 1rem 2rem; 
+      background-color: rgba(0, 0, 0, 0.95); 
+      z-index: 1000;
+      backdrop-filter: blur(10px);
     }
-    header a {
-      color: white; text-decoration: none; margin-left: 1.5rem; font-weight: bold;
+
+    .logo {
+      height: 50px;
+      transition: height 0.3s ease;
     }
+
+    /* Desktop Navigation */
+    .desktop-nav {
+      display: flex;
+    }
+
+    .desktop-nav a {
+      color: white; 
+      text-decoration: none; 
+      margin-left: 1.5rem; 
+      font-weight: bold;
+      transition: color 0.3s ease;
+    }
+
+    .desktop-nav a:hover {
+      color: #ff0080;
+    }
+
+    /* Mobile Navigation */
+    .mobile-nav {
+      display: none;
+    }
+
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      cursor: pointer;
+      padding: 5px;
+    }
+
+    .hamburger span {
+      width: 25px;
+      height: 3px;
+      background: white;
+      margin: 3px 0;
+      transition: 0.3s;
+    }
+
+    .mobile-menu {
+      display: none;
+      position: fixed;
+      top: 70px;
+      left: 0;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.98);
+      flex-direction: column;
+      z-index: 999;
+    }
+
+    .mobile-menu.active {
+      display: flex;
+    }
+
+    .mobile-menu a {
+      color: white;
+      text-decoration: none;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #333;
+      transition: background 0.3s ease;
+    }
+
+    .mobile-menu a:hover {
+      background: rgba(255, 0, 128, 0.1);
+      color: #ff0080;
+    }
+
+    /* SECTION STYLES */
     section {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; padding: 5rem 2rem 2rem 2rem;
+      min-height: 100vh;
+      padding: 5rem 2rem 2rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .section-reverse { flex-direction: row-reverse; }
-    .carousel {
-      width: 50%; height: 400px; background-color: #1a1a1a;
-      overflow: hidden; position: relative; margin: 0 2rem;
-      display: flex; align-items: center; justify-content: center;
+
+    .section-reverse {
+      flex-direction: row-reverse;
     }
-    .carousel img {
-      max-width: 100%; max-height: 100%;
-      object-fit: contain; position: absolute; opacity: 0;
-      transition: opacity 0.5s ease-in-out;
-    }
-    .carousel img.active { opacity: 1; }
-    .text-content { width: 40%; }
+
+    /* WELCOME SECTION */
     .welcome {
-      text-align: center; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
+      text-align: center;
+      flex-direction: column;
       padding: 10rem 2rem 5rem;
     }
-    .welcome h1 { font-size: 3rem; margin-bottom: 1rem; }
-    .welcome h2 { font-size: 1.8rem; font-weight: normal; color: #ccc; }
 
-    @keyframes fadeSlideIn {
-      from { opacity: 0; transform: translateY(40px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .welcome h1,
-    .welcome h2 {
+    .welcome h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
       opacity: 0;
       animation: fadeSlideIn 1.2s ease-out forwards;
     }
 
     .welcome h2 {
-      animation-delay: 0.5s;
+      font-size: 1.8rem;
+      font-weight: normal;
+      color: #ccc;
+      opacity: 0;
+      animation: fadeSlideIn 1.2s ease-out 0.5s forwards;
     }
 
-    footer { text-align: center; padding: 2rem; background-color: #111; }
+    @keyframes fadeSlideIn {
+      from { 
+        opacity: 0; 
+        transform: translateY(40px); 
+      }
+      to { 
+        opacity: 1; 
+        transform: translateY(0); 
+      }
+    }
+
+    /* CONTENT SECTIONS */
+    .content-section {
+      max-width: 1200px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 3rem;
+    }
+
+    .carousel {
+      flex: 1;
+      height: 400px;
+      background-color: #1a1a1a;
+      overflow: hidden;
+      position: relative;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .carousel img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      position: absolute;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+      border-radius: 8px;
+    }
+
+    .carousel img.active {
+      opacity: 1;
+    }
+
+    .text-content {
+      flex: 1;
+    }
+
+    .text-content h2 {
+      font-size: 2.2rem;
+      margin-bottom: 1.5rem;
+      color: #ff0080;
+    }
+
+    .text-content p {
+      font-size: 1.1rem;
+      line-height: 1.8;
+      text-align: justify;
+    }
+
+    /* ABOUT SECTION */
+    .about-section {
+      background-color: #111;
+      padding: 4rem 2rem;
+    }
+
+    .about-content {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .about-content h2 {
+      font-size: 2.5rem;
+      font-weight: bold;
+      margin-bottom: 2rem;
+      color: #ff0080;
+    }
+
+    .about-content p {
+      font-size: 1.1rem;
+      line-height: 1.8;
+      text-align: justify;
+      margin-bottom: 1.5rem;
+    }
+
+    .about-content a {
+      color: #61dafb;
+      word-break: break-all;
+    }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      background-color: #111;
+    }
+
     .contact-button {
-      background-color: #ff0080; border: none; padding: 1rem 2rem;
-      color: white; cursor: pointer; font-size: 1rem;
-      border-radius: 8px; text-decoration: none;
+      background-color: #ff0080;
+      border: none;
+      padding: 1rem 2.5rem;
+      color: white;
+      cursor: pointer;
+      font-size: 1.1rem;
+      border-radius: 8px;
+      text-decoration: none;
+      display: inline-block;
+      transition: all 0.3s ease;
+    }
+
+    .contact-button:hover {
+      background-color: #e6006e;
+      transform: translateY(-2px);
+    }
+
+    /* MOBILE STYLES */
+    @media (max-width: 768px) {
+      /* Header adjustments */
+      header {
+        padding: 1rem;
+      }
+
+      .logo {
+        height: 40px;
+      }
+
+      .desktop-nav {
+        display: none;
+      }
+
+      .hamburger {
+        display: flex;
+      }
+
+      /* Welcome section */
+      .welcome {
+        padding: 8rem 1rem 3rem;
+      }
+
+      .welcome h1 {
+        font-size: 2rem;
+      }
+
+      .welcome h2 {
+        font-size: 1.2rem;
+      }
+
+      /* Content sections */
+      section {
+        padding: 3rem 1rem;
+        min-height: auto;
+      }
+
+      .content-section {
+        flex-direction: column;
+        gap: 2rem;
+      }
+
+      .section-reverse .content-section {
+        flex-direction: column;
+      }
+
+      .carousel {
+        height: 250px;
+        width: 100%;
+      }
+
+      .text-content {
+        width: 100%;
+        text-align: center;
+      }
+
+      .text-content h2 {
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+      }
+
+      .text-content p {
+        font-size: 1rem;
+        text-align: left;
+      }
+
+      /* About section */
+      .about-section {
+        padding: 3rem 1rem;
+      }
+
+      .about-content h2 {
+        font-size: 2rem;
+        text-align: center;
+      }
+
+      .about-content p {
+        font-size: 1rem;
+      }
+
+      /* Footer */
+      footer {
+        padding: 2rem 1rem;
+      }
+
+      .contact-button {
+        padding: 0.8rem 2rem;
+        font-size: 1rem;
+      }
+    }
+
+    /* TABLET STYLES */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .content-section {
+        gap: 2rem;
+      }
+
+      .carousel {
+        height: 350px;
+      }
+
+      .text-content h2 {
+        font-size: 2rem;
+      }
+
+      .text-content p {
+        font-size: 1rem;
+      }
+    }
+
+    /* LARGE SCREENS */
+    @media (min-width: 1400px) {
+      .content-section {
+        max-width: 1400px;
+      }
+
+      .carousel {
+        height: 500px;
+      }
+
+      .text-content h2 {
+        font-size: 2.5rem;
+      }
     }
   </style>
 </head>
 <body>
-<header>
-  <a href="index.html"><img alt="Home Logo" src="img/logo.png" style="height:60px; vertical-align:middle;"/></a>
-  <nav>
+  <header>
+    <a href="#home">
+      <img alt="OnChainFest Logo" src="img/logo.png" class="logo"/>
+    </a>
+    
+    <!-- Desktop Navigation -->
+    <nav class="desktop-nav">
+      <a href="#sports">Sport Events</a>
+      <a href="#music">Music Events</a>
+      <a href="#raffles">Raffles</a>
+      <a href="#brts">$BRT's</a>
+      <a href="#about">About Us</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+
+    <!-- Mobile Navigation -->
+    <div class="hamburger" id="hamburger">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </header>
+
+  <div class="mobile-menu" id="mobile-menu">
     <a href="#sports">Sport Events</a>
     <a href="#music">Music Events</a>
     <a href="#raffles">Raffles</a>
     <a href="#brts">$BRT's</a>
     <a href="#about">About Us</a>
     <a href="contact.html">Contact</a>
-  </nav>
-</header>
-
-<section class="welcome" id="home">
-  <h1>Welcome to OnChainFest</h1>
-  <h2>Building real world solutions on Web3</h2>
-</section>
-
-<section id="sports">
-  <div class="carousel" id="carousel-sports"></div>
-  <div class="text-content">
-    <h2>Sport Events</h2>
-    <p>OnChainFest revolutionizes sports event management with a Web3-powered solution that automates the entire flow—from player registration to prize distribution. Participants register through forms connected to smart wallets, enabling automatic validation and fee collection. Payments can be made in fiat or stablecoins. Re-entry logic is governed by smart contracts that enforce limits, pricing, and conditions. Results can be integrated through sports oracles, and prizes are distributed automatically to winners, clubs, and sponsors. Everything is logged on-chain, ensuring full transparency, cutting operational costs, and eliminating unnecessary intermediaries.</p>
   </div>
-</section>
 
-<section class="section-reverse" id="music">
-  <div class="carousel" id="carousel-music"></div>
-  <div class="text-content">
-    <h2>Music Events</h2>
-    <p>We transform traditional ticketing by issuing NFT-based tickets that eliminate fraud, prevent overselling, and unlock collectible fan experiences. Each NFT ticket is verifiable on-chain, transferable between wallets, and can provide exclusive benefits like discounts, VIP access, or post-event content. Our solution enables the decentralization of ticket distribution points, empowering artists and organizers to sell tickets independently without relying on a single central system. This significantly reduces cloud infrastructure costs compared to traditional Web2 ticketing platforms that require heavy server usage and complex backend architectures. Organizers can also automatically split revenues between artists and partners and gain valuable data on ticket usage and resale patterns to optimize future editions.</p>
-  </div>
-</section>
+  <section class="welcome" id="home">
+    <h1>Welcome to OnChainFest</h1>
+    <h2>Building real world solutions on Web3</h2>
+  </section>
 
-<section id="raffles">
-  <div class="carousel" id="carousel-raffles"></div>
-  <div class="text-content">
-    <h2>Raffles</h2>
-    <p>With OnChainFest, raffles become fully transparent and trustworthy. We use smart contracts and verifiable oracles to ensure provably fair and tamper-proof draws. Every ticket is linked to a unique wallet, and the draw is executed publicly with results stored on-chain. Prizes are automatically distributed, removing human error or favoritism. Ideal for fundraising events, brand activations, and secure audience engagement campaigns.</p>
-  </div>
-</section>
+  <section id="sports">
+    <div class="content-section">
+      <div class="carousel" id="carousel-sports"></div>
+      <div class="text-content">
+        <h2>Sport Events</h2>
+        <p>OnChainFest revolutionizes sports event management with a Web3-powered solution that automates the entire flow—from player registration to prize distribution. Participants register through forms connected to smart wallets, enabling automatic validation and fee collection. Payments can be made in fiat or stablecoins. Re-entry logic is governed by smart contracts that enforce limits, pricing, and conditions. Results can be integrated through sports oracles, and prizes are distributed automatically to winners, clubs, and sponsors. Everything is logged on-chain, ensuring full transparency, cutting operational costs, and eliminating unnecessary intermediaries.</p>
+      </div>
+    </div>
+  </section>
 
-<section class="section-reverse" id="brts">
-  <div class="carousel" id="carousel-brts"></div>
-  <div class="text-content">
-    <h2>$BRT's</h2>
-    <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner's wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
-  </div>
-</section>
+  <section id="music">
+    <div class="content-section">
+      <div class="text-content">
+        <h2>Music Events</h2>
+        <p>We transform traditional ticketing by issuing NFT-based tickets that eliminate fraud, prevent overselling, and unlock collectible fan experiences. Each NFT ticket is verifiable on-chain, transferable between wallets, and can provide exclusive benefits like discounts, VIP access, or post-event content. Our solution enables the decentralization of ticket distribution points, empowering artists and organizers to sell tickets independently without relying on a single central system. This significantly reduces cloud infrastructure costs compared to traditional Web2 ticketing platforms that require heavy server usage and complex backend architectures. Organizers can also automatically split revenues between artists and partners and gain valuable data on ticket usage and resale patterns to optimize future editions.</p>
+      </div>
+      <div class="carousel" id="carousel-music"></div>
+    </div>
+  </section>
 
-<section id="about" style="padding: 4rem 2rem; background-color: #111; color: white;">
-  <div style="max-width: 1000px; margin: 0 auto;">
-    <h2 style="font-size: 2rem; font-weight: bold;">About Us</h2>
-    <p style="margin-top: 1rem; line-height: 1.8; text-align: justify;">
-      OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We're already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world's crypto capital), supporting our international growth strategy.
-    </p>
-    <p style="margin-top: 2rem; line-height: 1.6;">
-      📄 You can explore our public whitepaper here:
-    </p>
-    <p style="margin-top: 0.5rem;">
-      <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank" style="color: #61dafb;">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a>
-    </p>
-  </div>
-</section>
+  <section id="raffles">
+    <div class="content-section">
+      <div class="carousel" id="carousel-raffles"></div>
+      <div class="text-content">
+        <h2>Raffles</h2>
+        <p>With OnChainFest, raffles become fully transparent and trustworthy. We use smart contracts and verifiable oracles to ensure provably fair and tamper-proof draws. Every ticket is linked to a unique wallet, and the draw is executed publicly with results stored on-chain. Prizes are automatically distributed, removing human error or favoritism. Ideal for fundraising events, brand activations, and secure audience engagement campaigns.</p>
+      </div>
+    </div>
+  </section>
 
-<footer>
-  <a class="contact-button" href="contact.html">Contact Us</a>
-  <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
-</footer>
+  <section id="brts">
+    <div class="content-section">
+      <div class="text-content">
+        <h2>$BRT's</h2>
+        <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner's wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
+      </div>
+      <div class="carousel" id="carousel-brts"></div>
+    </div>
+  </section>
 
-<script>
-  const setupCarousel = (id, images) => {
-    const container = document.getElementById(id);
-    images.forEach((src, idx) => {
-      const img = document.createElement('img');
-      img.src = src;
-      if (idx === 0) img.classList.add('active');
-      container.appendChild(img);
+  <section class="about-section" id="about">
+    <div class="about-content">
+      <h2>About Us</h2>
+      <p>
+        OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We're already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world's crypto capital), supporting our international growth strategy.
+      </p>
+      <p>
+        📄 You can explore our public whitepaper here:
+      </p>
+      <p>
+        <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a>
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <a class="contact-button" href="contact.html">Contact Us</a>
+    <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
+  </footer>
+
+  <script>
+    // Carousel functionality
+    const setupCarousel = (id, images) => {
+      const container = document.getElementById(id);
+      if (!container) return;
+      
+      images.forEach((src, idx) => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = `${id} image ${idx + 1}`;
+        if (idx === 0) img.classList.add('active');
+        container.appendChild(img);
+      });
+      
+      let index = 0;
+      setInterval(() => {
+        const imgs = container.querySelectorAll('img');
+        if (imgs.length === 0) return;
+        
+        imgs.forEach(img => img.classList.remove('active'));
+        index = (index + 1) % imgs.length;
+        imgs[index].classList.add('active');
+      }, 3000);
+    };
+
+    // Mobile menu functionality
+    const hamburger = document.getElementById('hamburger');
+    const mobileMenu = document.getElementById('mobile-menu');
+
+    hamburger.addEventListener('click', () => {
+      mobileMenu.classList.toggle('active');
     });
-    let index = 0;
-    setInterval(() => {
-      const imgs = container.querySelectorAll('img');
-      imgs.forEach(img => img.classList.remove('active'));
-      index = (index + 1) % imgs.length;
-      imgs[index].classList.add('active');
-    }, 3000);
-  };
 
-  setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-  setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-  setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-  setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
-</script>
+    // Close mobile menu when clicking a link
+    const mobileLinks = mobileMenu.querySelectorAll('a');
+    mobileLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        mobileMenu.classList.remove('active');
+      });
+    });
+
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
+        mobileMenu.classList.remove('active');
+      }
+    });
+
+    // Initialize carousels
+    setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
+    setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
+    setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
+    setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
+
+    // Smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      });
+    });
+  </script>
 </body>
 </html>
