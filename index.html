@@ -1,18 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script>
-    // Detección de dispositivos móviles mejorada
-    function isMobileDevice() {
-      return /Mobi|Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-             (window.innerWidth <= 768);
-    }
-    
-    // Redirigir a versión móvil si es necesario
-    if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
-      window.location.href = 'index_mobile.html';
-    }
-  </script>
+<script>
+// Detección móvil más robusta
+function isMobileDevice() {
+  // Múltiples métodos de detección
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+  
+  // Método 1: User Agent
+  const mobileUserAgent = /android|avantgo|blackberry|bb|meego|iemobile|ip(ad|hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile|netfront|opera m(ob|in)i|palm|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(userAgent);
+  
+  // Método 2: Screen size
+  const smallScreen = window.innerWidth <= 768 || window.innerHeight <= 768;
+  
+  // Método 3: Touch support
+  const touchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  
+  return mobileUserAgent || (smallScreen && touchDevice);
+}
+
+// Agregar delay para asegurar que la página cargue
+window.addEventListener('load', function() {
+  if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
+    console.log('Redirigiendo a móvil...');
+    window.location.href = 'index_mobile.html';
+  }
+});
+
+// También intentar inmediatamente
+if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
+  window.location.href = 'index_mobile.html';
+}
+</script>
   
   <link href="favicon.ico" rel="icon" type="image/x-icon"/>
   <meta charset="utf-8"/>
