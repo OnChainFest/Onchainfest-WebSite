@@ -1,17 +1,115 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script>
-if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-  window.location.href = "https://onchainfest-responsive.netlify.app";
-}
-</script>
-
     <meta charset="UTF-8">
-    <title>OnChainFest</title>
+    <title>OnChainFest - Mobile</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Estilos básicos para móvil */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #0d0d0d;
+            color: #fff;
+            line-height: 1.6;
+        }
+        
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.9);
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+        }
+        
+        .logo {
+            height: 40px;
+        }
+        
+        .hamburger {
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: white;
+        }
+        
+        #mobile-menu {
+            display: none;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.95);
+            position: fixed;
+            top: 70px;
+            left: 0;
+            width: 100%;
+            z-index: 999;
+        }
+        
+        #mobile-menu.active {
+            display: flex;
+        }
+        
+        #mobile-menu a {
+            color: white;
+            text-decoration: none;
+            padding: 1rem;
+            border-bottom: 1px solid #333;
+        }
+        
+        .section {
+            padding: 2rem 1rem;
+            text-align: center;
+            min-height: 50vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .section:first-child {
+            margin-top: 70px;
+            min-height: 70vh;
+        }
+        
+        .section img {
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+            border-radius: 8px;
+        }
+        
+        .section h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        .section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #ff0080;
+        }
+        
+        .subtext {
+            font-size: 1.1rem;
+            color: #ccc;
+        }
+        
+        #lang-toggle {
+            background: #ff0080;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
     <header>
@@ -41,30 +139,30 @@ if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
         <section id="sport" class="section">
             <img src="img/sports1.png" alt="Sport Events">
             <h2>Sport Events</h2>
-            <p>Organize tournaments and federated competitions with full automation.</p>
+            <p>Organize tournaments and federated competitions with full automation using smart contracts and Web3 technology.</p>
         </section>
 
         <section id="ticketing" class="section">
             <img src="img/music3.png" alt="Web3 Ticketing">
             <h2>Web 3 Ticketing</h2>
-            <p>Sell tickets with blockchain-based ownership and traceability.</p>
+            <p>Sell tickets with blockchain-based ownership and traceability. NFT tickets that eliminate fraud and provide unique experiences.</p>
         </section>
 
         <section id="brt" class="section">
-            <img src="img/brt3.png" alt="Bragging Rights Tokens">
+            <img src="img/brts1.png" alt="Bragging Rights Tokens">
             <h2>Bragging Rights Tokens</h2>
-            <p>Limited edition NFTs that celebrate your tournament victories.</p>
+            <p>Limited edition NFTs that celebrate your tournament victories. Digital trophies with real value and emotional significance.</p>
         </section>
 
         <section id="raffles" class="section">
             <img src="img/raffle2.png" alt="Raffles">
             <h2>Raffles</h2>
-            <p>Trustless raffles with auditable outcomes, no tricks involved.</p>
+            <p>Trustless raffles with auditable outcomes, no tricks involved. Complete transparency through smart contracts.</p>
         </section>
 
         <section id="about" class="section">
             <h2>About Us</h2>
-            <p>We are builders. Passionate about sports, automation, and Web3 impact.</p>
+            <p>We are builders. Passionate about sports, automation, and Web3 impact. Creating real-world solutions with blockchain technology.</p>
         </section>
 
         <section id="contact" class="section">
@@ -73,6 +171,24 @@ if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
         </section>
     </main>
 
-    <script src="script.js"></script>
+    <script>
+        // Toggle mobile menu
+        document.getElementById('hamburger').addEventListener('click', function() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('active');
+        });
+
+        // Close menu when clicking a link
+        document.querySelectorAll('#mobile-menu a').forEach(link => {
+            link.addEventListener('click', () => {
+                document.getElementById('mobile-menu').classList.remove('active');
+            });
+        });
+
+        // Language toggle functionality (placeholder)
+        document.getElementById('lang-toggle').addEventListener('click', function() {
+            console.log('Language toggle clicked');
+        });
+    </script>
 </body>
 </html>
