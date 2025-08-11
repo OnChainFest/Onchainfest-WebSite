@@ -1,7 +1,19 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    // Detección de dispositivos móviles mejorada
+    function isMobileDevice() {
+      return /Mobi|Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+             (window.innerWidth <= 768);
+    }
+    
+    // Redirigir a versión móvil si es necesario
+    if (isMobileDevice() && !window.location.pathname.includes('mobile')) {
+      window.location.href = 'index_mobile.html';
+    }
+  </script>
+  
   <link href="favicon.ico" rel="icon" type="image/x-icon"/>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
@@ -112,16 +124,15 @@
   <div class="carousel" id="carousel-brts"></div>
   <div class="text-content">
     <h2>$BRT's</h2>
-    <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner’s wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
+    <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner's wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
   </div>
 </section>
-
 
 <section id="about" style="padding: 4rem 2rem; background-color: #111; color: white;">
   <div style="max-width: 1000px; margin: 0 auto;">
     <h2 style="font-size: 2rem; font-weight: bold;">About Us</h2>
     <p style="margin-top: 1rem; line-height: 1.8; text-align: justify;">
-      OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We’re already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world’s crypto capital), supporting our international growth strategy.
+      OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We're already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world's crypto capital), supporting our international growth strategy.
     </p>
     <p style="margin-top: 2rem; line-height: 1.6;">
       📄 You can explore our public whitepaper here:
@@ -131,7 +142,6 @@
     </p>
   </div>
 </section>
-
 
 <footer>
   <a class="contact-button" href="contact.html">Contact Us</a>
