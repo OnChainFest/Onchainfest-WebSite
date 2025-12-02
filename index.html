@@ -1,93 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link href="favicon.ico" rel="icon" type="image/x-icon"/>
-  <meta charset="utf-8"/>
-  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>OnChainFest</title>
+  <meta charset="utf-8" />
+  <title>OnChainFest Studio – Web3, Automation & AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+
   <style>
-    * { 
-      margin: 0; 
-      padding: 0; 
-      box-sizing: border-box; 
-      font-family: Arial, sans-serif; 
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
     }
-    
-    html { 
-      scroll-behavior: smooth; 
+
+    html {
+      scroll-behavior: smooth;
     }
-    
-    body { 
-      background: #0d0d0d; 
-      color: #fff; 
+
+    body {
+      background: radial-gradient(circle at top left, #1f2933 0, #050509 55%, #000 100%);
+      color: #f9fafb;
       line-height: 1.6;
     }
 
-    /* HEADER STYLES */
+    a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    /* HEADER */
     header {
-      position: fixed; 
-      top: 0; 
-      left: 0; 
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100%;
-      display: flex; 
-      justify-content: space-between; 
+      padding: 1rem 2rem;
+      display: flex;
       align-items: center;
-      padding: 1rem 2rem; 
-      background-color: rgba(0, 0, 0, 0.95); 
+      justify-content: space-between;
+      background: rgba(3, 7, 18, 0.9);
+      backdrop-filter: blur(14px);
       z-index: 1000;
-      backdrop-filter: blur(10px);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .logo-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
     }
 
     .logo {
-      height: 50px;
-      transition: height 0.3s ease;
+      height: 42px;
     }
 
-    /* Desktop Navigation */
-    .desktop-nav {
+    .brand-text {
       display: flex;
+      flex-direction: column;
     }
 
-    .desktop-nav a {
-      color: white; 
-      text-decoration: none; 
-      margin-left: 1.5rem; 
-      font-weight: bold;
-      transition: color 0.3s ease;
+    .brand-text span:first-child {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    .desktop-nav a:hover {
-      color: #ff0080;
+    .brand-text span:last-child {
+      font-size: 0.8rem;
+      color: #9ca3af;
     }
 
-    /* Mobile Navigation */
-    .mobile-nav {
-      display: none;
+    nav.desktop-nav {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      font-size: 0.95rem;
     }
 
+    nav.desktop-nav a {
+      position: relative;
+      color: #e5e7eb;
+      font-weight: 500;
+      padding-bottom: 2px;
+    }
+
+    nav.desktop-nav a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 0;
+      height: 2px;
+      background: linear-gradient(90deg, #ec4899, #8b5cf6);
+      transition: width 0.25s ease;
+    }
+
+    nav.desktop-nav a:hover::after {
+      width: 100%;
+    }
+
+    .header-cta {
+      padding: 0.55rem 1.1rem;
+      border-radius: 999px;
+      border: 1px solid rgba(248, 250, 252, 0.2);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #f9fafb;
+      background: radial-gradient(circle at top left, rgba(236, 72, 153, 0.18), transparent 60%);
+      transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .header-cta:hover {
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      box-shadow: 0 12px 35px rgba(236, 72, 153, 0.4);
+      transform: translateY(-1px);
+    }
+
+    /* MOBILE NAV */
     .hamburger {
       display: none;
       flex-direction: column;
+      gap: 4px;
       cursor: pointer;
-      padding: 5px;
     }
 
     .hamburger span {
-      width: 25px;
-      height: 3px;
-      background: white;
-      margin: 3px 0;
-      transition: 0.3s;
+      width: 24px;
+      height: 2px;
+      background: #e5e7eb;
+      transition: transform 0.2s ease, opacity 0.2s ease;
     }
 
     .mobile-menu {
       display: none;
       position: fixed;
-      top: 70px;
+      top: 64px;
       left: 0;
       width: 100%;
-      background: rgba(0, 0, 0, 0.98);
+      background: rgba(15, 23, 42, 0.97);
+      border-top: 1px solid rgba(148, 163, 184, 0.3);
       flex-direction: column;
       z-index: 999;
     }
@@ -97,182 +153,446 @@
     }
 
     .mobile-menu a {
-      color: white;
-      text-decoration: none;
-      padding: 1rem 2rem;
-      border-bottom: 1px solid #333;
-      transition: background 0.3s ease;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid rgba(55, 65, 81, 0.7);
+      font-size: 0.95rem;
+      color: #e5e7eb;
     }
 
     .mobile-menu a:hover {
-      background: rgba(255, 0, 128, 0.1);
-      color: #ff0080;
+      background: rgba(31, 41, 55, 0.8);
     }
 
-    /* SECTION STYLES */
+    /* SECTIONS */
+    main {
+      padding-top: 80px;
+    }
+
     section {
-      min-height: 100vh;
-      padding: 5rem 2rem 2rem 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      padding: 4.5rem 1.75rem;
+      max-width: 1120px;
+      margin: 0 auto;
     }
 
-    .section-reverse {
-      flex-direction: row-reverse;
-    }
-
-    /* WELCOME SECTION */
-    .welcome {
-      text-align: center;
-      flex-direction: column;
-      padding: 10rem 2rem 5rem;
-    }
-
-    .welcome h1 {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-      opacity: 0;
-      animation: fadeSlideIn 1.2s ease-out forwards;
-    }
-
-    .welcome h2 {
-      font-size: 1.8rem;
-      font-weight: normal;
-      color: #ccc;
-      opacity: 0;
-      animation: fadeSlideIn 1.2s ease-out 0.5s forwards;
-    }
-
-    @keyframes fadeSlideIn {
-      from { 
-        opacity: 0; 
-        transform: translateY(40px); 
-      }
-      to { 
-        opacity: 1; 
-        transform: translateY(0); 
-      }
-    }
-
-    /* CONTENT SECTIONS */
-    .content-section {
-      max-width: 1200px;
-      width: 100%;
-      display: flex;
+    /* HERO */
+    .hero {
+      min-height: calc(100vh - 80px);
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
       align-items: center;
       gap: 3rem;
     }
 
-    .carousel {
-      flex: 1;
-      height: 400px;
-      background-color: #1a1a1a;
-      overflow: hidden;
+    .hero-kicker {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: #a5b4fc;
+      font-weight: 600;
+      margin-bottom: 0.9rem;
+    }
+
+    .hero-title {
+      font-size: clamp(2.3rem, 4vw, 3.1rem);
+      font-weight: 800;
+      line-height: 1.08;
+      margin-bottom: 0.75rem;
+    }
+
+    .hero-title span.gradient {
+      background: linear-gradient(135deg, #ec4899, #f97316, #22c55e);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 1rem;
+      color: #d1d5db;
+      max-width: 32rem;
+      margin-bottom: 1.7rem;
+    }
+
+    .hero-highlight {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(15, 23, 42, 0.9);
+      color: #e5e7eb;
+      margin-bottom: 1.4rem;
+    }
+
+    .hero-highlight-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .btn-primary {
+      padding: 0.85rem 1.6rem;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #0b1120;
+      background: linear-gradient(135deg, #ec4899, #f97316);
+      box-shadow: 0 14px 35px rgba(236, 72, 153, 0.55);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    }
+
+    .btn-primary span.arrow {
+      font-size: 1.1rem;
+      transform: translateY(1px);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(236, 72, 153, 0.75);
+      opacity: 0.96;
+    }
+
+    .btn-secondary {
+      padding: 0.85rem 1.3rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.8);
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #e5e7eb;
+      background: rgba(15, 23, 42, 0.8);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(30, 64, 175, 0.4);
+      border-color: #6366f1;
+      transform: translateY(-1px);
+    }
+
+    .hero-metadata {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+    }
+
+    .hero-metadata span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .hero-metadata span::before {
+      content: "●";
+      font-size: 0.45rem;
+      color: #6b7280;
+    }
+
+    .hero-right {
       position: relative;
-      border-radius: 12px;
+      padding: 1.7rem;
+      border-radius: 22px;
+      background: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 60%),
+                  rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      box-shadow: 0 26px 60px rgba(15, 23, 42, 0.8);
+    }
+
+    .hero-pill {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      color: #e5e7eb;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      padding: 0.9rem 0.9rem 0.75rem;
+      border-radius: 14px;
+      background: radial-gradient(circle at top left, rgba(236, 72, 153, 0.13), transparent 55%);
+      border: 1px solid rgba(148, 163, 184, 0.5);
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: #9ca3af;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+
+    .stat-note {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 0.1rem;
+    }
+
+    .right-note {
+      font-size: 0.8rem;
+      color: #d1d5db;
+      border-top: 1px dashed rgba(75, 85, 99, 0.9);
+      padding-top: 0.8rem;
+    }
+
+    /* SECTION TITLES */
+    .section-kicker {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: #a5b4fc;
+      margin-bottom: 0.4rem;
+      font-weight: 600;
+    }
+
+    .section-title {
+      font-size: 1.6rem;
+      margin-bottom: 0.8rem;
+      font-weight: 700;
+    }
+
+    .section-description {
+      font-size: 0.98rem;
+      max-width: 620px;
+      color: #d1d5db;
+      margin-bottom: 2rem;
+    }
+
+    /* WHAT WE BUILD */
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.5rem;
+    }
+
+    .pillar-card {
+      padding: 1.3rem 1.2rem;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.85);
+    }
+
+    .pillar-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 1.15rem;
+      margin-bottom: 0.7rem;
+      background: radial-gradient(circle at top left, rgba(236, 72, 153, 0.4), rgba(37, 99, 235, 0.3));
     }
 
-    .carousel img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      position: absolute;
-      opacity: 0;
-      transition: opacity 0.5s ease-in-out;
-      border-radius: 8px;
+    .pillar-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
     }
 
-    .carousel img.active {
-      opacity: 1;
+    .pillar-text {
+      font-size: 0.9rem;
+      color: #d1d5db;
+      margin-bottom: 0.5rem;
     }
 
-    .text-content {
-      flex: 1;
+    .pillar-tag {
+      font-size: 0.78rem;
+      color: #9ca3af;
     }
 
-    .text-content h2 {
-      font-size: 2.2rem;
-      margin-bottom: 1.5rem;
-      color: #ff0080;
+    /* PROJECTS */
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.6rem;
+      align-items: stretch;
     }
 
-    .text-content p {
-      font-size: 1.1rem;
-      line-height: 1.8;
-      text-align: justify;
+    .project-card {
+      position: relative;
+      padding: 1.5rem 1.4rem;
+      border-radius: 18px;
+      background: radial-gradient(circle at top left, rgba(34, 197, 94, 0.16), rgba(15, 23, 42, 0.96));
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      box-shadow: 0 22px 50px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
     }
 
-    /* ABOUT SECTION */
-    .about-section {
-      background-color: #111;
-      padding: 4rem 2rem;
+    .project-badge {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: #bbf7d0;
     }
 
-    .about-content {
-      max-width: 1000px;
-      margin: 0 auto;
+    .project-name {
+      font-size: 1.25rem;
+      font-weight: 700;
     }
 
-    .about-content h2 {
-      font-size: 2.5rem;
-      font-weight: bold;
-      margin-bottom: 2rem;
-      color: #ff0080;
+    .project-tagline {
+      font-size: 0.9rem;
+      color: #d1d5db;
     }
 
-    .about-content p {
-      font-size: 1.1rem;
-      line-height: 1.8;
-      text-align: justify;
-      margin-bottom: 1.5rem;
+    .project-meta {
+      font-size: 0.8rem;
+      color: #9ca3af;
     }
 
-    .about-content a {
-      color: #61dafb;
-      word-break: break-all;
+    .project-links {
+      margin-top: 0.7rem;
+      display: flex;
+      gap: 0.7rem;
+      flex-wrap: wrap;
     }
 
-    /* FOOTER */
-    footer {
-      text-align: center;
-      padding: 3rem 2rem;
-      background-color: #111;
+    .project-pill {
+      font-size: 0.78rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      color: #e5e7eb;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
     }
 
-    .contact-button {
-      background-color: #ff0080;
-      border: none;
-      padding: 1rem 2.5rem;
-      color: white;
+    .project-cta {
+      font-size: 0.82rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
       cursor: pointer;
-      font-size: 1.1rem;
-      border-radius: 8px;
-      text-decoration: none;
-      display: inline-block;
-      transition: all 0.3s ease;
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
     }
 
-    .contact-button:hover {
-      background-color: #e6006e;
-      transform: translateY(-2px);
+    .project-cta:hover {
+      background: rgba(37, 99, 235, 0.35);
+      border-color: #60a5fa;
+      transform: translateY(-1px);
     }
 
-    /* MOBILE STYLES */
-    @media (max-width: 768px) {
-      /* Header adjustments */
+    .coming-soon-card {
+      margin-top: 1.4rem;
+      padding: 1.1rem 1rem;
+      border-radius: 16px;
+      border: 1px dashed rgba(107, 114, 128, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 0.88rem;
+      color: #9ca3af;
+    }
+
+    /* WHY SECTION */
+    .why-layout {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .why-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 1.1rem;
+    }
+
+    .why-item-title {
+      font-size: 0.98rem;
+      font-weight: 600;
+      margin-bottom: 0.15rem;
+    }
+
+    .why-item-text {
+      font-size: 0.9rem;
+      color: #d1d5db;
+    }
+
+    .why-card {
+      padding: 1.1rem 1rem;
+      border-radius: 16px;
+      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.18), rgba(15, 23, 42, 0.96));
+      border: 1px solid rgba(56, 189, 248, 0.6);
+      font-size: 0.88rem;
+      color: #e5e7eb;
+    }
+
+    /* CONTACT / FOOTER */
+    .contact-section {
+      text-align: center;
+    }
+
+    .contact-section p {
+      max-width: 540px;
+      margin: 0 auto 1.5rem;
+      color: #d1d5db;
+      font-size: 0.95rem;
+    }
+
+    .footer-note {
+      margin-top: 2.4rem;
+      padding-top: 1.2rem;
+      border-top: 1px solid rgba(55, 65, 81, 0.9);
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 960px) {
       header {
-        padding: 1rem;
+        padding: 0.8rem 1.2rem;
       }
 
-      .logo {
-        height: 40px;
-      }
-
-      .desktop-nav {
+      nav.desktop-nav {
         display: none;
       }
 
@@ -280,131 +600,77 @@
         display: flex;
       }
 
-      /* Welcome section */
-      .welcome {
-        padding: 8rem 1rem 3rem;
+      .hero {
+        grid-template-columns: 1fr;
+        gap: 2.3rem;
       }
 
-      .welcome h1 {
-        font-size: 2rem;
+      .hero-right {
+        order: -1;
       }
 
-      .welcome h2 {
-        font-size: 1.2rem;
-      }
-
-      /* Content sections */
       section {
-        padding: 3rem 1rem;
-        min-height: auto;
+        padding: 3.5rem 1.3rem;
       }
 
-      .content-section {
-        flex-direction: column;
-        gap: 2rem;
+      .pillars {
+        grid-template-columns: 1fr;
       }
 
-      .section-reverse .content-section {
-        flex-direction: column;
+      .projects-grid {
+        grid-template-columns: 1fr;
       }
 
-      .carousel {
-        height: 250px;
-        width: 100%;
-      }
-
-      .text-content {
-        width: 100%;
-        text-align: center;
-      }
-
-      .text-content h2 {
-        font-size: 1.8rem;
-        margin-bottom: 1rem;
-      }
-
-      .text-content p {
-        font-size: 1rem;
-        text-align: left;
-      }
-
-      /* About section */
-      .about-section {
-        padding: 3rem 1rem;
-      }
-
-      .about-content h2 {
-        font-size: 2rem;
-        text-align: center;
-      }
-
-      .about-content p {
-        font-size: 1rem;
-      }
-
-      /* Footer */
-      footer {
-        padding: 2rem 1rem;
-      }
-
-      .contact-button {
-        padding: 0.8rem 2rem;
-        font-size: 1rem;
+      .why-layout {
+        grid-template-columns: 1fr;
       }
     }
 
-    /* TABLET STYLES */
-    @media (min-width: 769px) and (max-width: 1024px) {
-      .content-section {
-        gap: 2rem;
+    @media (max-width: 600px) {
+      .brand-text {
+        display: none;
       }
 
-      .carousel {
-        height: 350px;
-      }
-
-      .text-content h2 {
+      .hero-title {
         font-size: 2rem;
       }
 
-      .text-content p {
-        font-size: 1rem;
-      }
-    }
-
-    /* LARGE SCREENS */
-    @media (min-width: 1400px) {
-      .content-section {
-        max-width: 1400px;
+      .hero-subtitle {
+        font-size: 0.95rem;
       }
 
-      .carousel {
-        height: 500px;
+      .hero-right {
+        padding: 1.3rem;
       }
 
-      .text-content h2 {
-        font-size: 2.5rem;
+      .stat-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
   <header>
-    <a href="#home">
-      <img alt="OnChainFest Logo" src="img/logo.png" class="logo"/>
-    </a>
-    
-    <!-- Desktop Navigation -->
+    <div class="logo-wrapper">
+      <!-- Ajusta la ruta del logo si es distinta -->
+      <a href="#home">
+        <img src="img/logo.png" alt="OnChainFest Logo" class="logo" />
+      </a>
+      <div class="brand-text">
+        <span>OnChainFest Studio</span>
+        <span>Web3 • Automation • AI</span>
+      </div>
+    </div>
+
     <nav class="desktop-nav">
-      <a href="#sports">Sport Events</a>
-      <a href="#music">Music Events</a>
-      <a href="#raffles">Raffles</a>
-      <a href="#brts">$BRT's</a>
-      <a href="#about">About Us</a>
-      <a href="contact.html">Contact</a>
+      <a href="#home">Home</a>
+      <a href="#what-we-build">What we build</a>
+      <a href="#projects">Projects</a>
+      <a href="#why">Why OnChainFest</a>
+      <a href="#contact">Contact</a>
+      <a href="contact.html" class="header-cta">Let’s talk</a>
     </nav>
 
-    <!-- Mobile Navigation -->
     <div class="hamburger" id="hamburger">
       <span></span>
       <span></span>
@@ -413,173 +679,307 @@
   </header>
 
   <div class="mobile-menu" id="mobile-menu">
-    <a href="#sports">Sport Events</a>
-    <a href="#music">Music Events</a>
-    <a href="#raffles">Raffles</a>
-    <a href="#brts">$BRT's</a>
-    <a href="#about">About Us</a>
-    <a href="contact.html">Contact</a>
+    <a href="#home">Home</a>
+    <a href="#what-we-build">What we build</a>
+    <a href="#projects">Projects</a>
+    <a href="#why">Why OnChainFest</a>
+    <a href="#contact">Contact</a>
+    <a href="contact.html">Let’s talk</a>
   </div>
 
-  <section class="welcome" id="home">
-    <h1>Welcome to OnChainFest</h1>
-    <h2>Building real world solutions on Web3</h2>
-  </section>
+  <main>
+    <!-- HERO -->
+    <section id="home">
+      <div class="hero">
+        <div class="hero-left">
+          <div class="hero-kicker">Product studio from Costa Rica to the world</div>
+          <h1 class="hero-title">
+            We build <span class="gradient">real-world</span> products on Web3, automation & AI.
+          </h1>
+          <p class="hero-subtitle">
+            OnChainFest is the parent company behind vertical solutions that solve real problems:
+            from automated sports tournaments to verified professional reputation on-chain.
+          </p>
 
-  <section id="sports">
-    <div class="content-section">
-      <div class="carousel" id="carousel-sports"></div>
-      <div class="text-content">
-        <h2>Sport Events</h2>
-        <p>OnChainFest revolutionizes sports event management with a Web3-powered solution that automates the entire flow—from player registration to prize distribution. Participants register through forms connected to smart wallets, enabling automatic validation and fee collection. Payments can be made in fiat or stablecoins. Re-entry logic is governed by smart contracts that enforce limits, pricing, and conditions. Results can be integrated through sports oracles, and prizes are distributed automatically to winners, clubs, and sponsors. Everything is logged on-chain, ensuring full transparency, cutting operational costs, and eliminating unnecessary intermediaries.</p>
+          <div class="hero-highlight">
+            <span class="hero-highlight-dot"></span>
+            <span>2 live ventures: PadelFlow &amp; HRKey</span>
+          </div>
+
+          <div class="hero-actions">
+            <a href="#projects" class="btn-primary">
+              Explore projects <span class="arrow">↗</span>
+            </a>
+            <a href="#contact" class="btn-secondary">
+              Work with us <span>∙</span> Co-build your idea
+            </a>
+          </div>
+
+          <div class="hero-metadata">
+            <span>Web3-native infrastructure</span>
+            <span>Automation-first design</span>
+            <span>Global mindset, Latam roots</span>
+          </div>
+        </div>
+
+        <div class="hero-right">
+          <div class="hero-pill">Venture Studio</div>
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-label">Active products</div>
+              <div class="stat-value">2</div>
+              <div class="stat-note">Padel tournaments &amp; HR reputation</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Focus areas</div>
+              <div class="stat-value">3</div>
+              <div class="stat-note">Web3 • Automation • AI</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Built for</div>
+              <div class="stat-value">Events &amp; Talent</div>
+              <div class="stat-note">Sports, tournaments, HR, and beyond</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Approach</div>
+              <div class="stat-value">End-to-End</div>
+              <div class="stat-note">From idea to real users</div>
+            </div>
+          </div>
+
+          <div class="right-note">
+            We design, prototype, and ship full solutions: UX, smart contracts, automation
+            workflows, and integrations with wallets, payments, and data providers.
+          </div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section id="music">
-    <div class="content-section">
-      <div class="text-content">
-        <h2>Music Events</h2>
-        <p>We transform traditional ticketing by issuing NFT-based tickets that eliminate fraud, prevent overselling, and unlock collectible fan experiences. Each NFT ticket is verifiable on-chain, transferable between wallets, and can provide exclusive benefits like discounts, VIP access, or post-event content. Our solution enables the decentralization of ticket distribution points, empowering artists and organizers to sell tickets independently without relying on a single central system. This significantly reduces cloud infrastructure costs compared to traditional Web2 ticketing platforms that require heavy server usage and complex backend architectures. Organizers can also automatically split revenues between artists and partners and gain valuable data on ticket usage and resale patterns to optimize future editions.</p>
-      </div>
-      <div class="carousel" id="carousel-music"></div>
-    </div>
-  </section>
-
-  <section id="raffles">
-    <div class="content-section">
-      <div class="carousel" id="carousel-raffles"></div>
-      <div class="text-content">
-        <h2>Raffles</h2>
-        <p>With OnChainFest, raffles become fully transparent and trustworthy. We use smart contracts and verifiable oracles to ensure provably fair and tamper-proof draws. Every ticket is linked to a unique wallet, and the draw is executed publicly with results stored on-chain. Prizes are automatically distributed, removing human error or favoritism. Ideal for fundraising events, brand activations, and secure audience engagement campaigns.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="brts">
-    <div class="content-section">
-      <div class="text-content">
-        <h2>$BRT's</h2>
-        <p>Bragging Rights Tokens ($BRTs) are exclusive NFTs awarded only to tournament champions using the OnChainFest system. Each token includes the tournament ID, season, and winner's wallet, making it a one-of-a-kind digital asset with both emotional and market value. Players can showcase their BRTs on public profiles, sell or trade them, and even allow fans to collect a piece of their legacy. These are not just trophies—they are digital records of victory and pride.</p>
-      </div>
-      <div class="carousel" id="carousel-brts"></div>
-    </div>
-  </section>
-
-  <section class="about-section" id="about">
-    <div class="about-content">
-      <h2>About Us</h2>
-      <p>
-        OnChainFest was born as an integral solution to reinvent how organizers and participants experience sports, cultural, and recreational events. We leverage the power of Web3 to automate processes, eliminate fraud, reduce operational costs, and deliver connected, verifiable, and scalable experiences. Our team is currently participating in the BASE Latam Hackathon 2025, a key milestone that has solidified our vision and brought together a strong and talented team. We operate mainly from Costa Rica, our technical and operational hub, while also collaborating with professionals in Argentina, giving us agile reach across LATAM. We're already developing real-world demos with sports clubs, federations, and festivals, validating our solutions in the field. We invite organizers of all types to discover how OnChainFest can reduce their operational workload by more than 50% through smart contracts and full automation. Our goal is to expand globally and establish a legal base as an LLC in the U.S. (the world's crypto capital), supporting our international growth strategy.
+    <!-- WHAT WE BUILD -->
+    <section id="what-we-build">
+      <div class="section-kicker">What we build</div>
+      <h2 class="section-title">Vertical products where Web3 actually solves something.</h2>
+      <p class="section-description">
+        We don’t build “just another token”. We focus on products where blockchain,
+        automation, and AI have clear impact: reducing operational friction, removing
+        intermediaries, and giving users more control over their data and money.
       </p>
-      <p>
-        📄 You can explore our public whitepaper here:
-      </p>
-      <p>
-        <a href="https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi" target="_blank">https://gateway.pinata.cloud/ipfs/bafkreidkjebfvxoltaf5bx4hqlugyliuevxogkihvsidlqb6qk2etvs6yi</a>
-      </p>
-    </div>
-  </section>
 
-  <footer>
-    <a class="contact-button" href="contact.html">Contact Us</a>
-    <p style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">© 2025 OnChainFest. All rights reserved.</p>
-  </footer>
+      <div class="pillars">
+        <div class="pillar-card">
+          <div class="pillar-icon">⛓️</div>
+          <div class="pillar-title">Web3 infrastructure</div>
+          <p class="pillar-text">
+            Smart contracts, wallet flows, and on-chain logic focused on real-world use:
+            tournaments, tickets, raffles, and verifiable records.
+          </p>
+          <div class="pillar-tag">Networks, stablecoins, NFT logic, payouts.</div>
+        </div>
+
+        <div class="pillar-card">
+          <div class="pillar-icon">⚙️</div>
+          <div class="pillar-title">Automation & operations</div>
+          <p class="pillar-text">
+            We design flows where the system does the heavy lifting:
+            registrations, notifications, reporting, and prize distribution.
+          </p>
+          <div class="pillar-tag">No more messy spreadsheets & manual work.</div>
+        </div>
+
+        <div class="pillar-card">
+          <div class="pillar-icon">🧠</div>
+          <div class="pillar-title">AI-assisted decisions</div>
+          <p class="pillar-text">
+            From interpreting qualitative feedback (HRKey) to guiding organizers through
+            complex setups (PadelFlow), AI helps users decide faster and better.
+          </p>
+          <div class="pillar-tag">Co-pilots built into the product, not as an afterthought.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section id="projects">
+      <div class="section-kicker">Our projects</div>
+      <h2 class="section-title">Current ventures under the OnChainFest umbrella.</h2>
+      <p class="section-description">
+        Each product is its own universe with a clear problem, a clear user, and a clear
+        value proposition. OnChainFest is the studio that imagines, builds, and
+        coordinates everything behind the scenes.
+      </p>
+
+      <div class="projects-grid">
+        <!-- PadelFlow -->
+        <article class="project-card">
+          <div class="project-badge">Live product • Sports & tournaments</div>
+          <h3 class="project-name">PadelFlow</h3>
+          <p class="project-tagline">
+            The easiest way to run padel tournaments with automated brackets,
+            wallet-based registration, and smart contract prize distribution.
+          </p>
+          <p class="project-meta">
+            Organizers create a tournament in minutes, invite players with QR or email,
+            and let the system handle payments, slots, results logging, and payouts.
+          </p>
+
+          <div class="project-links">
+            <span class="project-pill">🎾 Padel-first tournament engine</span>
+            <span class="project-pill">💸 Prizes via smart contracts</span>
+            <a href="#" class="project-cta">
+              View PadelFlow <span>↗</span>
+            </a>
+          </div>
+        </article>
+
+        <!-- HRKey -->
+        <article class="project-card">
+          <div class="project-badge">Live product • Talent & reputation</div>
+          <h3 class="project-name">HRKey</h3>
+          <p class="project-tagline">
+            A new way to measure and monetize professional reputation through verified,
+            structured references and on-chain scores.
+          </p>
+          <p class="project-meta">
+            Candidates, managers, and companies interact through verifiable references.
+            AI helps structure feedback, while Web3 ensures ownership and traceability
+            of reputation data.
+          </p>
+
+          <div class="project-links">
+            <span class="project-pill">🔑 Verifiable HR reputation</span>
+            <span class="project-pill">🧮 AI-assisted reference scoring</span>
+            <a href="#" class="project-cta">
+              Visit HRKey <span>↗</span>
+            </a>
+          </div>
+        </article>
+      </div>
+
+      <div class="coming-soon-card">
+        More ventures are coming soon under the OnChainFest Studio brand:
+        ticketing protocols, raffles, and new ways to bring champions and merit on-chain.
+        If you want to co-create something in this space, reach out.
+      </div>
+    </section>
+
+    <!-- WHY ONCHAINFEST -->
+    <section id="why">
+      <div class="section-kicker">Why OnChainFest</div>
+      <h2 class="section-title">A studio that builds with operators, not just slides.</h2>
+      <div class="why-layout">
+        <ul class="why-list">
+          <li>
+            <div class="why-item-title">Rooted in real operations</div>
+            <p class="why-item-text">
+              We come from organizing real tournaments, dealing with real HR processes,
+              and working with actual clubs, companies, and institutions. We know where
+              Web3 and automation really help—and where they don’t.
+            </p>
+          </li>
+          <li>
+            <div class="why-item-title">Global mindset, Latam execution</div>
+            <p class="why-item-text">
+              OnChainFest operates mainly from Costa Rica with collaborators in LATAM,
+              building products that can scale globally but are grounded in real markets
+              with real constraints.
+            </p>
+          </li>
+          <li>
+            <div class="why-item-title">From idea to product, end-to-end</div>
+            <p class="why-item-text">
+              We don’t stop at “concept”. We handle UX, smart contracts, integrations,
+              automation workflows, and the narrative needed to onboard non-crypto users.
+            </p>
+          </li>
+        </ul>
+
+        <div class="why-card">
+          We see OnChainFest Studio as a long-term engine to launch, grow, and iterate
+          multiple products. Some will be SaaS, some will be protocols, some will be
+          vertical tools for very specific communities. All of them share the same DNA:
+          <strong>real-world impact, automation by design, and Web3 where it actually matters.</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section id="contact" class="contact-section">
+      <div class="section-kicker">Contact</div>
+      <h2 class="section-title">Want to build something with us?</h2>
+      <p>
+        Whether you are a club, a company, a federation, or a founder looking for a
+        technical + product partner in Web3, automation, or AI, OnChainFest Studio
+        can help you turn an idea into a working product.
+      </p>
+
+      <div class="hero-actions" style="justify-content: center; margin-bottom: 0;">
+        <a href="contact.html" class="btn-primary">
+          Contact OnChainFest <span class="arrow">↗</span>
+        </a>
+        <a href="mailto:info@onchainfest.com" class="btn-secondary">
+          Email us directly <span>✉️</span>
+        </a>
+      </div>
+
+      <div class="footer-note">
+        © 2025 OnChainFest Studio. All rights reserved.  
+        Web3 • Automation • AI • Real-world products.
+      </div>
+    </section>
+  </main>
 
   <script>
-(function() {
-    'use strict';
-    
-    // Wait for DOM to be ready
-    function ready(fn) {
-        if (document.readyState !== 'loading') {
-            fn();
+    (function () {
+      "use strict";
+
+      function ready(fn) {
+        if (document.readyState !== "loading") {
+          fn();
         } else {
-            document.addEventListener('DOMContentLoaded', fn);
+          document.addEventListener("DOMContentLoaded", fn);
         }
-    }
-    
-    ready(function() {
-        // Carousel functionality
-        function setupCarousel(id, images) {
-            var container = document.getElementById(id);
-            if (!container) return;
-            
-            for (var i = 0; i < images.length; i++) {
-                var img = document.createElement('img');
-                img.src = images[i];
-                img.alt = id + ' image ' + (i + 1);
-                if (i === 0) img.classList.add('active');
-                container.appendChild(img);
-            }
-            
-            var index = 0;
-            setInterval(function() {
-                var imgs = container.querySelectorAll('img');
-                if (imgs.length === 0) return;
-                
-                for (var j = 0; j < imgs.length; j++) {
-                    imgs[j].classList.remove('active');
-                }
-                index = (index + 1) % imgs.length;
-                imgs[index].classList.add('active');
-            }, 3000);
-        }
-        
-        // Mobile menu functionality
-        var hamburger = document.getElementById('hamburger');
-        var mobileMenu = document.getElementById('mobile-menu');
-        
+      }
+
+      ready(function () {
+        var hamburger = document.getElementById("hamburger");
+        var mobileMenu = document.getElementById("mobile-menu");
+
         if (hamburger && mobileMenu) {
-            hamburger.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                if (mobileMenu.classList.contains('active')) {
-                    mobileMenu.classList.remove('active');
-                } else {
-                    mobileMenu.classList.add('active');
-                }
-            });
-            
-            // Close menu when clicking links
-            var menuLinks = mobileMenu.querySelectorAll('a');
-            for (var i = 0; i < menuLinks.length; i++) {
-                menuLinks[i].addEventListener('click', function() {
-                    mobileMenu.classList.remove('active');
-                });
+          hamburger.addEventListener("click", function (e) {
+            e.stopPropagation();
+            mobileMenu.classList.toggle("active");
+          });
+
+          document.addEventListener("click", function (e) {
+            if (!mobileMenu.contains(e.target) && !hamburger.contains(e.target)) {
+              mobileMenu.classList.remove("active");
             }
-            
-            // Close menu when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
-                    mobileMenu.classList.remove('active');
-                }
+          });
+
+          var mobileLinks = mobileMenu.querySelectorAll("a");
+          mobileLinks.forEach(function (link) {
+            link.addEventListener("click", function () {
+              mobileMenu.classList.remove("active");
             });
+          });
         }
 
-        // Initialize carousels
-        setupCarousel('carousel-sports', ['img/sports1.png', 'img/sports2.png', 'img/sports3.png']);
-        setupCarousel('carousel-music', ['img/music1.png', 'img/music2.png', 'img/music3.png']);
-        setupCarousel('carousel-raffles', ['img/raffle1.png', 'img/raffle2.png', 'img/raffle3.png']);
-        setupCarousel('carousel-brts', ['img/brts1.png', 'img/brts2.png', 'img/brts3.png']);
-
-        // Smooth scrolling for anchor links
+        // Smooth scroll for internal anchors (in case some browser ignores CSS behavior)
         var anchorLinks = document.querySelectorAll('a[href^="#"]');
-        for (var i = 0; i < anchorLinks.length; i++) {
-            anchorLinks[i].addEventListener('click', function(e) {
-                e.preventDefault();
-                var target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            });
-        }
-    });
-})();
+        anchorLinks.forEach(function (link) {
+          link.addEventListener("click", function (e) {
+            var targetId = this.getAttribute("href");
+            if (!targetId || targetId === "#") return;
+            var target = document.querySelector(targetId);
+            if (target) {
+              e.preventDefault();
+              target.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          });
+        });
+      });
+    })();
   </script>
 </body>
 </html>
+
