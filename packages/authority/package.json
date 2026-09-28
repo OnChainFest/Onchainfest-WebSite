@@ -1,0 +1,21 @@
+{
+  "name": "@br/authority",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain Authority Engine kernel: scope algebra, grant-chain evaluation, issuance validation (ADR-0004, ADR-0020)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}

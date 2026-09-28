@@ -1,0 +1,7 @@
+node_modules
+pnpm-lock.yaml
+.next
+dist
+coverage
+docs
+packages/canonical/test-vectors/*.vectors.json

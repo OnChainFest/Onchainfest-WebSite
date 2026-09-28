@@ -1,0 +1,47 @@
+{
+  "name": "bragging-rights",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Bragging Rights \u2014 verified sports achievement infrastructure (BRT-03 technical kernel)",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
+  "type": "module",
+  "scripts": {
+    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run",
+    "vectors:generate": "tsx packages/canonical/scripts/generate-vectors.ts",
+    "vectors:check": "tsx packages/canonical/scripts/generate-vectors.ts --check && python3 packages/canonical/reference/check_vectors.py packages/canonical/test-vectors/br-json-v1.vectors.json",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:bootstrap": "tsx packages/persistence/src/cli/bootstrap.ts",
+    "db:migrate": "tsx packages/persistence/src/cli/migrate.ts",
+    "db:reset": "tsx packages/persistence/src/cli/reset.ts",
+    "db:seed": "tsx packages/persistence/src/cli/seed-dev.ts",
+    "demo:foundation": "tsx packages/persistence/src/cli/demo-foundation.ts",
+    "dev:api": "pnpm --filter @br/api dev",
+    "dev:worker": "pnpm --filter @br/worker dev",
+    "dev:web": "pnpm --filter @br/web dev"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*",
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.4",
+    "eslint": "10.11.0",
+    "fast-check": "4.10.2",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

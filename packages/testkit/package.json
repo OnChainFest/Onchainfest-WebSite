@@ -1,0 +1,18 @@
+{
+  "name": "@br/testkit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test helpers: integration database lifecycle, authority fixtures",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/authority": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/persistence": "workspace:*"
+  }
+}
