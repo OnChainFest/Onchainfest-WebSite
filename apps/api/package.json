@@ -1,0 +1,20 @@
+{
+  "name": "@br/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API scaffold (BRT-03: health/readiness only; no trust-domain mutation endpoints yet)",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/persistence": "workspace:*",
+    "fastify": "5.12.5",
+    "kysely": "0.29.6"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}

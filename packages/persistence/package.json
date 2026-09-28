@@ -1,0 +1,25 @@
+{
+  "name": "@br/persistence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PostgreSQL persistence primitives: migrations, ledger streams, projections, outbox, idempotency, authority store, result ledger",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*",
+    "kysely": "0.29.6",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "@br/testkit": "workspace:*"
+  }
+}

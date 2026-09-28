@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: foundation (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: br_admin
+          POSTGRES_PASSWORD: br_admin_dev_only
+          POSTGRES_DB: bragging_rights
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U br_admin -d bragging_rights"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint (incl. key-material guard)
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit + property tests (incl. golden vectors)
+        run: pnpm test
+      - name: Golden vectors — reproduce + independent reference checker
+        run: pnpm vectors:check
+      - name: Bootstrap roles and databases
+        run: pnpm db:bootstrap
+      - name: Migrate from a clean database
+        run: pnpm db:migrate
+      - name: Integration tests (PostgreSQL)
+        run: pnpm test:integration
+      - name: Acceptance walkthrough
+        run: pnpm demo:foundation
+      - name: Web build
+        run: pnpm --filter @br/web build

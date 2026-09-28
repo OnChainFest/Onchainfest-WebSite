@@ -1,0 +1,71 @@
+/**
+ * Connection configuration. Development defaults match docker-compose.yml and are refused in
+ * production (NODE_ENV=production requires explicit environment variables).
+ */
+/**
+ * One URL per login (BRT-03R role graph):
+ *   admin        bootstrap only (roles, grants, database creation)
+ *   owner        migrations only
+ *   api          request processing: may SET ROLE br_authority | br_results
+ *   worker       background processing: may SET ROLE br_worker
+ *   maintenance  projection rebuilds: may SET ROLE br_rebuild
+ *   probe        development/test only: unprivileged
+ */
+export interface DatabaseUrls {
+  readonly admin: string;
+  readonly owner: string;
+  readonly api: string;
+  readonly worker: string;
+  readonly maintenance: string;
+  readonly probe: string;
+}
+
+export type LoginRole = 'br_owner' | 'br_api' | 'br_worker_app' | 'br_maintenance' | 'br_probe';
+
+const DEV_HOST = 'localhost:55432';
+
+function devUrl(user: string, password: string, database: string): string {
+  return `postgres://${user}:${password}@${DEV_HOST}/${database}`;
+}
+
+export function databaseUrls(database?: string): DatabaseUrls {
+  const production = process.env.NODE_ENV === 'production';
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const pick = (name: string, fallback: string): string => {
+    const value = process.env[name];
+    if (value !== undefined && value !== '')
+      return database === undefined ? value : withDatabase(value, db);
+    if (production) throw new Error(`${name} must be set in production`);
+    return fallback;
+  };
+  return {
+    admin: pick('BR_ADMIN_DATABASE_URL', devUrl('br_admin', 'br_admin_dev_only', db)),
+    owner: pick('BR_OWNER_DATABASE_URL', devUrl('br_owner', 'br_owner_dev_only', db)),
+    api: pick('BR_API_DATABASE_URL', devUrl('br_api', 'br_api_dev_only', db)),
+    worker: pick('BR_WORKER_DATABASE_URL', devUrl('br_worker_app', 'br_worker_app_dev_only', db)),
+    maintenance: pick(
+      'BR_MAINTENANCE_DATABASE_URL',
+      devUrl('br_maintenance', 'br_maintenance_dev_only', db),
+    ),
+    probe: pick('BR_PROBE_DATABASE_URL', devUrl('br_probe', 'br_probe_dev_only', db)),
+  };
+}
+
+export function withDatabase(url: string, database: string): string {
+  const u = new URL(url);
+  u.pathname = `/${database}`;
+  return u.toString();
+}
+
+/** Development role passwords used by `pnpm db:bootstrap` (never in production). */
+export function devRolePasswords(): Record<LoginRole, string> {
+  if (process.env.NODE_ENV === 'production')
+    throw new Error('development passwords are not available in production');
+  return {
+    br_owner: process.env.BR_OWNER_PASSWORD ?? 'br_owner_dev_only',
+    br_api: process.env.BR_API_PASSWORD ?? 'br_api_dev_only',
+    br_worker_app: process.env.BR_WORKER_PASSWORD ?? 'br_worker_app_dev_only',
+    br_maintenance: process.env.BR_MAINTENANCE_PASSWORD ?? 'br_maintenance_dev_only',
+    br_probe: process.env.BR_PROBE_PASSWORD ?? 'br_probe_dev_only',
+  };
+}

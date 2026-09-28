@@ -1,0 +1,17 @@
+{
+  "name": "@br/schemas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned BR-JSON schemas (JSON Schema 2020-12 subset + x-br annotations)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*"
+  }
+}

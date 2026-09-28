@@ -1,0 +1,20 @@
+{
+  "name": "@br/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Foundational Bragging Rights domain types (BRT-01 semantics), identifiers and time model",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "typeid-js": "1.2.0",
+    "uuid": "14.0.2"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}
