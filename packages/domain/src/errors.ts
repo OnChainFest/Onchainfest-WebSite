@@ -20,6 +20,10 @@ export const DomainErrorCode = {
   CHALLENGE_INVALID: 'CHALLENGE_INVALID',
   PROOF_INVALID: 'PROOF_INVALID',
   PRIVATE_DATA_UNAVAILABLE: 'PRIVATE_DATA_UNAVAILABLE',
+  // BRT-05 competition operations
+  CAPACITY_REACHED: 'CAPACITY_REACHED',
+  /** BRT-05R: an INTERNAL capability (e.g. catalog mutation) has no configured credential. */
+  INTERNAL_CAPABILITY_UNAVAILABLE: 'INTERNAL_CAPABILITY_UNAVAILABLE',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 

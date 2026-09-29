@@ -1,4 +1,4 @@
-import type { BrRootSchema } from '@br/canonical';
+import type { BrRootSchema, BrStringSchema } from '@br/canonical';
 import { ResultOutcome, ResultScopeType, ResultVersionStatus, TransitionCode } from '@br/domain';
 import {
   authorityScope,
@@ -377,6 +377,163 @@ export const cmdIdentityV1 = root('br:cmd-identity', 1, {
   },
 });
 
+// ───────────────────────────── BRT-05 competition facts ─────────────────────────────
+// Hashed documents that make field locking, seeding and plan generation reproducible and
+// auditable ("this bracket was generated from exactly this field, seed order and config").
+
+const planKey: BrStringSchema = {
+  type: 'string',
+  pattern: '^r[0-9]{1,3}(-c[0-9]{1,4})?$',
+  maxLength: 16,
+};
+const participantKind = enumOf(['INDIVIDUAL', 'TEAM']);
+const contestType = enumOf(['MATCH', 'HEAT', 'SERIES', 'ATTEMPT_SET', 'ROUTINE', 'SESSION']);
+
+/** The locked participant set of an Event (order-independent: a set keyed by participantId). */
+export const competitionFieldV1 = root('br:competition-field', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['eventId', 'participants'],
+  properties: {
+    eventId: uuid,
+    participants: {
+      ...setOf(
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['participantId', 'registrationId', 'kind'],
+          properties: {
+            participantId: uuid,
+            registrationId: uuid,
+            kind: participantKind,
+            athleteId: uuid,
+            teamId: uuid,
+          },
+        },
+        { sortBy: ['/participantId'], keyUnique: true },
+      ),
+      maxItems: 4096,
+    },
+  },
+});
+
+/** A seeding fact: method, reproducibility input and the resulting order (ordered array). */
+export const competitionSeedingV1 = root('br:competition-seeding', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['eventId', 'fieldHash', 'method', 'order'],
+  properties: {
+    eventId: uuid,
+    fieldHash: hashRef,
+    method: enumOf(['MANUAL', 'DETERMINISTIC_DRAW']),
+    drawAlgorithm: { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$', maxLength: 32 },
+    drawSeed: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+    order: { type: 'array', items: uuid, maxItems: 4096, uniqueItems: true },
+  },
+});
+
+/** Canonical input of plan generation. */
+export const competitionPlanInputV1 = root('br:competition-plan-input', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'eventId',
+    'disciplineVersionId',
+    'disciplineVersionHash',
+    'formatVersionId',
+    'formatVersionHash',
+    'engineId',
+    'engineVersion',
+    'fieldHash',
+    'seedingHash',
+    'configHash',
+    'seedOrder',
+  ],
+  properties: {
+    eventId: uuid,
+    disciplineVersionId: uuid,
+    disciplineVersionHash: hashRef,
+    formatVersionId: uuid,
+    formatVersionHash: hashRef,
+    engineId: { type: 'string', pattern: '^[a-z0-9-]+$', maxLength: 64 },
+    engineVersion: { type: 'integer', minimum: 1, maximum: 1000 },
+    fieldHash: hashRef,
+    seedingHash: hashRef,
+    configHash: hashRef,
+    seedOrder: { type: 'array', items: uuid, maxItems: 4096, uniqueItems: true },
+  },
+});
+
+/** Generated logical structure (rounds → contests → slots with dependency sources). */
+export const competitionPlanV1 = root('br:competition-plan', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['engineId', 'engineVersion', 'rounds'],
+  properties: {
+    engineId: { type: 'string', pattern: '^[a-z0-9-]+$', maxLength: 64 },
+    engineVersion: { type: 'integer', minimum: 1, maximum: 1000 },
+    rounds: {
+      type: 'array',
+      maxItems: 512,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'sequence', 'roundType', 'label', 'byes', 'contests'],
+        properties: {
+          key: planKey,
+          sequence: { type: 'integer', minimum: 1, maximum: 512 },
+          roundType: enumOf([
+            'QUALIFYING',
+            'GROUP',
+            'HEAT',
+            'KNOCKOUT',
+            'REPECHAGE',
+            'FINAL',
+            'SESSION',
+          ]),
+          label: { type: 'string', minLength: 1, maxLength: 80 },
+          byes: { ...setOf(uuid), uniqueItems: true, maxItems: 4096 },
+          contests: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['key', 'sequence', 'contestType', 'slots'],
+              properties: {
+                key: planKey,
+                sequence: { type: 'integer', minimum: 1, maximum: 100000 },
+                contestType,
+                slots: {
+                  type: 'array',
+                  minItems: 1,
+                  maxItems: 64,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['slot', 'source'],
+                    properties: {
+                      slot: { type: 'integer', minimum: 1, maximum: 64 },
+                      source: enumOf([
+                        'PARTICIPANT',
+                        'WINNER_OF_CONTEST',
+                        'LOSER_OF_CONTEST',
+                        'RANK_FROM_STAGE',
+                      ]),
+                      participantId: uuid,
+                      contestKey: planKey,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
 export const ALL_SCHEMAS: readonly BrRootSchema[] = [
   cmdIdentityV1,
   resultVersionContentV1,
@@ -392,4 +549,8 @@ export const ALL_SCHEMAS: readonly BrRootSchema[] = [
   ledgerGenesisV1,
   authorizationProofV1,
   ...commandSchemas,
+  competitionFieldV1,
+  competitionSeedingV1,
+  competitionPlanInputV1,
+  competitionPlanV1,
 ];

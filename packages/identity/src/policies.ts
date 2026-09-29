@@ -20,6 +20,8 @@ export const PersonOperation = {
   LINK_WALLET: 'LINK_WALLET',
   ACCEPT_MEMBERSHIP: 'ACCEPT_MEMBERSHIP',
   END_OWN_MEMBERSHIP: 'END_OWN_MEMBERSHIP',
+  /** BRT-05: enter the athlete in a competition event, join/leave teams, declare lineups. */
+  REGISTER_FOR_EVENT: 'REGISTER_FOR_EVENT',
 } as const;
 export type PersonOperation = (typeof PersonOperation)[keyof typeof PersonOperation];
 
@@ -30,6 +32,7 @@ export const GUARDIAN_ALLOWED_OPERATIONS: ReadonlySet<PersonOperation> = new Set
   'CLAIM_EXTERNAL_IDENTITY',
   'ACCEPT_MEMBERSHIP',
   'END_OWN_MEMBERSHIP',
+  'REGISTER_FOR_EVENT',
 ]);
 
 export interface PersonControlFacts {

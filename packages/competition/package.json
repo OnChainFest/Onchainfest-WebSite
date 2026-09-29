@@ -1,0 +1,21 @@
+{
+  "name": "@br/competition",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-05 competition domain (pure; no database): sport catalog specs, lifecycles, format engines, deterministic draw, operational permissions, hierarchy scope paths, public DTOs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/authority": "workspace:*"
+  }
+}

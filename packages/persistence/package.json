@@ -13,6 +13,7 @@
   "dependencies": {
     "@br/authority": "workspace:*",
     "@br/canonical": "workspace:*",
+    "@br/competition": "workspace:*",
     "@br/domain": "workspace:*",
     "@br/identity": "workspace:*",
     "@br/schemas": "workspace:*",

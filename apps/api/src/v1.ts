@@ -9,6 +9,7 @@ import type {
 } from '@br/persistence';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthAdapter } from './auth';
+import { registerCompetitionV1, type CompetitionV1Deps } from './v1-competition';
 
 /**
  * Endpoint classification (BRT-04 §20). The edge enforces authentication (and the operator flag for
@@ -16,7 +17,15 @@ import type { AuthAdapter } from './auth';
  * inside the command transaction, from database facts — never from client-supplied claims.
  */
 export type EndpointClass =
-  'PUBLIC' | 'AUTHENTICATED' | 'SELF' | 'GUARDIAN' | 'ORG_MEMBER' | 'ORG_ADMIN' | 'INTERNAL';
+  | 'PUBLIC'
+  | 'AUTHENTICATED'
+  | 'SELF'
+  | 'GUARDIAN'
+  | 'ORG_MEMBER'
+  | 'ORG_ADMIN'
+  /** BRT-05: competition operational staff (application permissions decided in the store). */
+  | 'COMP_STAFF'
+  | 'INTERNAL';
 
 export interface RouteInfo {
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -32,6 +41,22 @@ export interface V1Deps {
   readonly organizationReader: OrganizationReader;
   /** Absent when no PII cipher is configured (e.g. production without KMS): private-data endpoints fail closed. */
   readonly privateData?: PersonPrivateDataService;
+  /** BRT-05 competition operations (registered when provided). */
+  readonly competition?: CompetitionV1Deps;
+}
+
+/** Shared route-registration toolkit (same auth boundary, DTO strictness and classification). */
+export interface V1Toolkit {
+  readonly route: (
+    method: RouteInfo['method'],
+    url: string,
+    classification: EndpointClass,
+    schema: Record<string, unknown>,
+    handler: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>,
+  ) => void;
+  readonly requireAuth: (request: FastifyRequest) => AuthContext;
+  readonly operator: (request: FastifyRequest) => AuthContext;
+  readonly key: (request: FastifyRequest) => string;
 }
 
 const HTTP_STATUS: Record<DomainErrorCode, number> = {
@@ -55,6 +80,8 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   CHALLENGE_INVALID: 422,
   PROOF_INVALID: 422,
   PRIVATE_DATA_UNAVAILABLE: 503,
+  CAPACITY_REACHED: 409,
+  INTERNAL_CAPABILITY_UNAVAILABLE: 503,
 };
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */
@@ -73,8 +100,8 @@ declare module 'fastify' {
   }
 }
 
-const uuid = { type: 'string', format: 'uuid' } as const;
-const idParams = (name: string) =>
+export const uuid = { type: 'string', format: 'uuid' } as const;
+export const idParams = (name: string) =>
   ({
     type: 'object',
     required: [name],
@@ -86,7 +113,7 @@ const slugParams = {
   required: ['slug'],
   properties: { slug: { type: 'string', minLength: 1, maxLength: 100 } },
 } as const;
-const idempotencyHeaders = {
+export const idempotencyHeaders = {
   type: 'object',
   required: ['idempotency-key'],
   properties: {
@@ -98,7 +125,8 @@ const idempotencyHeaders = {
     },
   },
 } as const;
-const nullableString = (max: number) => ({ type: ['string', 'null'], maxLength: max }) as const;
+export const nullableString = (max: number) =>
+  ({ type: ['string', 'null'], maxLength: max }) as const;
 const profileProps = {
   displayName: { type: 'string', minLength: 1, maxLength: 80 },
   shortBio: nullableString(500),
@@ -114,11 +142,11 @@ const orgProfileProps = {
   region: nullableString(10),
   publicContact: nullableString(200),
 } as const;
-const obj = (properties: Record<string, unknown>, required: string[] = []) =>
+export const obj = (properties: Record<string, unknown>, required: string[] = []) =>
   ({ type: 'object', properties, required, additionalProperties: false }) as const;
 
 /** Removes keys whose value is undefined (exactOptionalPropertyTypes-friendly DTO mapping). */
-function defined<T extends Record<string, unknown>>(
+export function defined<T extends Record<string, unknown>>(
   o: T,
 ): { [K in keyof T]: Exclude<T[K], undefined> } {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as never;
@@ -890,6 +918,9 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       return { athleteId, canonicalAthleteId: body.canonicalAthleteId };
     },
   );
+
+  if (deps.competition !== undefined)
+    registerCompetitionV1({ route, requireAuth, operator, key }, deps.competition);
 
   return routes;
 }

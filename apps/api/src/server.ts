@@ -5,11 +5,16 @@ import {
   type WalletProofVerifier,
 } from '@br/identity';
 import {
+  CatalogStore,
+  CompetitionReader,
+  CompetitionStore,
   IdentityStore,
   OrganizationReader,
   OrganizationStore,
   PassportReader,
   PersonPrivateDataService,
+  StructureStore,
+  TeamStore,
   pendingMigrations,
   type Db,
 } from '@br/persistence';
@@ -23,6 +28,11 @@ export interface ApiOptions {
   readonly db: Db;
   /** br_api_vault login; private-data endpoints fail closed (503) without it or without a cipher. */
   readonly vaultDb?: Db;
+  /**
+   * BRT-05R: br_operator_app login (→ br_catalog only). INTERNAL catalog mutation uses it and
+   * nothing else; without it catalog mutation answers 503 INTERNAL_CAPABILITY_UNAVAILABLE.
+   */
+  readonly operatorDb?: Db;
   readonly piiCipher?: PiiCipher;
   /** Defaults to `authFromEnvironment` (production: fail closed). */
   readonly auth?: (identity: IdentityStore) => AuthAdapter;
@@ -98,7 +108,7 @@ export function buildServer(options: ApiOptions): ApiServer {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'bragging-rights-api',
-    phase: 'BRT-04',
+    phase: 'BRT-05',
   }));
 
   app.get('/ready', async (_request, reply) => {
@@ -125,6 +135,15 @@ export function buildServer(options: ApiOptions): ApiServer {
     organizations,
     passports: new PassportReader(options.db),
     organizationReader: new OrganizationReader(options.db),
+    competition: {
+      ...(options.operatorDb === undefined
+        ? {}
+        : { catalog: new CatalogStore(options.operatorDb) }),
+      competitions: new CompetitionStore(options.db),
+      structure: new StructureStore(options.db),
+      teams: new TeamStore(options.db),
+      reader: new CompetitionReader(options.db),
+    },
     ...(privateData === undefined ? {} : { privateData }),
   });
 
