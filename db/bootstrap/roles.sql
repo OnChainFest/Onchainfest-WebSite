@@ -8,7 +8,7 @@
 --                          and no runtime login is a member of it.
 --   br_api          LOGIN NOINHERIT → SET br_authority, br_results, br_identity,
 --                                        br_organizations, br_public_read,
---                                        br_competition (BRT-05)
+--                                        br_competition (BRT-05), br_evidence (BRT-06)
 --                          (never br_catalog: catalog mutation has its own login — BRT-05R)
 --   br_operator_app LOGIN NOINHERIT → SET br_catalog
 --                          (BRT-05R: INTERNAL sport-catalog mutation only; nothing else)
@@ -24,7 +24,8 @@
 --   br_authority, br_results, br_worker, br_rebuild,
 --   br_identity, br_identity_private, br_organizations, br_public_read,
 --   br_catalog (sport catalog writes; reachable only from br_operator_app),
---   br_competition (competition operations)
+--   br_competition (competition operations),
+--   br_evidence (BRT-06 evidence + attestation module; no blob credentials live in the database)
 --                   NOLOGIN module roles (table privileges).
 --
 -- Memberships are granted WITH INHERIT FALSE, SET TRUE, ADMIN FALSE: a login holds no module
@@ -41,7 +42,7 @@ BEGIN
   END LOOP;
   FOREACH r IN ARRAY ARRAY['br_authority', 'br_results', 'br_worker', 'br_rebuild',
                            'br_identity', 'br_identity_private', 'br_organizations', 'br_public_read',
-                           'br_catalog', 'br_competition'] LOOP
+                           'br_catalog', 'br_competition', 'br_evidence'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
     END IF;
@@ -65,14 +66,14 @@ ALTER ROLE br_probe NOINHERIT;
 -- Converge: remove any membership outside the intended graph.
 -- BRT-05R: br_api must never reach the catalog writer (also removes the BRT-05 grant on upgrade).
 REVOKE br_worker, br_rebuild, br_identity_private, br_catalog FROM br_api;
-REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_competition FROM br_operator_app;
-REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_organizations, br_public_read, br_catalog, br_competition FROM br_api_vault;
-REVOKE br_authority, br_results, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition FROM br_worker_app;
-REVOKE br_authority, br_results, br_worker, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition FROM br_maintenance;
-REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition FROM br_probe, br_owner;
+REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_competition, br_evidence FROM br_operator_app;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_organizations, br_public_read, br_catalog, br_competition, br_evidence FROM br_api_vault;
+REVOKE br_authority, br_results, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence FROM br_worker_app;
+REVOKE br_authority, br_results, br_worker, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence FROM br_maintenance;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence FROM br_probe, br_owner;
 REVOKE br_owner FROM br_api, br_api_vault, br_operator_app, br_worker_app, br_maintenance, br_probe;
 
-GRANT br_authority, br_results, br_identity, br_organizations, br_public_read, br_competition TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_authority, br_results, br_identity, br_organizations, br_public_read, br_competition, br_evidence TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_catalog TO br_operator_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_identity_private TO br_api_vault WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_worker TO br_worker_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;

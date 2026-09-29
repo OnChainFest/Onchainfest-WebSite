@@ -24,6 +24,20 @@ export const DomainErrorCode = {
   CAPACITY_REACHED: 'CAPACITY_REACHED',
   /** BRT-05R: an INTERNAL capability (e.g. catalog mutation) has no configured credential. */
   INTERNAL_CAPABILITY_UNAVAILABLE: 'INTERNAL_CAPABILITY_UNAVAILABLE',
+  // BRT-06 evidence & attestation (never truth, authority or verification outcomes)
+  /** No evidence blob backend is configured (e.g. production without object storage + KMS). */
+  EVIDENCE_STORAGE_UNAVAILABLE: 'EVIDENCE_STORAGE_UNAVAILABLE',
+  /** The evidence item exists but its bytes are not inspectable (restricted, deleted, missing). */
+  EVIDENCE_NOT_AVAILABLE: 'EVIDENCE_NOT_AVAILABLE',
+  EVIDENCE_TOO_LARGE: 'EVIDENCE_TOO_LARGE',
+  EVIDENCE_TYPE_NOT_ALLOWED: 'EVIDENCE_TYPE_NOT_ALLOWED',
+  ATTESTATION_CHALLENGE_EXPIRED: 'ATTESTATION_CHALLENGE_EXPIRED',
+  ATTESTATION_CHALLENGE_USED: 'ATTESTATION_CHALLENGE_USED',
+  ATTESTATION_PROOF_INVALID: 'ATTESTATION_PROOF_INVALID',
+  /** The authenticated account cannot represent the named issuer Principal (≠ sporting authority). */
+  ISSUER_NOT_CONTROLLED: 'ISSUER_NOT_CONTROLLED',
+  /** The PrincipalKey is unknown, not the issuer's, or not admissible at the platform-observed time. */
+  KEY_NOT_VALID: 'KEY_NOT_VALID',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 

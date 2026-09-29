@@ -2,7 +2,7 @@
   "name": "bragging-rights",
   "version": "0.0.0",
   "private": true,
-  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-05: sport catalog, competition & event engine)",
+  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-06: evidence & attestation layer)",
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "engines": {
@@ -18,7 +18,7 @@
     "test:integration": "vitest run --project integration",
     "test:all": "vitest run",
     "vectors:generate": "tsx packages/canonical/scripts/generate-vectors.ts",
-    "vectors:check": "tsx packages/canonical/scripts/generate-vectors.ts --check && python3 packages/canonical/reference/check_vectors.py packages/canonical/test-vectors/br-json-v1.vectors.json",
+    "vectors:check": "tsx packages/canonical/scripts/generate-vectors.ts --check && python3 packages/canonical/reference/check_vectors.py packages/canonical/test-vectors/br-json-v1.vectors.json && tsx packages/evidence/scripts/generate-vectors.ts --check && python3 packages/evidence/reference/check_brt06_vectors.py packages/evidence/test-vectors/brt-06.vectors.json",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "db:bootstrap": "tsx packages/persistence/src/cli/bootstrap.ts",
@@ -27,12 +27,15 @@
     "db:seed": "tsx packages/persistence/src/cli/seed-dev.ts",
     "db:seed:identity": "tsx packages/persistence/src/cli/seed-identity.ts",
     "db:seed:competition": "tsx packages/persistence/src/cli/seed-competition.ts",
+    "db:seed:evidence": "tsx packages/persistence/src/cli/seed-evidence.ts",
     "demo:foundation": "tsx packages/persistence/src/cli/demo-foundation.ts",
     "demo:identity": "tsx apps/api/src/cli/demo-identity.ts",
     "demo:competition": "tsx apps/api/src/cli/demo-competition.ts",
+    "demo:evidence": "tsx apps/api/src/cli/demo-evidence.ts",
     "dev:api": "pnpm --filter @br/api dev",
     "dev:worker": "pnpm --filter @br/worker dev",
-    "dev:web": "pnpm --filter @br/web dev"
+    "dev:web": "pnpm --filter @br/web dev",
+    "vectors:generate:brt06": "tsx packages/evidence/scripts/generate-vectors.ts"
   },
   "devDependencies": {
     "@br/testkit": "workspace:*",

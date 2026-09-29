@@ -30,3 +30,7 @@ The format is lightweight MADR: Context → Decision → Consequences → Altern
 | [0024](./ADR-0024-deterministic-format-engines-and-immutable-event-plans.md) | Deterministic, versioned format engines and immutable event plans | Proposed | BRT-05 |
 | [0025](./ADR-0025-explicit-competition-hierarchy-resolution.md) | Explicit competition hierarchy resolution for authority and results | Proposed | BRT-05 |
 | [0026](./ADR-0026-declared-lineups-are-operational.md) | Declared lineups are operational; the credited lineup stays in Result content | Proposed | BRT-05 |
+| [0027](./ADR-0027-person-principal-and-issuer-representation.md) | Explicit Person ↔ PERSON Principal mapping and account → issuer representation | Proposed | BRT-06 |
+| [0028](./ADR-0028-deterministic-evidence-bundle.md) | The deterministic Evidence Bundle is the BRT-07 input identity | Proposed | BRT-06 |
+| [0029](./ADR-0029-attestation-acceptance-without-authority-verdict.md) | Attestation acceptance without an authority verdict; server-canonicalized ceremony; signed retraction | Proposed | BRT-06 |
+| [0030](./ADR-0030-development-encrypted-evidence-store-and-fail-closed-production.md) | Development encrypted evidence store; production evidence ingestion fails closed | Proposed | BRT-06 |

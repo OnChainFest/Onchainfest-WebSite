@@ -39,25 +39,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate per-run development secrets (no repository-known keys)
         run: |
-          VAULT_KEY=$(openssl rand -hex 32); AUTH_SECRET=$(openssl rand -hex 32)
-          echo "::add-mask::$VAULT_KEY"; echo "::add-mask::$AUTH_SECRET"
+          VAULT_KEY=$(openssl rand -hex 32); AUTH_SECRET=$(openssl rand -hex 32); EVIDENCE_KEY=$(openssl rand -hex 32)
+          echo "::add-mask::$VAULT_KEY"; echo "::add-mask::$AUTH_SECRET"; echo "::add-mask::$EVIDENCE_KEY"
           echo "BR_VAULT_DEV_KEY=$VAULT_KEY" >> "$GITHUB_ENV"
           echo "BR_DEV_AUTH_SECRET=$AUTH_SECRET" >> "$GITHUB_ENV"
+          # BRT-06: per-run encrypted evidence store in a temp directory (never committed keys).
+          echo "BR_EVIDENCE_DEV_KEY=$EVIDENCE_KEY" >> "$GITHUB_ENV"
+          echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
       - name: Format check
         run: pnpm format:check
       - name: Lint (incl. key-material guard)
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles)
+      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles, BRT-06 crypto/vectors, storage encryption, bundle determinism)
         run: pnpm test
-      - name: Golden vectors — reproduce + independent reference checker
+      - name: Golden vectors — BR-JSON v1 + BRT-06, reproduce + independent reference checkers
         run: pnpm vectors:check
       - name: Bootstrap roles and databases
         run: pnpm db:bootstrap
       - name: Migrate from a clean database
         run: pnpm db:migrate
-      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles)
+      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles, evidence/attestation, concurrency)
         run: pnpm test:integration
       - name: Acceptance walkthrough (BRT-03 foundation)
         run: pnpm demo:foundation
@@ -72,5 +75,12 @@ jobs:
           pnpm -s db:seed:competition > seed-competition-1.json
           pnpm -s db:seed:competition > seed-competition-2.json
           cmp seed-competition-1.json seed-competition-2.json
+      - name: Acceptance walkthrough (BRT-06 evidence & attestation)
+        run: pnpm demo:evidence
+      - name: Evidence seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:evidence > seed-evidence-1.json
+          pnpm -s db:seed:evidence > seed-evidence-2.json
+          cmp seed-evidence-1.json seed-evidence-2.json
       - name: Web build
         run: pnpm --filter @br/web build

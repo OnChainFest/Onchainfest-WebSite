@@ -77,6 +77,17 @@ export const DomainEventType = {
   ContestCancelled: 'ContestCancelled',
   ContestVoided: 'ContestVoided',
   LineupSubmitted: 'LineupSubmitted',
+  // BRT-06 evidence & attestation (ids, hashes, statuses only — never bytes, paths, keys or PII;
+  // never a verification, achievement, record or prize outcome)
+  EvidenceAdded: 'EvidenceAdded',
+  EvidenceAttached: 'EvidenceAttached',
+  EvidenceDerived: 'EvidenceDerived',
+  EvidenceAvailabilityChanged: 'EvidenceAvailabilityChanged',
+  EvidencePrivacyRaised: 'EvidencePrivacyRaised',
+  AttestationIssued: 'AttestationIssued',
+  AttestationRetracted: 'AttestationRetracted',
+  AttestationSuperseded: 'AttestationSuperseded',
+  PersonPrincipalMapped: 'PersonPrincipalMapped',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -107,6 +118,8 @@ export const AggregateType = {
   TEAM: 'TEAM',
   TEAM_MEMBERSHIP: 'TEAM_MEMBERSHIP',
   CONTEST: 'CONTEST',
+  EVIDENCE_ITEM: 'EVIDENCE_ITEM',
+  ATTESTATION: 'ATTESTATION',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 

@@ -5,7 +5,8 @@ import type { Database, Db } from './db';
 /**
  * Module roles (BRT-02 data access model §2). Logins hold none of them implicitly (NOINHERIT,
  * INHERIT FALSE) and may SET only the module roles granted to them:
- *   br_api → br_authority, br_results, br_identity, br_organizations, br_public_read
+ *   br_api → br_authority, br_results, br_identity, br_organizations, br_public_read,
+ *            br_competition, br_evidence
  *   br_api_vault → br_identity_private · br_worker_app → br_worker · br_maintenance → br_rebuild
  * A transaction on a connection whose login is not a member of `role` fails at SET ROLE.
  */
@@ -20,6 +21,8 @@ export const ModuleRole = {
   publicRead: 'br_public_read',
   catalog: 'br_catalog',
   competition: 'br_competition',
+  /** BRT-06 evidence + attestation module. */
+  evidence: 'br_evidence',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 
@@ -40,6 +43,10 @@ const RETRYABLE_CONSTRAINTS = new Set([
   // Natural-key races: on retry the command finds the committed row and returns it.
   'authority_grant_grant_hash_key',
   'result_scope_type_scope_target_id_key',
+  // BRT-06: same provenance / same attachment / same statement raced — the retry replays it.
+  'item_provenance_key_key',
+  'attachment_evidence_id_target_type_target_id_role_key',
+  'person_principal_pkey',
 ]);
 
 function pgError(err: unknown): { code?: string; constraint?: string } {

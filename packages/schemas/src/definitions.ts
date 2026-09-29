@@ -1,5 +1,29 @@
 import type { BrRootSchema, BrStringSchema } from '@br/canonical';
-import { ResultOutcome, ResultScopeType, ResultVersionStatus, TransitionCode } from '@br/domain';
+import {
+  AcquisitionMethod,
+  ActingRole,
+  AttestationClaimType,
+  AttestationSubjectType,
+  CapturedAtAssurance,
+  ClaimPolarity,
+  EVIDENCE_MEDIA_TYPES,
+  EvidenceAttachmentRole,
+  EvidenceAttachmentTarget,
+  EvidenceAvailability,
+  EvidencePrivacyClass,
+  EvidenceRelationKind,
+  EvidenceSourceKind,
+  EvidenceType,
+  GeneratorKind,
+  ProofScheme,
+  ProofType,
+  ResultOutcome,
+  ResultScopeType,
+  ResultVersionStatus,
+  RetractionReason,
+  SignatureAssurance,
+  TransitionCode,
+} from '@br/domain';
 import {
   authorityScope,
   capability,
@@ -553,4 +577,661 @@ export const ALL_SCHEMAS: readonly BrRootSchema[] = [
   competitionSeedingV1,
   competitionPlanInputV1,
   competitionPlanV1,
+];
+
+// ───────────────────────────── BRT-06 evidence & attestation ─────────────────────────────
+// Evidence descriptors, signed statements (BRT-02 §4.1), ledger facts and the deterministic
+// Evidence Bundle handed to BRT-07. Hashing is always domain-separated (ADR-0014); evidence BYTES
+// are the one exception (plain SHA-256 of the raw bytes, ADR-0018).
+
+const code = (pattern: string, maxLength: number): BrStringSchema => ({
+  type: 'string',
+  pattern,
+  maxLength,
+});
+const systemId = code('^[a-z0-9][a-z0-9._:-]{0,99}$', 100);
+const systemVersion = code('^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$', 40);
+const externalNamespace = code('^[a-z0-9][a-z0-9:._-]{1,99}$', 100);
+const externalId = code('^[A-Za-z0-9][A-Za-z0-9:._/-]{0,199}$', 200);
+const audience = code('^bragging-rights:[a-z0-9-]{1,32}$', 48);
+/** 128-bit random nonce, base64url without padding (BRT-02 §4.1). */
+const nonce = code('^[A-Za-z0-9_-]{22}$', 22);
+const evidenceType = enumOf(Object.values(EvidenceType));
+const mediaType = enumOf(EVIDENCE_MEDIA_TYPES);
+const byteLength = { type: 'integer', minimum: 0, maximum: 9007199254740991 } as const;
+const scopeLevel = enumOf(['COMPETITION', 'EVENT', 'ROUND', 'CONTEST']);
+
+const evidenceRef = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['evidenceId', 'contentHash', 'descriptorHash'],
+  properties: { evidenceId: uuid, contentHash: hashRef, descriptorHash: hashRef },
+} as const;
+
+/** EvidenceItem descriptor: exact bytes + provenance. `descriptorHash` = H("evidence-descriptor", this). */
+export const evidenceDescriptorV1 = root('br:evidence-descriptor', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['evidenceId', 'evidenceType', 'content', 'source', 'acquisition'],
+  properties: {
+    evidenceId: uuid,
+    evidenceType,
+    content: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['sha256', 'byteLength', 'mediaType'],
+      properties: { sha256: hashRef, byteLength, mediaType },
+    },
+    source: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'capturedAtAssurance'],
+      properties: {
+        kind: enumOf(Object.values(EvidenceSourceKind)),
+        principalId: uuid,
+        system: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'version'],
+          properties: { id: systemId, version: systemVersion },
+        },
+        deviceId: systemId,
+        externalNamespace,
+        externalId,
+        /** Source assertion (BRT-02 §5.1): never platform truth. */
+        capturedAt: timestamp,
+        capturedAtAssurance: enumOf(Object.values(CapturedAtAssurance)),
+      },
+    },
+    acquisition: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['method', 'receivedAt'],
+      properties: {
+        method: enumOf(Object.values(AcquisitionMethod)),
+        /** Platform-observed. */
+        receivedAt: timestamp,
+      },
+    },
+    /** Machine-derived evidence (BRT-01 §2.6 / E-4): generator identity, never "true". */
+    derivation: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['generator', 'inputs'],
+      properties: {
+        generator: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['kind', 'systemId', 'version'],
+          properties: {
+            kind: enumOf(Object.values(GeneratorKind)),
+            systemId,
+            version: systemVersion,
+            configurationHash: hashRef,
+          },
+        },
+        generatedAt: timestamp,
+        inputs: {
+          ...setOf(
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['evidenceId', 'contentHash'],
+              properties: { evidenceId: uuid, contentHash: hashRef },
+            },
+            { minItems: 1, sortBy: ['/evidenceId'], keyUnique: true },
+          ),
+          maxItems: 64,
+        },
+      },
+    },
+    /** Immutable lineage edges to parent items (child → parent). */
+    lineage: {
+      ...setOf(
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['relation', 'evidenceId', 'descriptorHash'],
+          properties: {
+            relation: enumOf(Object.values(EvidenceRelationKind)),
+            evidenceId: uuid,
+            descriptorHash: hashRef,
+          },
+        },
+        { sortBy: ['/evidenceId', '/relation'], keyUnique: true },
+      ),
+      maxItems: 64,
+    },
+  },
+});
+
+const conditionObservation = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['aspect', 'key'],
+  properties: {
+    aspect: enumOf([
+      'WIND',
+      'TEMPERATURE',
+      'HUMIDITY',
+      'ALTITUDE',
+      'SURFACE',
+      'LIGHTING',
+      'EQUIPMENT',
+      'TIMING_SYSTEM',
+      'COURSE_CONFIGURATION',
+      'OTHER',
+    ]),
+    /** Discipline-neutral metric key, e.g. "wind.speed", "lane.oil-pattern". */
+    key: code('^[a-z0-9]+(?:[._-][a-z0-9]+)*$', 64),
+    value: { type: 'string', 'x-br-type': 'decimal' },
+    unit: { type: 'string', minLength: 1, maxLength: 16 },
+    code: code('^[A-Z][A-Z0-9_]{0,31}$', 32),
+  },
+} as const;
+
+/**
+ * Attestation statement (BRT-02 §4.1; ADR-0015). `statementHash` = H("attestation-statement", this).
+ * Signed through the JWS_DETACHED payload "bragging-rights/sig/v1:" ‖ hex(statementHash).
+ */
+export const attestationStatementV1 = root('br:attestation-statement', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'v',
+    'purpose',
+    'audience',
+    'issuer',
+    'subject',
+    'claim',
+    'nonce',
+    'signedAt',
+    'expiresAt',
+  ],
+  properties: {
+    v: { type: 'integer', minimum: 1, maximum: 1 },
+    purpose: enumOf(['attestation']),
+    audience,
+    issuer: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['principalId', 'keyId'],
+      properties: { principalId: uuid, keyId: uuid },
+    },
+    subject: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['type', 'id', 'hash'],
+      properties: {
+        type: enumOf(Object.values(AttestationSubjectType)),
+        id: uuid,
+        hash: hashRef,
+      },
+    },
+    claim: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['type', 'polarity'],
+      properties: {
+        type: enumOf(Object.values(AttestationClaimType)),
+        polarity: enumOf(Object.values(ClaimPolarity)),
+        payload: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            conditions: {
+              ...setOf(conditionObservation, { sortBy: ['/aspect', '/key'], keyUnique: true }),
+              maxItems: 32,
+            },
+            reasonCode: enumOf([
+              'SCORE_INCORRECT',
+              'OUTCOME_INCORRECT',
+              'PARTICIPANT_INCORRECT',
+              'OTHER',
+            ]),
+          },
+        },
+      },
+    },
+    /** Declared by the signer; evaluated only by BRT-07 (never trusted here). */
+    authorityContext: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['actingRole'],
+      properties: {
+        actingRole: enumOf(Object.values(ActingRole)),
+        scopeRef: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['level', 'id'],
+          properties: { level: scopeLevel, id: uuid },
+        },
+      },
+    },
+    evidenceRefs: {
+      ...setOf(evidenceRef, { sortBy: ['/evidenceId'], keyUnique: true }),
+      maxItems: 64,
+    },
+    supersedes: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['attestationId', 'statementHash'],
+      properties: { attestationId: uuid, statementHash: hashRef },
+    },
+    nonce,
+    /** Signer assertion (BRT-02 §5.1): never establishes key or authority validity. */
+    signedAt: timestamp,
+    expiresAt: timestamp,
+  },
+});
+
+/** Signed retraction: the issuer withdraws an exact attestation (withdrawn ≠ false). */
+export const attestationRetractionStatementV1 = root('br:attestation-retraction-statement', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'v',
+    'purpose',
+    'audience',
+    'issuer',
+    'subject',
+    'reasonCode',
+    'nonce',
+    'signedAt',
+    'expiresAt',
+  ],
+  properties: {
+    v: { type: 'integer', minimum: 1, maximum: 1 },
+    purpose: enumOf(['attestation-retraction']),
+    audience,
+    issuer: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['principalId', 'keyId'],
+      properties: { principalId: uuid, keyId: uuid },
+    },
+    subject: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['type', 'id', 'hash'],
+      properties: { type: enumOf(['ATTESTATION']), id: uuid, hash: hashRef },
+    },
+    reasonCode: enumOf(Object.values(RetractionReason)),
+    nonce,
+    signedAt: timestamp,
+    expiresAt: timestamp,
+  },
+});
+
+/** Proof-of-possession statement for registering a public key (signed by the NEW key). */
+export const keyRegistrationStatementV1 = root('br:key-registration-statement', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['v', 'purpose', 'audience', 'principalId', 'key', 'nonce', 'signedAt', 'expiresAt'],
+  properties: {
+    v: { type: 'integer', minimum: 1, maximum: 1 },
+    purpose: enumOf(['key-registration']),
+    audience,
+    principalId: uuid,
+    key: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['keyId', 'keyKind', 'algorithm', 'verificationMaterialHash'],
+      properties: {
+        keyId: uuid,
+        keyKind: enumOf(['JWK']),
+        algorithm: enumOf(['EdDSA', 'ES256']),
+        verificationMaterialHash: hashRef,
+        effectiveTo: timestamp,
+      },
+    },
+    nonce,
+    signedAt: timestamp,
+    expiresAt: timestamp,
+  },
+});
+
+/** Ledger fact of an accepted attestation (payload hash of the ATTESTATION stream entry). */
+export const attestationFactV1 = root('br:attestation-fact', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'attestationId',
+    'statementHash',
+    'keyId',
+    'proofType',
+    'proofScheme',
+    'proofDigest',
+    'challengeId',
+  ],
+  properties: {
+    attestationId: uuid,
+    statementHash: hashRef,
+    keyId: uuid,
+    proofType: enumOf(Object.values(ProofType)),
+    proofScheme: enumOf(Object.values(ProofScheme)),
+    proofDigest: hashRef,
+    challengeId: uuid,
+  },
+});
+
+export const attestationRetractionFactV1 = root('br:attestation-retraction-fact', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'retractionId',
+    'attestationId',
+    'statementHash',
+    'keyId',
+    'proofDigest',
+    'challengeId',
+  ],
+  properties: {
+    retractionId: uuid,
+    attestationId: uuid,
+    statementHash: hashRef,
+    keyId: uuid,
+    proofDigest: hashRef,
+    challengeId: uuid,
+  },
+});
+
+/** Append-only evidence lifecycle facts (availability, privacy raise, attachment). */
+export const evidenceLifecycleFactV1 = root('br:evidence-lifecycle-fact', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['factId', 'evidenceId', 'kind'],
+  properties: {
+    factId: uuid,
+    evidenceId: uuid,
+    kind: enumOf(['AVAILABILITY', 'PRIVACY', 'ATTACHMENT']),
+    fromStatus: enumOf(Object.values(EvidenceAvailability)),
+    toStatus: enumOf(Object.values(EvidenceAvailability)),
+    reasonCode: code('^[A-Z][A-Z0-9_]{0,39}$', 40),
+    fromClass: enumOf(Object.values(EvidencePrivacyClass)),
+    toClass: enumOf(Object.values(EvidencePrivacyClass)),
+    targetType: enumOf(Object.values(EvidenceAttachmentTarget)),
+    targetId: uuid,
+    role: enumOf(Object.values(EvidenceAttachmentRole)),
+  },
+});
+
+const bundleKey = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'keyId',
+    'principalId',
+    'factHash',
+    'verificationMaterialHash',
+    'keyKind',
+    'algorithm',
+    'effectiveFrom',
+  ],
+  properties: {
+    keyId: uuid,
+    principalId: uuid,
+    factHash: hashRef,
+    /** H("key-material", public JWK) — the material the proof must verify against (BRT-03). */
+    verificationMaterialHash: hashRef,
+    keyKind: enumOf(['WALLET', 'PASSKEY', 'JWK', 'DEVICE', 'KMS']),
+    algorithm: enumOf(['ES256', 'ES256K', 'EdDSA', 'RS256']),
+    effectiveFrom: timestamp,
+    effectiveTo: timestamp,
+    statusChanges: setOf(
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['statusChangeId', 'kind', 'effectiveFrom', 'recordedAt', 'factHash'],
+        properties: {
+          statusChangeId: uuid,
+          kind: enumOf(['ROTATED', 'REVOKED', 'COMPROMISED']),
+          effectiveFrom: timestamp,
+          recordedAt: timestamp,
+          factHash: hashRef,
+        },
+      },
+      { sortBy: ['/statusChangeId'], keyUnique: true },
+    ),
+  },
+} as const;
+
+/**
+ * Deterministic Evidence Bundle (BRT-06 → BRT-07 handoff) for one exact ResultVersion "as known at
+ * asOf" (transaction-time horizon). Contains facts and references only — NEVER a verdict, level,
+ * trust score or authority decision. `bundleHash` = H("evidence-bundle", this).
+ */
+export const evidenceBundleV1 = root('br:evidence-bundle', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['asOf', 'resultVersion', 'evidence', 'attestations', 'keys', 'lineage'],
+  properties: {
+    asOf: timestamp,
+    resultVersion: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'resultVersionId',
+        'resultId',
+        'versionNumber',
+        'contentHash',
+        'contentSchema',
+        'scope',
+      ],
+      properties: {
+        resultVersionId: uuid,
+        resultId: uuid,
+        versionNumber: { type: 'integer', minimum: 1 },
+        contentHash: hashRef,
+        contentSchema: shortText,
+        scope: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['scopeType', 'scopeTargetId'],
+          properties: {
+            scopeType: enumOf(Object.values(ResultScopeType)),
+            scopeTargetId: uuid,
+            competitionId: uuid,
+            eventId: uuid,
+            roundId: uuid,
+            contestId: uuid,
+            sport: code('^[a-z0-9]+(?:[-_][a-z0-9]+)*$', 64),
+            discipline: code('^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$', 128),
+            region: code('^[A-Z]{2}(?:-[A-Z0-9]{1,3})?$', 6),
+          },
+        },
+      },
+    },
+    evidence: setOf(
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'evidenceId',
+          'evidenceType',
+          'descriptorHash',
+          'contentHash',
+          'byteLength',
+          'mediaType',
+          'source',
+          'receivedAt',
+          'recordedAt',
+          'availability',
+          'privacyClass',
+          'inclusion',
+        ],
+        properties: {
+          evidenceId: uuid,
+          evidenceType,
+          descriptorHash: hashRef,
+          contentHash: hashRef,
+          byteLength,
+          mediaType,
+          source: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['kind', 'capturedAtAssurance'],
+            properties: {
+              kind: enumOf(Object.values(EvidenceSourceKind)),
+              principalId: uuid,
+              principalType: enumOf(['PLATFORM', 'ORGANIZATION', 'PERSON', 'SYSTEM']),
+              capturedAt: timestamp,
+              capturedAtAssurance: enumOf(Object.values(CapturedAtAssurance)),
+            },
+          },
+          derivation: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['generatorKind', 'systemId', 'version'],
+            properties: {
+              generatorKind: enumOf(Object.values(GeneratorKind)),
+              systemId,
+              version: systemVersion,
+              configurationHash: hashRef,
+            },
+          },
+          receivedAt: timestamp,
+          recordedAt: timestamp,
+          availability: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['status', 'since'],
+            properties: { status: enumOf(Object.values(EvidenceAvailability)), since: timestamp },
+          },
+          privacyClass: enumOf(Object.values(EvidencePrivacyClass)),
+          inclusion: setOf(enumOf(['ATTACHED', 'CITED', 'LINEAGE']), { minItems: 1 }),
+          attachments: setOf(
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['attachmentId', 'targetType', 'targetId', 'role', 'recordedAt'],
+              properties: {
+                attachmentId: uuid,
+                targetType: enumOf(Object.values(EvidenceAttachmentTarget)),
+                targetId: uuid,
+                role: enumOf(Object.values(EvidenceAttachmentRole)),
+                recordedAt: timestamp,
+              },
+            },
+            { sortBy: ['/attachmentId'], keyUnique: true },
+          ),
+        },
+      },
+      { sortBy: ['/evidenceId'], keyUnique: true },
+    ),
+    attestations: setOf(
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'attestationId',
+          'statementHash',
+          'issuer',
+          'claim',
+          'subjectHash',
+          'proof',
+          'signedAt',
+          'expiresAt',
+          'issuedAt',
+          'recordedAt',
+        ],
+        properties: {
+          attestationId: uuid,
+          statementHash: hashRef,
+          issuer: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['principalId', 'principalType', 'keyId'],
+            properties: {
+              principalId: uuid,
+              principalType: enumOf(['PLATFORM', 'ORGANIZATION', 'PERSON', 'SYSTEM']),
+              keyId: uuid,
+            },
+          },
+          claim: attestationStatementV1.properties.claim as BrRootSchema['properties'][string],
+          subjectHash: hashRef,
+          authorityContext: attestationStatementV1.properties
+            .authorityContext as BrRootSchema['properties'][string],
+          proof: {
+            type: 'object',
+            additionalProperties: false,
+            required: [
+              'proofType',
+              'proofScheme',
+              'algorithm',
+              'assurance',
+              'verifierId',
+              'proofHash',
+            ],
+            properties: {
+              proofType: enumOf(Object.values(ProofType)),
+              proofScheme: enumOf(Object.values(ProofScheme)),
+              algorithm: enumOf(['EdDSA', 'ES256']),
+              assurance: enumOf(Object.values(SignatureAssurance)),
+              /** The production verifier that accepted the proof at issuedAt. */
+              verifierId: enumOf(['jws-detached/v1']),
+              /** SHA-256 of the exact stored detached JWS (RFC 7515 App. F: protected..signature). */
+              proofHash: hashRef,
+            },
+          },
+          signedAt: timestamp,
+          expiresAt: timestamp,
+          issuedAt: timestamp,
+          recordedAt: timestamp,
+          evidenceRefs: setOf(evidenceRef, { sortBy: ['/evidenceId'], keyUnique: true }),
+          supersedesAttestationId: uuid,
+          supersededBy: setOf(uuid),
+          retraction: {
+            type: 'object',
+            additionalProperties: false,
+            required: [
+              'retractionId',
+              'statementHash',
+              'keyId',
+              'proofHash',
+              'reasonCode',
+              'issuedAt',
+              'recordedAt',
+            ],
+            properties: {
+              retractionId: uuid,
+              statementHash: hashRef,
+              keyId: uuid,
+              proofHash: hashRef,
+              reasonCode: enumOf(Object.values(RetractionReason)),
+              issuedAt: timestamp,
+              recordedAt: timestamp,
+            },
+          },
+        },
+      },
+      { sortBy: ['/attestationId'], keyUnique: true },
+    ),
+    keys: setOf(bundleKey, { sortBy: ['/keyId'], keyUnique: true }),
+    lineage: setOf(
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['evidenceId', 'relation', 'relatedEvidenceId', 'relatedDescriptorHash'],
+        properties: {
+          evidenceId: uuid,
+          relation: enumOf(Object.values(EvidenceRelationKind)),
+          relatedEvidenceId: uuid,
+          relatedDescriptorHash: hashRef,
+        },
+      },
+      { sortBy: ['/evidenceId', '/relation', '/relatedEvidenceId'], keyUnique: true },
+    ),
+  },
+});
+
+export const BRT06_SCHEMAS: readonly BrRootSchema[] = [
+  evidenceDescriptorV1,
+  attestationStatementV1,
+  attestationRetractionStatementV1,
+  keyRegistrationStatementV1,
+  attestationFactV1,
+  attestationRetractionFactV1,
+  evidenceLifecycleFactV1,
+  evidenceBundleV1,
 ];

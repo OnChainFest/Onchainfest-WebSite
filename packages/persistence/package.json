@@ -15,6 +15,7 @@
     "@br/canonical": "workspace:*",
     "@br/competition": "workspace:*",
     "@br/domain": "workspace:*",
+    "@br/evidence": "workspace:*",
     "@br/identity": "workspace:*",
     "@br/schemas": "workspace:*",
     "kysely": "0.29.6",

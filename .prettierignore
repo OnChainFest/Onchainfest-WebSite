@@ -5,3 +5,4 @@ dist
 coverage
 docs
 packages/canonical/test-vectors/*.vectors.json
+packages/evidence/test-vectors/

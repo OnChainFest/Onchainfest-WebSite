@@ -10,6 +10,7 @@ import type {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthAdapter } from './auth';
 import { registerCompetitionV1, type CompetitionV1Deps } from './v1-competition';
+import { registerEvidenceV1, type EvidenceV1Deps } from './v1-evidence';
 
 /**
  * Endpoint classification (BRT-04 §20). The edge enforces authentication (and the operator flag for
@@ -25,6 +26,11 @@ export type EndpointClass =
   | 'ORG_ADMIN'
   /** BRT-05: competition operational staff (application permissions decided in the store). */
   | 'COMP_STAFF'
+  /**
+   * BRT-06: an account that represents the issuer Principal (SELF for its own PERSON principal,
+   * OWNER/ADMIN for an ORGANIZATION principal) — an application permission, never authority.
+   */
+  | 'ISSUER_REPRESENTATIVE'
   | 'INTERNAL';
 
 export interface RouteInfo {
@@ -43,6 +49,8 @@ export interface V1Deps {
   readonly privateData?: PersonPrivateDataService;
   /** BRT-05 competition operations (registered when provided). */
   readonly competition?: CompetitionV1Deps;
+  /** BRT-06 evidence & attestation (registered when provided). */
+  readonly evidence?: EvidenceV1Deps;
 }
 
 /** Shared route-registration toolkit (same auth boundary, DTO strictness and classification). */
@@ -53,6 +61,7 @@ export interface V1Toolkit {
     classification: EndpointClass,
     schema: Record<string, unknown>,
     handler: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>,
+    options?: { readonly bodyLimit?: number },
   ) => void;
   readonly requireAuth: (request: FastifyRequest) => AuthContext;
   readonly operator: (request: FastifyRequest) => AuthContext;
@@ -82,16 +91,34 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   PRIVATE_DATA_UNAVAILABLE: 503,
   CAPACITY_REACHED: 409,
   INTERNAL_CAPABILITY_UNAVAILABLE: 503,
+  EVIDENCE_STORAGE_UNAVAILABLE: 503,
+  EVIDENCE_NOT_AVAILABLE: 409,
+  EVIDENCE_TOO_LARGE: 413,
+  EVIDENCE_TYPE_NOT_ALLOWED: 415,
+  ATTESTATION_CHALLENGE_EXPIRED: 422,
+  ATTESTATION_CHALLENGE_USED: 409,
+  ATTESTATION_PROOF_INVALID: 422,
+  ISSUER_NOT_CONTROLLED: 403,
+  KEY_NOT_VALID: 422,
 };
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */
 export function errorBody(err: DomainError): {
   status: number;
-  body: { error: { code: string; message: string } };
+  body: { error: { code: string; message: string; reason?: string } };
 } {
   const status = HTTP_STATUS[err.code] ?? 500;
   const message = err.message.replace(/^[A-Z_]+: /, '');
-  return { status, body: { error: { code: err.code, message } } };
+  // BRT-06: a fixed-vocabulary reason code (never input values) where it helps a signer.
+  const reason = err.details.reason ?? err.details.availability;
+  const withReason =
+    (err.code === 'KEY_NOT_VALID' || err.code === 'EVIDENCE_NOT_AVAILABLE') &&
+    typeof reason === 'string' &&
+    /^[A-Z][A-Z0-9_]{0,39}$/.test(reason);
+  return {
+    status,
+    body: { error: { code: err.code, message, ...(withReason ? { reason } : {}) } },
+  };
 }
 
 declare module 'fastify' {
@@ -183,12 +210,14 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     classification: EndpointClass,
     schema: Record<string, unknown>,
     handler: Handler,
+    options: { readonly bodyLimit?: number } = {},
   ) => {
     routes.push({ method, url, classification });
     app.route({
       method,
       url,
       schema,
+      ...(options.bodyLimit === undefined ? {} : { bodyLimit: options.bodyLimit }),
       config: { classification },
       // onRequest runs before body/params validation: unauthenticated callers learn nothing about DTOs.
       onRequest: async (request) => {
@@ -921,6 +950,8 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
 
   if (deps.competition !== undefined)
     registerCompetitionV1({ route, requireAuth, operator, key }, deps.competition);
+  if (deps.evidence !== undefined)
+    registerEvidenceV1({ route, requireAuth, operator, key }, deps.evidence);
 
   return routes;
 }

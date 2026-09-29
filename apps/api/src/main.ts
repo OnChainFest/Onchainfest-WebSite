@@ -4,6 +4,7 @@ import {
   eip155EoaPersonalSignVerifier,
   type PiiCipher,
 } from '@br/identity';
+import { developmentEvidenceBlobStore } from '@br/evidence';
 import { createDb, databaseUrls } from '@br/persistence';
 import { buildServer } from './server';
 
@@ -24,12 +25,20 @@ let piiCipher: PiiCipher | undefined;
 if (!production && (process.env.BR_VAULT_DEV_KEY ?? '') !== '')
   piiCipher = createDevelopmentPiiCipher();
 
+// BRT-06: evidence bytes need a blob store. No production object storage + KMS adapter exists yet,
+// so production evidence ingestion fails closed (503). Development uses the encrypted filesystem
+// store only when BR_EVIDENCE_DEV_DIR and BR_EVIDENCE_DEV_KEY are both set explicitly.
+const evidenceBlobStore = production ? undefined : developmentEvidenceBlobStore();
+const signatureAudience = process.env.BR_SIGNATURE_AUDIENCE;
+
 const devAuth = !production && process.env.BR_DEV_AUTH === '1';
 const app = buildServer({
   db,
   vaultDb,
   ...(operatorDb === undefined ? {} : { operatorDb }),
   ...(piiCipher === undefined ? {} : { piiCipher }),
+  ...(evidenceBlobStore === undefined ? {} : { evidenceBlobStore }),
+  ...(signatureAudience === undefined || signatureAudience === '' ? {} : { signatureAudience }),
   // The test wallet verifier (TEST_VERIFIED only) is available with development auth only.
   walletVerifiers: devAuth
     ? [eip155EoaPersonalSignVerifier, createTestWalletVerifier()]

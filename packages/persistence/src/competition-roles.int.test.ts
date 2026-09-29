@@ -332,6 +332,9 @@ describe('maintenance, probe, vault and owner', () => {
     expect(grants.map((g) => g.grantee).filter((g) => g !== 'br_owner')).toEqual([
       'br_authority',
       'br_competition',
+      // BRT-06: evidence attachment/bundle hierarchy and metadata-only card rebuilds (EXECUTE only).
+      'br_evidence',
+      'br_rebuild',
       'br_results',
     ]);
   });
