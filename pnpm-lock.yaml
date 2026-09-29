@@ -50,15 +50,24 @@ importers:
       '@br/authority':
         specifier: workspace:*
         version: link:../../packages/authority
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../../packages/canonical
       '@br/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@br/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
       '@br/identity':
         specifier: workspace:*
         version: link:../../packages/identity
       '@br/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../../packages/schemas
       fastify:
         specifier: 5.12.5
         version: 5.12.5
@@ -146,6 +155,18 @@ importers:
         specifier: workspace:*
         version: link:../testkit
 
+  packages/evidence:
+    dependencies:
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+
   packages/identity:
     dependencies:
       '@br/domain':
@@ -172,6 +193,9 @@ importers:
       '@br/domain':
         specifier: workspace:*
         version: link:../domain
+      '@br/evidence':
+        specifier: workspace:*
+        version: link:../evidence
       '@br/identity':
         specifier: workspace:*
         version: link:../identity
@@ -212,9 +236,15 @@ importers:
       '@br/domain':
         specifier: workspace:*
         version: link:../domain
+      '@br/evidence':
+        specifier: workspace:*
+        version: link:../evidence
       '@br/persistence':
         specifier: workspace:*
         version: link:../persistence
+      kysely:
+        specifier: 0.29.6
+        version: 0.29.6
 
 packages:
 

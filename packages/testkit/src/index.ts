@@ -14,7 +14,14 @@ import {
   type AuthorityStore,
   type IdentityStore,
   type CatalogStore,
+  type CompetitionHierarchyResolver,
+  type CompetitionStore,
   type OrganizationStore,
+  type PrincipalKeyCeremony,
+  type ResultLedger,
+  type StructureStore,
+  inTransaction,
+  ModuleRole,
   bootstrapDatabase,
   createDb,
   databaseUrls,
@@ -24,6 +31,8 @@ import {
   resetDatabase,
   type Db,
 } from '@br/persistence';
+import type { EphemeralSigner } from '@br/evidence';
+import { sql } from 'kysely';
 
 export const TEST_DATABASE = process.env.BR_TEST_DATABASE_NAME ?? 'bragging_rights_test';
 
@@ -437,4 +446,211 @@ export async function newAthlete(
     idempotencyKey: `ath-${slug}`,
   });
   return { accountId: acct.accountId, personId: acct.personId as string, athleteId, slug };
+}
+
+// ───────────── BRT-06 result fixtures (fictional data only) ─────────────
+
+/**
+ * Builds Competition → Event (tennis singles, single elimination, 2 entrants) → Contest, then a
+ * Result and an exact submitted ResultVersion through the BRT-05 competition-aware ResultLedger
+ * (`createCompetitionResultLedger`, never a bare ResultLedger). A fictional platform anchor grants
+ * a fictional referee SUBMIT_RESULT on the competition. Returns the ids; nothing is accepted,
+ * made official or verified.
+ */
+export async function newContestResult(deps: {
+  db: Db;
+  identity: IdentityStore;
+  orgs: OrganizationStore;
+  comps: CompetitionStore;
+  structure: StructureStore;
+  authority: AuthorityStore;
+  ledger: ResultLedger;
+  resolver: CompetitionHierarchyResolver;
+  catalog: TestCatalog;
+  organizer?: Awaited<ReturnType<typeof newOrganizer>>;
+}) {
+  const org = deps.organizer ?? (await newOrganizer(deps.identity, deps.orgs));
+  const k = () => `fx-${newId()}`;
+  const { competitionId } = await deps.comps.createCompetition({
+    actorAccountId: org.ownerAccountId,
+    organizerOrganizationId: org.organizationId,
+    slug: uniqueSlug('evc'),
+    profile: { name: 'Fictional Evidence Open', timezone: 'UTC' },
+    idempotencyKey: k(),
+  });
+  await deps.comps.publishCompetition({ actorAccountId: org.ownerAccountId, competitionId });
+  const { eventId } = await deps.comps.createEvent({
+    actorAccountId: org.ownerAccountId,
+    competitionId,
+    slug: uniqueSlug('eve'),
+    disciplineVersionId: deps.catalog.tennisSingles,
+    formatVersionId: deps.catalog.singleElimination,
+    settings: { name: 'Fictional Singles' },
+    idempotencyKey: k(),
+  });
+  await deps.comps.openRegistration({ actorAccountId: org.ownerAccountId, eventId });
+  const athletes = [];
+  for (let i = 0; i < 2; i++) {
+    const a = await newAthlete(deps.identity, 'evplayer', `Fictional Player ${i + 1}`);
+    athletes.push(a);
+    await deps.comps.register({
+      actorAccountId: a.accountId,
+      eventId,
+      athleteId: a.athleteId,
+      eligibilityDeclared: true,
+      idempotencyKey: k(),
+    });
+  }
+  await deps.comps.closeRegistration({ actorAccountId: org.ownerAccountId, eventId });
+  await deps.structure.lockField({
+    actorAccountId: org.ownerAccountId,
+    eventId,
+    idempotencyKey: k(),
+  });
+  await deps.structure.seedField({
+    actorAccountId: org.ownerAccountId,
+    eventId,
+    method: 'DETERMINISTIC_DRAW',
+    idempotencyKey: k(),
+  });
+  await deps.structure.generatePlan({
+    actorAccountId: org.ownerAccountId,
+    eventId,
+    idempotencyKey: k(),
+  });
+  const contest = await inTransaction(deps.db, ModuleRole.competition, async (ctx) => {
+    const { rows } = await sql<{ contest_id: string; participant_id: string }>`
+      SELECT c.id AS contest_id, t.participant_id FROM competition.contest c
+      JOIN competition.contestant t ON t.contest_id = c.id
+      WHERE c.event_id = ${eventId} AND t.participant_id IS NOT NULL ORDER BY c.sequence, t.slot`.execute(
+      ctx.trx,
+    );
+    const first = rows[0];
+    if (first === undefined) throw new Error('no contest generated');
+    return {
+      contestId: first.contest_id,
+      participantIds: rows
+        .filter((r) => r.contest_id === first.contest_id)
+        .map((r) => r.participant_id),
+    };
+  });
+
+  const platform = await deps.authority.registerPrincipal({
+    principalType: 'PLATFORM',
+    label: 'platform (evidence fixture)',
+  });
+  await deps.authority.recognizeTrustAnchor({
+    principalId: platform.id,
+    recognitionScope: { recognitionLevel: ['PLATFORM'] },
+    basisRef: 'fixture',
+    governanceDecisionRef: `fixture-${newId()}`,
+  });
+  const referee = await deps.authority.registerPrincipal({
+    principalType: 'PERSON',
+    label: 'fictional referee (fixture)',
+  });
+  await deps.authority.issueGrant({
+    actorPrincipalId: platform.id,
+    grantorPrincipalId: platform.id,
+    granteePrincipalId: referee.id,
+    capabilities: ['SUBMIT_RESULT'],
+    scope: { recognitionLevel: ['PLATFORM'], competition: [competitionId as Uuid] },
+    delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+  });
+  const result = await deps.ledger.createResult({
+    scopeType: 'CONTEST',
+    scopeTargetId: contest.contestId as Uuid,
+  });
+  const content = (winner: string, loser: string) => ({
+    entries: [
+      {
+        participantId: winner,
+        outcome: 'WIN',
+        primaryMark: { metricId: 'tennis.match.sets', value: '2', unit: 'sets', precision: 0 },
+      },
+      {
+        participantId: loser,
+        outcome: 'LOSS',
+        primaryMark: { metricId: 'tennis.match.sets', value: '0', unit: 'sets', precision: 0 },
+      },
+    ],
+  });
+  const [p1, p2] = contest.participantIds;
+  if (p1 === undefined || p2 === undefined) throw new Error('contest has no participants');
+  const scope = {
+    ...(await deps.resolver.scopeOf('CONTEST', contest.contestId)),
+    recognitionLevel: ['PLATFORM'],
+  } as AuthorityScope;
+  const submit = async (winner: string, loser: string) => {
+    const { draftId } = await deps.ledger.saveDraft({
+      resultId: result.id,
+      authorPrincipalId: referee.id,
+      disciplineVersionRef: 'tennis.singles@1',
+      content: content(winner, loser),
+    });
+    return deps.ledger.submitDraft({
+      draftId,
+      actorPrincipalId: referee.id,
+      scope,
+      idempotencyKey: k(),
+    });
+  };
+  const v1 = await submit(p1, p2);
+  return {
+    organizer: org,
+    competitionId,
+    eventId,
+    contestId: contest.contestId,
+    participantIds: [p1, p2],
+    athletes,
+    refereePrincipalId: referee.id,
+    resultId: result.id,
+    resultVersionId: v1.resultVersionId,
+    contentHash: v1.contentHash,
+    /** Submits another (different) version of the same Result — e.g. a correction. */
+    submitNextVersion: () => submit(p2, p1),
+  };
+}
+
+/** Registers a PUBLIC key through the proof-of-possession ceremony, signing with `signer`. */
+export async function registerSigningKey(
+  ceremony: PrincipalKeyCeremony,
+  actorAccountId: string,
+  principalId: string,
+  signer: EphemeralSigner,
+): Promise<string> {
+  const prepared = await ceremony.prepareKeyRegistration({
+    actorAccountId,
+    idempotencyKey: `kp-${newId()}`,
+    principalId,
+    algorithm: signer.algorithm,
+    publicJwk: signer.publicJwk,
+  });
+  const { keyId } = await ceremony.submitKeyRegistration({
+    actorAccountId,
+    idempotencyKey: `ks-${newId()}`,
+    principalId,
+    challengeId: prepared.challengeId,
+    proof: {
+      proofType: 'DIRECT_SIGNATURE',
+      scheme: 'JWS_DETACHED',
+      ...signer.signJws(prepared.signing.kid, prepared.statementHash),
+    },
+  });
+  return keyId;
+}
+
+/** Signs a prepared statement exactly as an external signer would (in memory only). */
+export function signPrepared(
+  signer: EphemeralSigner,
+  prepared: { challengeId: string; statementHash: string; signing: { kid: string } },
+) {
+  return {
+    challengeId: prepared.challengeId,
+    proof: {
+      proofType: 'DIRECT_SIGNATURE',
+      scheme: 'JWS_DETACHED',
+      ...signer.signJws(prepared.signing.kid, prepared.statementHash),
+    },
+  };
 }

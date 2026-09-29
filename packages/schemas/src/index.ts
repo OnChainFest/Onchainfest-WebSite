@@ -1,5 +1,5 @@
 import { createCanonicalizer, type Canonicalizer } from '@br/canonical';
-import { ALL_SCHEMAS } from './definitions';
+import { ALL_SCHEMAS, BRT06_SCHEMAS } from './definitions';
 
 export * from './definitions';
 export { authorityScope, recognitionScope, mark } from './primitives';
@@ -27,6 +27,15 @@ export const SchemaRef = {
   competitionSeeding: { id: 'br:competition-seeding', version: 1 },
   competitionPlanInput: { id: 'br:competition-plan-input', version: 1 },
   competitionPlan: { id: 'br:competition-plan', version: 1 },
+  // BRT-06
+  evidenceDescriptor: { id: 'br:evidence-descriptor', version: 1 },
+  attestationStatement: { id: 'br:attestation-statement', version: 1 },
+  attestationRetractionStatement: { id: 'br:attestation-retraction-statement', version: 1 },
+  keyRegistrationStatement: { id: 'br:key-registration-statement', version: 1 },
+  attestationFact: { id: 'br:attestation-fact', version: 1 },
+  attestationRetractionFact: { id: 'br:attestation-retraction-fact', version: 1 },
+  evidenceLifecycleFact: { id: 'br:evidence-lifecycle-fact', version: 1 },
+  evidenceBundle: { id: 'br:evidence-bundle', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */
@@ -40,12 +49,18 @@ export const DomainTag = {
   authorizationProof: 'authorization-proof',
   commandRequest: 'command-request',
   keyMaterial: 'key-material',
+  // BRT-06 (BRT-02 §3.2 registry: one tag per kind of object / signed purpose)
+  evidenceDescriptor: 'evidence-descriptor',
+  attestationStatement: 'attestation-statement',
+  attestationRetraction: 'attestation-retraction',
+  keyRegistration: 'key-registration',
+  evidenceBundle: 'evidence-bundle',
 } as const;
 
 let shared: Canonicalizer | undefined;
 
 /** Process-wide canonicalizer over the immutable platform schema set. */
 export function platformCanonicalizer(): Canonicalizer {
-  shared ??= createCanonicalizer(ALL_SCHEMAS);
+  shared ??= createCanonicalizer([...ALL_SCHEMAS, ...BRT06_SCHEMAS]);
   return shared;
 }

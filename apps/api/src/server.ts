@@ -4,7 +4,10 @@ import {
   type PiiCipher,
   type WalletProofVerifier,
 } from '@br/identity';
+import { unavailableEvidenceBlobStore, type EvidenceBlobStore } from '@br/evidence';
 import {
+  AttestationPublicReader,
+  AttestationStore,
   CatalogStore,
   CompetitionReader,
   CompetitionStore,
@@ -12,7 +15,11 @@ import {
   OrganizationReader,
   OrganizationStore,
   PassportReader,
+  EvidenceBundleService,
+  EvidenceStore,
+  PersonPrincipalService,
   PersonPrivateDataService,
+  PrincipalKeyCeremony,
   StructureStore,
   TeamStore,
   pendingMigrations,
@@ -38,6 +45,14 @@ export interface ApiOptions {
   readonly auth?: (identity: IdentityStore) => AuthAdapter;
   /** Defaults to the production EIP-191 verifier only. Test verifiers must be injected explicitly. */
   readonly walletVerifiers?: readonly WalletProofVerifier[];
+  /**
+   * BRT-06 evidence blob store. Defaults to the fail-closed placeholder: without a configured store
+   * (production has no object storage + KMS adapter yet) evidence ingestion and content reads answer
+   * 503 EVIDENCE_STORAGE_UNAVAILABLE, while metadata, attestations and bundles keep working.
+   */
+  readonly evidenceBlobStore?: EvidenceBlobStore;
+  /** Signature audience (environment binding) for signed statements, e.g. "bragging-rights:prod". */
+  readonly signatureAudience?: string;
   readonly logger?: boolean;
   /** Destination for the (redacted) logger; enables logging. Used by tests to inspect log output. */
   readonly logStream?: { write(line: string): void };
@@ -46,7 +61,8 @@ export interface ApiOptions {
 export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInfo[] };
 
 /**
- * BRT-04 API: health/readiness plus the /v1 identity, passport and organization endpoints.
+ * API: health/readiness plus the /v1 identity, passport, organization (BRT-04), catalog and
+ * competition (BRT-05), evidence and attestation (BRT-06) endpoints.
  * Logs never include request bodies or the Authorization header.
  */
 export function buildServer(options: ApiOptions): ApiServer {
@@ -80,6 +96,11 @@ export function buildServer(options: ApiOptions): ApiServer {
       ? new PersonPrivateDataService(options.vaultDb, options.piiCipher)
       : undefined;
   const auth = (options.auth ?? authFromEnvironment)(identity);
+  const audience =
+    options.signatureAudience ??
+    (process.env.NODE_ENV === 'production'
+      ? 'bragging-rights:prod'
+      : 'bragging-rights:development');
 
   app.setErrorHandler((err, request, reply) => {
     if (err instanceof DomainError) {
@@ -108,7 +129,7 @@ export function buildServer(options: ApiOptions): ApiServer {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'bragging-rights-api',
-    phase: 'BRT-05',
+    phase: 'BRT-06',
   }));
 
   app.get('/ready', async (_request, reply) => {
@@ -145,6 +166,16 @@ export function buildServer(options: ApiOptions): ApiServer {
       reader: new CompetitionReader(options.db),
     },
     ...(privateData === undefined ? {} : { privateData }),
+    evidence: {
+      evidence: new EvidenceStore(options.db, {
+        blobStore: options.evidenceBlobStore ?? unavailableEvidenceBlobStore,
+      }),
+      attestations: new AttestationStore(options.db, { audience }),
+      keys: new PrincipalKeyCeremony(options.db, { audience }),
+      persons: new PersonPrincipalService(options.db),
+      bundles: new EvidenceBundleService(options.db),
+      publicReader: new AttestationPublicReader(options.db),
+    },
   });
 
   return Object.assign(app, { v1Routes });

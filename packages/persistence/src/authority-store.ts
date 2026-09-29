@@ -381,124 +381,12 @@ export class AuthorityStore {
         ),
       );
     }
-    return inTransaction(this.db, ModuleRole.authority, async (ctx) => {
-      const effectiveFrom = input.effectiveFrom ?? ctx.txTime;
-      assertNotBackdated(effectiveFrom, ctx.txTime, 'a key');
-      const keyId = newId();
-      const hash = factHash(SchemaRef.principalKey, {
-        keyId,
-        principalId: input.principalId,
-        keyKind: input.keyKind,
-        algorithm: input.algorithm,
-        verificationMaterialHash: keyMaterialHash(input.verificationMaterial),
-        effectiveFrom: toCanonicalTimestamp(effectiveFrom),
-        ...optionalTimestamp('effectiveTo', input.effectiveTo),
-      });
-      await ctx.trx
-        .insertInto('authority.principal_key')
-        .values({
-          id: keyId,
-          principal_id: input.principalId,
-          key_kind: input.keyKind,
-          algorithm: input.algorithm,
-          verification_material: JSON.stringify(input.verificationMaterial),
-          effective_from: effectiveFrom,
-          effective_to: input.effectiveTo ?? null,
-          fact_hash: hash,
-          recorded_at: ctx.txTime,
-        })
-        .execute();
-      const stream = await openStream(ctx, keyId, StreamType.PRINCIPAL_KEY);
-      await stream.append({
-        eventType: 'PRINCIPAL_KEY_REGISTERED',
-        factTable: 'authority.principal_key',
-        factRowId: keyId,
-        payloadHash: hash,
-      });
-      await stream.close();
-      await emitEvent(ctx, {
-        eventType: 'PrincipalKeyRegistered',
-        aggregateType: 'PRINCIPAL_KEY',
-        aggregateId: keyId,
-        payload: { principalId: input.principalId, factHash: hash },
-      });
-      return { keyId, factHash: hash };
-    });
+    return inTransaction(this.db, ModuleRole.authority, (ctx) => insertPrincipalKey(ctx, input));
   }
 
   /** Rotation/revocation are prospective; compromise may be retroactive to `compromisedSince`. */
-  changeKeyStatus(
-    input:
-      | {
-          keyId: Uuid;
-          kind: 'ROTATED' | 'REVOKED';
-          effectiveFrom?: Instant;
-          reason: string;
-          declaredByPrincipalId?: Uuid;
-        }
-      | {
-          keyId: Uuid;
-          kind: 'COMPROMISED';
-          compromisedSince: Instant;
-          reason: string;
-          declaredByPrincipalId?: Uuid;
-        },
-  ): Promise<{ statusChangeId: Uuid }> {
-    return inTransaction(this.db, ModuleRole.authority, async (ctx) => {
-      const effectiveFrom =
-        input.kind === 'COMPROMISED' ? input.compromisedSince : (input.effectiveFrom ?? ctx.txTime);
-      if (input.kind === 'COMPROMISED') {
-        if (effectiveFrom.getTime() > ctx.txTime.getTime()) {
-          throw new DomainError(
-            DomainErrorCode.INVALID_INPUT,
-            'compromisedSince cannot be in the future',
-          );
-        }
-      } else {
-        assertNotBackdated(effectiveFrom, ctx.txTime, 'an ordinary key status change');
-      }
-      const id = newId();
-      const hash = factHash(SchemaRef.statusChange, {
-        subjectType: 'PRINCIPAL_KEY',
-        subjectId: input.keyId,
-        kind: input.kind,
-        effectiveFrom: toCanonicalTimestamp(effectiveFrom),
-        retroactive: input.kind === 'COMPROMISED',
-        reason: input.reason,
-        ...(input.declaredByPrincipalId === undefined
-          ? {}
-          : { declaredByPrincipalId: input.declaredByPrincipalId }),
-      });
-      await ctx.trx
-        .insertInto('authority.principal_key_status_change')
-        .values({
-          id,
-          key_id: input.keyId,
-          kind: input.kind,
-          effective_from: effectiveFrom,
-          compromised_since: input.kind === 'COMPROMISED' ? input.compromisedSince : null,
-          reason: input.reason,
-          declared_by_principal_id: input.declaredByPrincipalId ?? null,
-          fact_hash: hash,
-          recorded_at: ctx.txTime,
-        })
-        .execute();
-      const stream = await openStream(ctx, input.keyId, StreamType.PRINCIPAL_KEY);
-      await stream.append({
-        eventType: `PRINCIPAL_KEY_${input.kind}`,
-        factTable: 'authority.principal_key_status_change',
-        factRowId: id,
-        payloadHash: hash,
-      });
-      await stream.close();
-      await emitEvent(ctx, {
-        eventType: 'PrincipalKeyStatusChanged',
-        aggregateType: 'PRINCIPAL_KEY',
-        aggregateId: input.keyId,
-        payload: { kind: input.kind, factHash: hash },
-      });
-      return { statusChangeId: id };
-    });
+  changeKeyStatus(input: KeyStatusChangeInput): Promise<{ statusChangeId: Uuid }> {
+    return inTransaction(this.db, ModuleRole.authority, (ctx) => insertKeyStatusChange(ctx, input));
   }
 
   /**
@@ -883,6 +771,139 @@ export class AuthorityStore {
 }
 
 /** Normalizes a scope through the canonical grant schema (validation + set sorting). */
+export type KeyStatusChangeInput =
+  | {
+      keyId: Uuid;
+      kind: 'ROTATED' | 'REVOKED';
+      effectiveFrom?: Instant;
+      reason: string;
+      declaredByPrincipalId?: Uuid;
+    }
+  | {
+      keyId: Uuid;
+      kind: 'COMPROMISED';
+      compromisedSince: Instant;
+      reason: string;
+      declaredByPrincipalId?: Uuid;
+    };
+
+/**
+ * Inserts a PrincipalKey fact (+ PRINCIPAL_KEY ledger entry and outbox event) inside the caller's
+ * br_authority transaction. BRT-06: shared by the internal store and the proof-of-possession key
+ * registration ceremony. Only public material is ever stored.
+ */
+export async function insertPrincipalKey(
+  ctx: TxContext,
+  input: RegisterKeyInput & { readonly keyId?: Uuid },
+): Promise<{ keyId: Uuid; factHash: string }> {
+  const forbidden = Object.keys(input.verificationMaterial).filter((k) =>
+    FORBIDDEN_KEY_MATERIAL_MEMBERS.includes(k),
+  );
+  if (forbidden.length > 0)
+    throw new DomainError(DomainErrorCode.INVALID_INPUT, 'private key material is never stored');
+  const effectiveFrom = input.effectiveFrom ?? ctx.txTime;
+  assertNotBackdated(effectiveFrom, ctx.txTime, 'a key');
+  const keyId = input.keyId ?? newId();
+  const hash = factHash(SchemaRef.principalKey, {
+    keyId,
+    principalId: input.principalId,
+    keyKind: input.keyKind,
+    algorithm: input.algorithm,
+    verificationMaterialHash: keyMaterialHash(input.verificationMaterial),
+    effectiveFrom: toCanonicalTimestamp(effectiveFrom),
+    ...optionalTimestamp('effectiveTo', input.effectiveTo),
+  });
+  await ctx.trx
+    .insertInto('authority.principal_key')
+    .values({
+      id: keyId,
+      principal_id: input.principalId,
+      key_kind: input.keyKind,
+      algorithm: input.algorithm,
+      verification_material: JSON.stringify(input.verificationMaterial),
+      effective_from: effectiveFrom,
+      effective_to: input.effectiveTo ?? null,
+      fact_hash: hash,
+      recorded_at: ctx.txTime,
+    })
+    .execute();
+  const stream = await openStream(ctx, keyId, StreamType.PRINCIPAL_KEY);
+  await stream.append({
+    eventType: 'PRINCIPAL_KEY_REGISTERED',
+    factTable: 'authority.principal_key',
+    factRowId: keyId,
+    payloadHash: hash,
+  });
+  await stream.close();
+  await emitEvent(ctx, {
+    eventType: 'PrincipalKeyRegistered',
+    aggregateType: 'PRINCIPAL_KEY',
+    aggregateId: keyId,
+    payload: { principalId: input.principalId, factHash: hash },
+  });
+  return { keyId, factHash: hash };
+}
+
+/** Inserts a key status change (prospective rotation/revocation or retroactive compromise). */
+export async function insertKeyStatusChange(
+  ctx: TxContext,
+  input: KeyStatusChangeInput,
+): Promise<{ statusChangeId: Uuid }> {
+  const effectiveFrom =
+    input.kind === 'COMPROMISED' ? input.compromisedSince : (input.effectiveFrom ?? ctx.txTime);
+  if (input.kind === 'COMPROMISED') {
+    if (effectiveFrom.getTime() > ctx.txTime.getTime()) {
+      throw new DomainError(
+        DomainErrorCode.INVALID_INPUT,
+        'compromisedSince cannot be in the future',
+      );
+    }
+  } else {
+    assertNotBackdated(effectiveFrom, ctx.txTime, 'an ordinary key status change');
+  }
+  const id = newId();
+  const hash = factHash(SchemaRef.statusChange, {
+    subjectType: 'PRINCIPAL_KEY',
+    subjectId: input.keyId,
+    kind: input.kind,
+    effectiveFrom: toCanonicalTimestamp(effectiveFrom),
+    retroactive: input.kind === 'COMPROMISED',
+    reason: input.reason,
+    ...(input.declaredByPrincipalId === undefined
+      ? {}
+      : { declaredByPrincipalId: input.declaredByPrincipalId }),
+  });
+  await ctx.trx
+    .insertInto('authority.principal_key_status_change')
+    .values({
+      id,
+      key_id: input.keyId,
+      kind: input.kind,
+      effective_from: effectiveFrom,
+      compromised_since: input.kind === 'COMPROMISED' ? input.compromisedSince : null,
+      reason: input.reason,
+      declared_by_principal_id: input.declaredByPrincipalId ?? null,
+      fact_hash: hash,
+      recorded_at: ctx.txTime,
+    })
+    .execute();
+  const stream = await openStream(ctx, input.keyId, StreamType.PRINCIPAL_KEY);
+  await stream.append({
+    eventType: `PRINCIPAL_KEY_${input.kind}`,
+    factTable: 'authority.principal_key_status_change',
+    factRowId: id,
+    payloadHash: hash,
+  });
+  await stream.close();
+  await emitEvent(ctx, {
+    eventType: 'PrincipalKeyStatusChanged',
+    aggregateType: 'PRINCIPAL_KEY',
+    aggregateId: input.keyId,
+    payload: { kind: input.kind, factHash: hash },
+  });
+  return { statusChangeId: id };
+}
+
 export function normalizeScope(scope: AuthorityScope): AuthorityScope {
   const normalized = platformCanonicalizer().normalize(
     SchemaRef.authorityGrant.id,

@@ -53,6 +53,8 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_api', role: 'br_authority', inherit: false, set: true, admin: false },
       // BRT-05: competition operations.
       { member: 'br_api', role: 'br_competition', inherit: false, set: true, admin: false },
+      // BRT-06: evidence + attestation module.
+      { member: 'br_api', role: 'br_evidence', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_identity', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_organizations', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_public_read', inherit: false, set: true, admin: false },

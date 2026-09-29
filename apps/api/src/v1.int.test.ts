@@ -99,6 +99,8 @@ describe('endpoint classification and authentication boundary', () => {
         'ORG_MEMBER',
         'ORG_ADMIN',
         'COMP_STAFF',
+        // BRT-06: represents the issuer Principal (application permission, never authority).
+        'ISSUER_REPRESENTATIVE',
         'INTERNAL',
       ]).toContain(r.classification);
       if (r.classification === 'PUBLIC') expect(r.method).toBe('GET');
