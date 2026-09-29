@@ -6,15 +6,20 @@
 --
 --   br_owner        LOGIN  owns schemas/tables; runs migrations only. Not a member of anything,
 --                          and no runtime login is a member of it.
---   br_api          LOGIN NOINHERIT → SET br_authority, SET br_results
---                          (normal request processing)
+--   br_api          LOGIN NOINHERIT → SET br_authority, br_results, br_identity,
+--                                        br_organizations, br_public_read
+--                          (normal request processing; never the PII vault)
+--   br_api_vault    LOGIN NOINHERIT → SET br_identity_private
+--                          (BRT-04: the PII vault repository's own connection, nothing else)
 --   br_worker_app   LOGIN NOINHERIT → SET br_worker
 --                          (outbox consumption, job queue)
 --   br_maintenance  LOGIN NOINHERIT → SET br_rebuild
 --                          (projection rebuild; operator/maintenance jobs only)
 --   br_probe        LOGIN  development/test only: connected but unprivileged.
 --
---   br_authority, br_results, br_worker, br_rebuild   NOLOGIN module roles (table privileges).
+--   br_authority, br_results, br_worker, br_rebuild,
+--   br_identity, br_identity_private, br_organizations, br_public_read
+--                   NOLOGIN module roles (table privileges).
 --
 -- Memberships are granted WITH INHERIT FALSE, SET TRUE, ADMIN FALSE: a login holds no module
 -- privileges until a transaction runs SET LOCAL ROLE, can only switch to its own module roles,
@@ -23,12 +28,13 @@ DO $$
 DECLARE
   r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['br_owner', 'br_api', 'br_worker_app', 'br_maintenance', 'br_probe'] LOOP
+  FOREACH r IN ARRAY ARRAY['br_owner', 'br_api', 'br_api_vault', 'br_worker_app', 'br_maintenance', 'br_probe'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
     END IF;
   END LOOP;
-  FOREACH r IN ARRAY ARRAY['br_authority', 'br_results', 'br_worker', 'br_rebuild'] LOOP
+  FOREACH r IN ARRAY ARRAY['br_authority', 'br_results', 'br_worker', 'br_rebuild',
+                           'br_identity', 'br_identity_private', 'br_organizations', 'br_public_read'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
     END IF;
@@ -43,17 +49,20 @@ END
 $$;
 
 ALTER ROLE br_api NOINHERIT;
+ALTER ROLE br_api_vault NOINHERIT;
 ALTER ROLE br_worker_app NOINHERIT;
 ALTER ROLE br_maintenance NOINHERIT;
 ALTER ROLE br_probe NOINHERIT;
 
 -- Converge: remove any membership outside the intended graph.
-REVOKE br_worker, br_rebuild FROM br_api;
-REVOKE br_authority, br_results, br_rebuild FROM br_worker_app;
-REVOKE br_authority, br_results, br_worker FROM br_maintenance;
-REVOKE br_authority, br_results, br_worker, br_rebuild FROM br_probe, br_owner;
-REVOKE br_owner FROM br_api, br_worker_app, br_maintenance, br_probe;
+REVOKE br_worker, br_rebuild, br_identity_private FROM br_api;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_organizations, br_public_read FROM br_api_vault;
+REVOKE br_authority, br_results, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read FROM br_worker_app;
+REVOKE br_authority, br_results, br_worker, br_identity, br_identity_private, br_organizations, br_public_read FROM br_maintenance;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read FROM br_probe, br_owner;
+REVOKE br_owner FROM br_api, br_api_vault, br_worker_app, br_maintenance, br_probe;
 
-GRANT br_authority, br_results TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_authority, br_results, br_identity, br_organizations, br_public_read TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_identity_private TO br_api_vault WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_worker TO br_worker_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_rebuild TO br_maintenance WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;

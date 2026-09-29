@@ -37,6 +37,12 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Generate per-run development secrets (no repository-known keys)
+        run: |
+          VAULT_KEY=$(openssl rand -hex 32); AUTH_SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$VAULT_KEY"; echo "::add-mask::$AUTH_SECRET"
+          echo "BR_VAULT_DEV_KEY=$VAULT_KEY" >> "$GITHUB_ENV"
+          echo "BR_DEV_AUTH_SECRET=$AUTH_SECRET" >> "$GITHUB_ENV"
       - name: Format check
         run: pnpm format:check
       - name: Lint (incl. key-material guard)
@@ -53,7 +59,11 @@ jobs:
         run: pnpm db:migrate
       - name: Integration tests (PostgreSQL)
         run: pnpm test:integration
-      - name: Acceptance walkthrough
+      - name: Acceptance walkthrough (BRT-03 foundation)
         run: pnpm demo:foundation
+      - name: Acceptance walkthrough (BRT-04 identity, passport, organizations)
+        run: pnpm demo:identity
+      - name: Identity seed is idempotent (fictional data, run twice)
+        run: pnpm db:seed:identity && pnpm db:seed:identity
       - name: Web build
         run: pnpm --filter @br/web build

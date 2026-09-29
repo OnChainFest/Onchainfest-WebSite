@@ -360,7 +360,25 @@ export const commandSchemas = [
   ]),
 ] as const;
 
+/**
+ * BRT-04 command fingerprint: identity/organization commands are fingerprinted as
+ * (command, actor, payloadDigest). `payloadDigest` is computed by the persistence layer over the
+ * command parameters (PII-bearing parameters contribute only a keyed HMAC fingerprint), so the
+ * idempotency table never stores raw parameters or plain hashes of PII.
+ */
+export const cmdIdentityV1 = root('br:cmd-identity', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['command', 'actorAccountId', 'payloadDigest'],
+  properties: {
+    command: shortText,
+    actorAccountId: uuid,
+    payloadDigest: hashRef,
+  },
+});
+
 export const ALL_SCHEMAS: readonly BrRootSchema[] = [
+  cmdIdentityV1,
   resultVersionContentV1,
   authorityGrantV1,
   trustAnchorV1,

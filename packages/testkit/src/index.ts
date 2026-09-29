@@ -11,6 +11,7 @@ import {
 } from '@br/domain';
 import {
   type AuthorityStore,
+  type IdentityStore,
   bootstrapDatabase,
   createDb,
   databaseUrls,
@@ -33,9 +34,14 @@ export async function prepareIntegrationDatabase(): Promise<void> {
   await migrate(testUrls().owner);
 }
 
-/** Login br_api: may assume br_authority and br_results. */
+/** Login br_api: may assume br_authority, br_results, br_identity, br_organizations, br_public_read. */
 export function apiDb(): Db {
   return createDb(testUrls().api);
+}
+
+/** Login br_api_vault: may assume br_identity_private only (PII vault). */
+export function vaultDb(): Db {
+  return createDb(testUrls().vault, { max: 4 });
 }
 
 /** Login br_worker_app: may assume br_worker only. */
@@ -216,4 +222,32 @@ export function facts(partial: Partial<AuthorityFacts>): AuthorityFacts {
     grantStatusChanges: [],
     ...partial,
   };
+}
+
+// ───────────── BRT-04 identity fixtures (fictional data only) ─────────────
+
+let subjectCounter = 0;
+
+/** Signs in a fresh test-provider subject; optionally creates its SELF person. */
+export async function newTestAccount(
+  identity: IdentityStore,
+  options: { withPerson?: boolean; label?: string } = {},
+): Promise<{ accountId: string; personId: string | null }> {
+  subjectCounter += 1;
+  const { accountId } = await identity.signIn({
+    provider: 'test',
+    providerSubject: `${options.label ?? 'user'}-${subjectCounter}-${newId()}`,
+    method: 'TEST',
+  });
+  if (options.withPerson === false) return { accountId, personId: null };
+  const { personId } = await identity.createPerson({
+    actorAccountId: accountId,
+    relation: 'SELF',
+    idempotencyKey: `self-${accountId}`,
+  });
+  return { accountId, personId };
+}
+
+export function uniqueSlug(prefix = 'athlete'): string {
+  return `${prefix}-${newId().replace(/-/g, '').slice(-12)}`;
 }

@@ -1,0 +1,18 @@
+{
+  "name": "@br/identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-04 identity domain: accounts, persons, athletes, organizations, permissions, passport DTO, wallet proof and PII cipher ports (pure; no database)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/domain": "workspace:*",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0"
+  }
+}

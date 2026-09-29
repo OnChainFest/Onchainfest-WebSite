@@ -47,6 +47,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@br/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
       '@br/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
@@ -121,6 +127,18 @@ importers:
         specifier: workspace:*
         version: link:../testkit
 
+  packages/identity:
+    dependencies:
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@noble/curves':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@noble/hashes':
+        specifier: 2.4.0
+        version: 2.4.0
+
   packages/persistence:
     dependencies:
       '@br/authority':
@@ -132,6 +150,9 @@ importers:
       '@br/domain':
         specifier: workspace:*
         version: link:../domain
+      '@br/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@br/schemas':
         specifier: workspace:*
         version: link:../schemas
@@ -649,6 +670,14 @@ packages:
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [win32]
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@oxc-project/types@0.151.0':
     resolution: {integrity: sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA==}
@@ -1991,6 +2020,12 @@ snapshots:
 
   '@next/swc-win32-x64-msvc@16.3.6':
     optional: true
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
+
+  '@noble/hashes@2.4.0': {}
 
   '@oxc-project/types@0.151.0': {}
 

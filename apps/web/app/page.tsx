@@ -17,6 +17,12 @@ export default async function Home() {
       <h1>Bragging Rights</h1>
       <p>Foundation build active.</p>
       <p>
+        Public pages: <code>/athletes/&lt;slug&gt;</code> (Athlete Passport) and{' '}
+        <code>/organizations/&lt;slug&gt;</code>. With the development seed loaded:{' '}
+        <a href="/athletes/ana-ficticia">ana-ficticia</a> ·{' '}
+        <a href="/organizations/club-ficticio-padel">club-ficticio-padel</a> (fictional data).
+      </p>
+      <p>
         <small>{health}</small>
       </p>
     </main>

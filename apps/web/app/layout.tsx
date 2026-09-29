@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 export const metadata = {
   title: 'Bragging Rights',
-  description: 'Foundation build',
+  description: 'Athlete passports and organizations (BRT-04 foundation)',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -6,7 +6,9 @@
  * One URL per login (BRT-03R role graph):
  *   admin        bootstrap only (roles, grants, database creation)
  *   owner        migrations only
- *   api          request processing: may SET ROLE br_authority | br_results
+ *   api          request processing: may SET ROLE br_authority | br_results | br_identity |
+ *                br_organizations | br_public_read
+ *   vault        PII vault repository only: may SET ROLE br_identity_private
  *   worker       background processing: may SET ROLE br_worker
  *   maintenance  projection rebuilds: may SET ROLE br_rebuild
  *   probe        development/test only: unprivileged
@@ -15,12 +17,14 @@ export interface DatabaseUrls {
   readonly admin: string;
   readonly owner: string;
   readonly api: string;
+  readonly vault: string;
   readonly worker: string;
   readonly maintenance: string;
   readonly probe: string;
 }
 
-export type LoginRole = 'br_owner' | 'br_api' | 'br_worker_app' | 'br_maintenance' | 'br_probe';
+export type LoginRole =
+  'br_owner' | 'br_api' | 'br_api_vault' | 'br_worker_app' | 'br_maintenance' | 'br_probe';
 
 const DEV_HOST = 'localhost:55432';
 
@@ -42,6 +46,7 @@ export function databaseUrls(database?: string): DatabaseUrls {
     admin: pick('BR_ADMIN_DATABASE_URL', devUrl('br_admin', 'br_admin_dev_only', db)),
     owner: pick('BR_OWNER_DATABASE_URL', devUrl('br_owner', 'br_owner_dev_only', db)),
     api: pick('BR_API_DATABASE_URL', devUrl('br_api', 'br_api_dev_only', db)),
+    vault: pick('BR_VAULT_DATABASE_URL', devUrl('br_api_vault', 'br_api_vault_dev_only', db)),
     worker: pick('BR_WORKER_DATABASE_URL', devUrl('br_worker_app', 'br_worker_app_dev_only', db)),
     maintenance: pick(
       'BR_MAINTENANCE_DATABASE_URL',
@@ -64,6 +69,7 @@ export function devRolePasswords(): Record<LoginRole, string> {
   return {
     br_owner: process.env.BR_OWNER_PASSWORD ?? 'br_owner_dev_only',
     br_api: process.env.BR_API_PASSWORD ?? 'br_api_dev_only',
+    br_api_vault: process.env.BR_VAULT_PASSWORD ?? 'br_api_vault_dev_only',
     br_worker_app: process.env.BR_WORKER_PASSWORD ?? 'br_worker_app_dev_only',
     br_maintenance: process.env.BR_MAINTENANCE_PASSWORD ?? 'br_maintenance_dev_only',
     br_probe: process.env.BR_PROBE_PASSWORD ?? 'br_probe_dev_only',
