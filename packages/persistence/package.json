@@ -14,6 +14,7 @@
     "@br/authority": "workspace:*",
     "@br/canonical": "workspace:*",
     "@br/domain": "workspace:*",
+    "@br/identity": "workspace:*",
     "@br/schemas": "workspace:*",
     "kysely": "0.29.6",
     "pg": "8.23.0"

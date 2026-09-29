@@ -3,13 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "API scaffold (BRT-03: health/readiness only; no trust-domain mutation endpoints yet)",
+  "description": "API (BRT-04): health/readiness and /v1 identity, athlete passport and organization endpoints",
   "scripts": {
     "dev": "tsx src/main.ts",
     "start": "tsx src/main.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "dev-token": "tsx src/dev-token.ts"
   },
   "dependencies": {
+    "@br/domain": "workspace:*",
+    "@br/identity": "workspace:*",
     "@br/persistence": "workspace:*",
     "fastify": "5.12.5",
     "kysely": "0.29.6"

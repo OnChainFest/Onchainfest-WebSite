@@ -51,7 +51,18 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       ORDER BY 1, 2`.execute(owner);
     expect(rows.filter((r) => r.member !== 'br_runtime')).toEqual([
       { member: 'br_api', role: 'br_authority', inherit: false, set: true, admin: false },
+      { member: 'br_api', role: 'br_identity', inherit: false, set: true, admin: false },
+      { member: 'br_api', role: 'br_organizations', inherit: false, set: true, admin: false },
+      { member: 'br_api', role: 'br_public_read', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_results', inherit: false, set: true, admin: false },
+      // BRT-04: the PII vault is reachable only through its own login.
+      {
+        member: 'br_api_vault',
+        role: 'br_identity_private',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
       { member: 'br_maintenance', role: 'br_rebuild', inherit: false, set: true, admin: false },
       { member: 'br_worker_app', role: 'br_worker', inherit: false, set: true, admin: false },
     ]);

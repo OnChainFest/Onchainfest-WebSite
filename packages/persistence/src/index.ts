@@ -11,3 +11,8 @@ export * from './projections';
 export * from './worker-queue';
 export { migrate, listMigrations, pendingMigrations, MIGRATIONS_DIR } from './migrate';
 export { bootstrapDatabase, resetDatabase } from './bootstrap';
+export * from './identity-support';
+export * from './identity-store';
+export * from './vault-store';
+export * from './organization-store';
+export * from './passport-store';

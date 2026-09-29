@@ -13,6 +13,27 @@ export const DomainEventType = {
   TrustAnchorChanged: 'TrustAnchorChanged',
   AuthorityGrantIssued: 'AuthorityGrantIssued',
   AuthorityGrantRevoked: 'AuthorityGrantRevoked',
+  // BRT-04 identity / organizations (payloads: ids and public-safe statuses only — never PII)
+  AccountCreated: 'AccountCreated',
+  AccountDisabled: 'AccountDisabled',
+  PersonCreated: 'PersonCreated',
+  AthleteCreated: 'AthleteCreated',
+  AthleteProfileUpdated: 'AthleteProfileUpdated',
+  AthleteSlugChanged: 'AthleteSlugChanged',
+  OrganizationCreated: 'OrganizationCreated',
+  OrganizationProfileUpdated: 'OrganizationProfileUpdated',
+  MembershipInvited: 'MembershipInvited',
+  MembershipActivated: 'MembershipActivated',
+  MembershipDeclined: 'MembershipDeclined',
+  MembershipEnded: 'MembershipEnded',
+  GuardianRelationshipAsserted: 'GuardianRelationshipAsserted',
+  GuardianRelationshipActivated: 'GuardianRelationshipActivated',
+  GuardianRelationshipRevoked: 'GuardianRelationshipRevoked',
+  WalletLinkActivated: 'WalletLinkActivated',
+  WalletLinkRevoked: 'WalletLinkRevoked',
+  ExternalIdentityLinked: 'ExternalIdentityLinked',
+  ExternalIdentityConfirmed: 'ExternalIdentityConfirmed',
+  ExternalIdentityRevoked: 'ExternalIdentityRevoked',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -23,6 +44,14 @@ export const AggregateType = {
   PRINCIPAL_KEY: 'PRINCIPAL_KEY',
   TRUST_ANCHOR: 'TRUST_ANCHOR',
   AUTHORITY_GRANT: 'AUTHORITY_GRANT',
+  ACCOUNT: 'ACCOUNT',
+  PERSON: 'PERSON',
+  ATHLETE: 'ATHLETE',
+  ORGANIZATION: 'ORGANIZATION',
+  MEMBERSHIP: 'MEMBERSHIP',
+  GUARDIAN_RELATIONSHIP: 'GUARDIAN_RELATIONSHIP',
+  WALLET_LINK: 'WALLET_LINK',
+  EXTERNAL_IDENTITY: 'EXTERNAL_IDENTITY',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 

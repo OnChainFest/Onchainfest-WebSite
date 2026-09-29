@@ -5,7 +5,8 @@ import type { Database, Db } from './db';
 /**
  * Module roles (BRT-02 data access model §2). Logins hold none of them implicitly (NOINHERIT,
  * INHERIT FALSE) and may SET only the module roles granted to them:
- *   br_api → br_authority, br_results · br_worker_app → br_worker · br_maintenance → br_rebuild
+ *   br_api → br_authority, br_results, br_identity, br_organizations, br_public_read
+ *   br_api_vault → br_identity_private · br_worker_app → br_worker · br_maintenance → br_rebuild
  * A transaction on a connection whose login is not a member of `role` fails at SET ROLE.
  */
 export const ModuleRole = {
@@ -13,6 +14,10 @@ export const ModuleRole = {
   results: 'br_results',
   worker: 'br_worker',
   rebuild: 'br_rebuild',
+  identity: 'br_identity',
+  identityPrivate: 'br_identity_private',
+  organizations: 'br_organizations',
+  publicRead: 'br_public_read',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 

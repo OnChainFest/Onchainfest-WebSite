@@ -49,7 +49,9 @@ export async function resetDatabase(adminUrl: string, database: string): Promise
   const client = new pg.Client({ connectionString: withDb(adminUrl, database) });
   await client.connect();
   try {
-    await client.query('DROP SCHEMA IF EXISTS results, authority, platform, br_migrations CASCADE');
+    await client.query(
+      'DROP SCHEMA IF EXISTS passport, organizations, identity_private, identity, results, authority, platform, br_migrations CASCADE',
+    );
   } finally {
     await client.end();
   }

@@ -22,6 +22,7 @@ export const SchemaRef = {
   cmdSubmitResultVersion: { id: 'br:cmd-submit-result-version', version: 1 },
   cmdTransitionResultVersion: { id: 'br:cmd-transition-result-version', version: 1 },
   cmdIssueGrant: { id: 'br:cmd-issue-grant', version: 1 },
+  cmdIdentity: { id: 'br:cmd-identity', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Minimal web placeholder (BRT-03). No product UI, no wallet, no auth.",
+  "description": "Minimal public web (BRT-04): athlete passport and organization pages. No sign-in UI yet.",
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",

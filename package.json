@@ -2,7 +2,7 @@
   "name": "bragging-rights",
   "version": "0.0.0",
   "private": true,
-  "description": "Bragging Rights \u2014 verified sports achievement infrastructure (BRT-03 technical kernel)",
+  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-04: identity, athlete passport, organizations)",
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "engines": {
@@ -25,7 +25,9 @@
     "db:migrate": "tsx packages/persistence/src/cli/migrate.ts",
     "db:reset": "tsx packages/persistence/src/cli/reset.ts",
     "db:seed": "tsx packages/persistence/src/cli/seed-dev.ts",
+    "db:seed:identity": "tsx packages/persistence/src/cli/seed-identity.ts",
     "demo:foundation": "tsx packages/persistence/src/cli/demo-foundation.ts",
+    "demo:identity": "tsx apps/api/src/cli/demo-identity.ts",
     "dev:api": "pnpm --filter @br/api dev",
     "dev:worker": "pnpm --filter @br/worker dev",
     "dev:web": "pnpm --filter @br/web dev"

@@ -24,3 +24,6 @@ The format is lightweight MADR: Context → Decision → Consequences → Altern
 | [0018](./ADR-0018-evidence-object-storage.md) | Private, content-addressed object storage for evidence | Proposed | BRT-02 |
 | [0019](./ADR-0019-blockchain-adapter-boundary.md) | Blockchain adapter boundary; no chain selected yet | Proposed | BRT-02 |
 | [0020](./ADR-0020-three-layer-authorization.md) | Three-layer authorization with a bitemporal domain authority engine | Proposed | BRT-02 |
+| [0021](./ADR-0021-account-person-control-and-person-keyed-membership.md) | Explicit Account→Person control; person-keyed memberships | Proposed | BRT-04 |
+| [0022](./ADR-0022-athlete-passport-read-model.md) | Athlete Passport as a rebuildable, provenance-labelled read model | Proposed | BRT-04 |
+| [0023](./ADR-0023-pii-vault-login-isolation.md) | PII vault behind a dedicated login and an envelope-encryption port | Proposed | BRT-04 |
