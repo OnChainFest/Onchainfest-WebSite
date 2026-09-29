@@ -51,6 +51,8 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       ORDER BY 1, 2`.execute(owner);
     expect(rows.filter((r) => r.member !== 'br_runtime')).toEqual([
       { member: 'br_api', role: 'br_authority', inherit: false, set: true, admin: false },
+      // BRT-05: competition operations.
+      { member: 'br_api', role: 'br_competition', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_identity', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_organizations', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_public_read', inherit: false, set: true, admin: false },
@@ -64,6 +66,8 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
         admin: false,
       },
       { member: 'br_maintenance', role: 'br_rebuild', inherit: false, set: true, admin: false },
+      // BRT-05R: catalog mutation has its own login; br_api can no longer reach br_catalog.
+      { member: 'br_operator_app', role: 'br_catalog', inherit: false, set: true, admin: false },
       { member: 'br_worker_app', role: 'br_worker', inherit: false, set: true, admin: false },
     ]);
   });

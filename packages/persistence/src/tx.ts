@@ -18,6 +18,8 @@ export const ModuleRole = {
   identityPrivate: 'br_identity_private',
   organizations: 'br_organizations',
   publicRead: 'br_public_read',
+  catalog: 'br_catalog',
+  competition: 'br_competition',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 

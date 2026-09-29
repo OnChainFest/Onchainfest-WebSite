@@ -1,3 +1,4 @@
+import type { DisciplineVersionSpec } from '@br/competition';
 import { staticParticipationChecker, type AuthorityFacts, type AnchorFact } from '@br/authority';
 import {
   newId,
@@ -12,9 +13,12 @@ import {
 import {
   type AuthorityStore,
   type IdentityStore,
+  type CatalogStore,
+  type OrganizationStore,
   bootstrapDatabase,
   createDb,
   databaseUrls,
+  operatorDatabaseUrl,
   devRolePasswords,
   migrate,
   resetDatabase,
@@ -42,6 +46,13 @@ export function apiDb(): Db {
 /** Login br_api_vault: may assume br_identity_private only (PII vault). */
 export function vaultDb(): Db {
   return createDb(testUrls().vault, { max: 4 });
+}
+
+/** BRT-05R: login br_operator_app — may assume br_catalog only (INTERNAL catalog mutation). */
+export function operatorDb(): Db {
+  const url = operatorDatabaseUrl(TEST_DATABASE);
+  if (url === undefined) throw new Error('no operator database URL');
+  return createDb(url, { max: 2 });
 }
 
 /** Login br_worker_app: may assume br_worker only. */
@@ -250,4 +261,180 @@ export async function newTestAccount(
 
 export function uniqueSlug(prefix = 'athlete'): string {
   return `${prefix}-${newId().replace(/-/g, '').slice(-12)}`;
+}
+
+// ───────────── BRT-05 competition fixtures (fictional data only) ─────────────
+
+export const PADEL_DOUBLES_SPEC: DisciplineVersionSpec = {
+  resultSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['setsWon', 'gamesWon'],
+    properties: {
+      setsWon: { type: 'integer', minimum: 0, maximum: 5 },
+      gamesWon: { type: 'integer', minimum: 0, maximum: 99 },
+    },
+  },
+  metrics: [
+    { key: 'setsWon', valueType: 'INTEGER', unit: 'sets' },
+    { key: 'gamesWon', valueType: 'INTEGER', unit: 'games' },
+  ],
+  comparator: {
+    outcomeModel: 'WIN_LOSS_DRAW',
+    primary: 'HEAD_TO_HEAD_WINNER',
+    keys: [
+      { metric: 'setsWon', order: 'HIGHER_IS_BETTER' },
+      { metric: 'gamesWon', order: 'HIGHER_IS_BETTER' },
+    ],
+  },
+  validation: { bounds: [{ metric: 'setsWon', min: '0', max: '3' }] },
+  allowedContestTypes: ['MATCH'],
+  participation: { participantKinds: ['TEAM'], lineupSize: { min: 2, max: 2 } },
+  evidenceExpectations: ['SIGNED_SCORESHEET'],
+};
+
+export const TENNIS_SINGLES_SPEC: DisciplineVersionSpec = {
+  ...PADEL_DOUBLES_SPEC,
+  participation: { participantKinds: ['INDIVIDUAL'], lineupSize: { min: 1, max: 1 } },
+};
+
+export const RUNNING_5K_SPEC: DisciplineVersionSpec = {
+  resultSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['elapsedTimeMs'],
+    properties: { elapsedTimeMs: { type: 'integer', minimum: 0 } },
+  },
+  metrics: [{ key: 'elapsedTimeMs', valueType: 'DURATION_MS', unit: 'ms' }],
+  comparator: {
+    outcomeModel: 'RANKED',
+    primary: 'METRICS',
+    keys: [{ metric: 'elapsedTimeMs', order: 'LOWER_IS_BETTER' }],
+  },
+  validation: { bounds: [{ metric: 'elapsedTimeMs', min: '600000' }] },
+  allowedContestTypes: ['HEAT'],
+  participation: { participantKinds: ['INDIVIDUAL'], lineupSize: { min: 1, max: 1 } },
+};
+
+export interface TestCatalog {
+  readonly operatorAccountId: string;
+  readonly padelDoubles: string;
+  readonly tennisSingles: string;
+  readonly running5k: string;
+  readonly singleElimination: string;
+  readonly roundRobin: string;
+}
+
+/** Creates and publishes a small fictional catalog with unique codes (safe to call repeatedly). */
+export async function seedTestCatalog(
+  identity: IdentityStore,
+  catalog: CatalogStore,
+): Promise<TestCatalog> {
+  const operator = await newTestAccount(identity, { withPerson: false, label: 'operator' });
+  const op = operator.accountId;
+  const tag = newId().replace(/-/g, '').slice(-8);
+  const k = () => `cat-${newId()}`;
+  const sport = async (code: string, name: string) =>
+    (
+      await catalog.createSport({
+        operatorAccountId: op,
+        code: `${code}${tag}`,
+        name,
+        idempotencyKey: k(),
+      })
+    ).sportId;
+  const version = async (
+    sportId: string,
+    sportCode: string,
+    code: string,
+    name: string,
+    spec: DisciplineVersionSpec,
+  ) => {
+    const { disciplineId } = await catalog.createDiscipline({
+      operatorAccountId: op,
+      sportId,
+      code: `${sportCode}${tag}.${code}`,
+      name,
+      idempotencyKey: k(),
+    });
+    const { disciplineVersionId } = await catalog.createDisciplineVersion({
+      operatorAccountId: op,
+      disciplineId,
+      spec,
+      idempotencyKey: k(),
+    });
+    await catalog.publishDisciplineVersion({ operatorAccountId: op, disciplineVersionId });
+    return disciplineVersionId;
+  };
+  const format = async (code: string, engineId: string) => {
+    const { formatTemplateId } = await catalog.createFormatTemplate({
+      operatorAccountId: op,
+      code: `${code}-${tag}`,
+      name: code,
+      idempotencyKey: k(),
+    });
+    const { formatVersionId } = await catalog.createFormatVersion({
+      operatorAccountId: op,
+      formatTemplateId,
+      engineId,
+      engineVersion: 1,
+      idempotencyKey: k(),
+    });
+    await catalog.publishFormatVersion({ operatorAccountId: op, formatVersionId });
+    return formatVersionId;
+  };
+  const padel = await sport('padel', 'Padel');
+  const tennis = await sport('tennis', 'Tennis');
+  const running = await sport('running', 'Running');
+  return {
+    operatorAccountId: op,
+    padelDoubles: await version(padel, 'padel', 'doubles', 'Padel doubles', PADEL_DOUBLES_SPEC),
+    tennisSingles: await version(
+      tennis,
+      'tennis',
+      'singles',
+      'Tennis singles',
+      TENNIS_SINGLES_SPEC,
+    ),
+    running5k: await version(running, 'running', '5k', 'Running 5K', RUNNING_5K_SPEC),
+    singleElimination: await format('single-elimination', 'single-elimination'),
+    roundRobin: await format('round-robin', 'round-robin'),
+  };
+}
+
+/** An organization with an OWNER account (SELF person) able to create competitions. */
+export async function newOrganizer(identity: IdentityStore, orgs: OrganizationStore) {
+  const owner = await newTestAccount(identity, { label: 'organizer' });
+  const slug = uniqueSlug('org');
+  const { organizationId } = await orgs.createOrganization({
+    actorAccountId: owner.accountId,
+    orgType: 'CLUB',
+    slug,
+    profile: { displayName: 'Fictional Organizer Club' },
+    idempotencyKey: `org-${slug}`,
+  });
+  return {
+    ownerAccountId: owner.accountId,
+    ownerPersonId: owner.personId as string,
+    organizationId,
+    slug,
+  };
+}
+
+/** A fresh account with SELF person and athlete; returns ids (fictional). */
+export async function newAthlete(
+  identity: IdentityStore,
+  label = 'athlete',
+  displayName = 'Fictional Athlete',
+) {
+  const acct = await newTestAccount(identity, { label });
+  const slug = uniqueSlug(label);
+  const { athleteId } = await identity.createAthlete({
+    actorAccountId: acct.accountId,
+    personId: acct.personId as string,
+    slug,
+    profile: { displayName },
+    idempotencyKey: `ath-${slug}`,
+  });
+  return { accountId: acct.accountId, personId: acct.personId as string, athleteId, slug };
 }

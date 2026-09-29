@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "API (BRT-04): health/readiness and /v1 identity, athlete passport and organization endpoints",
+  "description": "API (BRT-05): health/readiness and /v1 identity, passport, organization, sport catalog and competition endpoints",
   "scripts": {
     "dev": "tsx src/main.ts",
     "start": "tsx src/main.ts",
@@ -11,6 +11,7 @@
     "dev-token": "tsx src/dev-token.ts"
   },
   "dependencies": {
+    "@br/authority": "workspace:*",
     "@br/domain": "workspace:*",
     "@br/identity": "workspace:*",
     "@br/persistence": "workspace:*",

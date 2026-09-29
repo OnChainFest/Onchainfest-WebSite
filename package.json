@@ -2,7 +2,7 @@
   "name": "bragging-rights",
   "version": "0.0.0",
   "private": true,
-  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-04: identity, athlete passport, organizations)",
+  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-05: sport catalog, competition & event engine)",
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "type": "module",
   "scripts": {
-    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs",
+    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs && node tooling/check-result-ledger-composition.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
@@ -26,8 +26,10 @@
     "db:reset": "tsx packages/persistence/src/cli/reset.ts",
     "db:seed": "tsx packages/persistence/src/cli/seed-dev.ts",
     "db:seed:identity": "tsx packages/persistence/src/cli/seed-identity.ts",
+    "db:seed:competition": "tsx packages/persistence/src/cli/seed-competition.ts",
     "demo:foundation": "tsx packages/persistence/src/cli/demo-foundation.ts",
     "demo:identity": "tsx apps/api/src/cli/demo-identity.ts",
+    "demo:competition": "tsx apps/api/src/cli/demo-competition.ts",
     "dev:api": "pnpm --filter @br/api dev",
     "dev:worker": "pnpm --filter @br/worker dev",
     "dev:web": "pnpm --filter @br/web dev"

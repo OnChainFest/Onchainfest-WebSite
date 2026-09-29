@@ -89,6 +89,23 @@ function denied(decision: AuthorizationDecision): DomainError {
 }
 
 /**
+ * Optional scope-target validation (BRT-05). When configured, a Result's scope target must exist
+ * in the competition hierarchy, and every authority check on it must use exactly the target's
+ * resolved hierarchy path (a caller cannot claim a different competition/event to borrow a grant).
+ * Implemented by the competition context (`competitionResultScopeValidator`); the BRT-03 ledger
+ * without a validator keeps its previous behaviour.
+ */
+export interface ResultScopeValidator {
+  assertTarget(ctx: TxContext, scopeType: ResultScopeType, scopeTargetId: string): Promise<void>;
+  assertScope(
+    ctx: TxContext,
+    scopeType: ResultScopeType,
+    scopeTargetId: string,
+    scope: AuthorityScope,
+  ): Promise<void>;
+}
+
+/**
  * Result ledger (BRT-01 result domain §6–7; BRT-02 persistence §4.1, §5.4).
  * Every command runs in one transaction under the br_results role: ledger facts, class B
  * projections, outbox events and the idempotency record commit atomically.
@@ -96,15 +113,50 @@ function denied(decision: AuthorizationDecision): DomainError {
 export class ResultLedger {
   private readonly db: Db;
   private readonly conflictChecker: ConflictOfInterestChecker | undefined;
+  private readonly scopeValidator: ResultScopeValidator | undefined;
 
-  constructor(db: Db, options: { conflictChecker?: ConflictOfInterestChecker } = {}) {
+  /**
+   * `scopeValidator` is optional only for BRT-03 backward compatibility (tests/demos with bare
+   * scope targets). Application compositions exposing competition-scoped Result operations must
+   * use `createCompetitionResultLedger` (competition-hierarchy.ts), which always wires it; `pnpm
+   * lint` rejects a bare `new ResultLedger(` in application code.
+   */
+  constructor(
+    db: Db,
+    options: {
+      conflictChecker?: ConflictOfInterestChecker;
+      scopeValidator?: ResultScopeValidator;
+    } = {},
+  ) {
     this.db = db;
     this.conflictChecker = options.conflictChecker;
+    this.scopeValidator = options.scopeValidator;
+  }
+
+  private async assertResultScope(
+    ctx: TxContext,
+    resultId: string,
+    scope: AuthorityScope,
+  ): Promise<void> {
+    if (this.scopeValidator === undefined) return;
+    const r = await ctx.trx
+      .selectFrom('results.result')
+      .select(['scope_type', 'scope_target_id'])
+      .where('id', '=', resultId)
+      .executeTakeFirst();
+    if (r === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'result not found');
+    await this.scopeValidator.assertScope(
+      ctx,
+      r.scope_type as ResultScopeType,
+      r.scope_target_id,
+      scope,
+    );
   }
 
   /** Creates the stable Result identity for a scope target (idempotent per target). */
   createResult(input: { scopeType: ResultScopeType; scopeTargetId: Uuid }): Promise<Result> {
     return inTransaction(this.db, ModuleRole.results, async (ctx) => {
+      await this.scopeValidator?.assertTarget(ctx, input.scopeType, input.scopeTargetId);
       const existing = await ctx.trx
         .selectFrom('results.result')
         .selectAll()
@@ -245,6 +297,7 @@ export class ResultLedger {
       if (draft.submitted_version_id !== null) {
         throw new DomainError(DomainErrorCode.IMMUTABLE, 'draft was already submitted');
       }
+      await this.assertResultScope(ctx, draft.result_id, input.scope);
 
       const decision = await authorizeIn(
         ctx,
@@ -421,6 +474,7 @@ export class ResultLedger {
         .executeTakeFirst();
       if (version === undefined)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'result version not found');
+      await this.assertResultScope(ctx, version.result_id, input.scope);
 
       const decision = await authorizeIn(
         ctx,

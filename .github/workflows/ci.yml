@@ -49,7 +49,7 @@ jobs:
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Unit + property tests (incl. golden vectors)
+      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles)
         run: pnpm test
       - name: Golden vectors — reproduce + independent reference checker
         run: pnpm vectors:check
@@ -57,7 +57,7 @@ jobs:
         run: pnpm db:bootstrap
       - name: Migrate from a clean database
         run: pnpm db:migrate
-      - name: Integration tests (PostgreSQL)
+      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles)
         run: pnpm test:integration
       - name: Acceptance walkthrough (BRT-03 foundation)
         run: pnpm demo:foundation
@@ -65,5 +65,12 @@ jobs:
         run: pnpm demo:identity
       - name: Identity seed is idempotent (fictional data, run twice)
         run: pnpm db:seed:identity && pnpm db:seed:identity
+      - name: Acceptance walkthrough (BRT-05 sport catalog, competition & event engine)
+        run: pnpm demo:competition
+      - name: Competition seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:competition > seed-competition-1.json
+          pnpm -s db:seed:competition > seed-competition-2.json
+          cmp seed-competition-1.json seed-competition-2.json
       - name: Web build
         run: pnpm --filter @br/web build

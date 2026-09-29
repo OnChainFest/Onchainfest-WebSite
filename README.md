@@ -25,6 +25,11 @@ This repository contains **only the technical foundation**. There is no product 
 | Versioned BR-JSON schemas                                                                                                                                                                                                                          | `packages/schemas`            |
 | API scaffold (`/health`, `/ready`), worker skeleton (outbox + job claim), minimal web placeholder                                                                                                                                                  | `apps/`                       |
 
+### Later phases
+
+- **BRT-04:** identity, Athlete Passport and organizations. See [`docs/implementation/BRT-04-IDENTITY.md`](./docs/implementation/BRT-04-IDENTITY.md).
+- **BRT-05:** sport catalog and the competition & event operating layer: versioned disciplines and formats, competitions, events, registration with capacity/waitlist, teams, deterministic single-elimination and round-robin plans, scheduling, declared lineups, a hierarchy resolver for authority scopes, and public competition pages. It is operational only: no results are declared or verified. See [`docs/implementation/BRT-05-COMPETITION-ENGINE.md`](./docs/implementation/BRT-05-COMPETITION-ENGINE.md).
+
 ## Quick start
 
 Prerequisites: Node.js 22 LTS (24 also supported), pnpm 10 (via Corepack), Docker, Python 3.

@@ -23,6 +23,10 @@ export const SchemaRef = {
   cmdTransitionResultVersion: { id: 'br:cmd-transition-result-version', version: 1 },
   cmdIssueGrant: { id: 'br:cmd-issue-grant', version: 1 },
   cmdIdentity: { id: 'br:cmd-identity', version: 1 },
+  competitionField: { id: 'br:competition-field', version: 1 },
+  competitionSeeding: { id: 'br:competition-seeding', version: 1 },
+  competitionPlanInput: { id: 'br:competition-plan-input', version: 1 },
+  competitionPlan: { id: 'br:competition-plan', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */

@@ -98,6 +98,7 @@ describe('endpoint classification and authentication boundary', () => {
         'GUARDIAN',
         'ORG_MEMBER',
         'ORG_ADMIN',
+        'COMP_STAFF',
         'INTERNAL',
       ]).toContain(r.classification);
       if (r.classification === 'PUBLIC') expect(r.method).toBe('GET');

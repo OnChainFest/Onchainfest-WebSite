@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@br/authority": "workspace:*",
+    "@br/competition": "workspace:*",
     "@br/domain": "workspace:*",
     "@br/persistence": "workspace:*"
   }

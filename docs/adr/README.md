@@ -27,3 +27,6 @@ The format is lightweight MADR: Context → Decision → Consequences → Altern
 | [0021](./ADR-0021-account-person-control-and-person-keyed-membership.md) | Explicit Account→Person control; person-keyed memberships | Proposed | BRT-04 |
 | [0022](./ADR-0022-athlete-passport-read-model.md) | Athlete Passport as a rebuildable, provenance-labelled read model | Proposed | BRT-04 |
 | [0023](./ADR-0023-pii-vault-login-isolation.md) | PII vault behind a dedicated login and an envelope-encryption port | Proposed | BRT-04 |
+| [0024](./ADR-0024-deterministic-format-engines-and-immutable-event-plans.md) | Deterministic, versioned format engines and immutable event plans | Proposed | BRT-05 |
+| [0025](./ADR-0025-explicit-competition-hierarchy-resolution.md) | Explicit competition hierarchy resolution for authority and results | Proposed | BRT-05 |
+| [0026](./ADR-0026-declared-lineups-are-operational.md) | Declared lineups are operational; the credited lineup stays in Result content | Proposed | BRT-05 |

@@ -14,6 +14,8 @@ export const OrgPermission = {
   ORG_REMOVE_MEMBER: 'ORG_REMOVE_MEMBER',
   ORG_MANAGE_ROLES: 'ORG_MANAGE_ROLES',
   ORG_CONFIRM_EXTERNAL_ID: 'ORG_CONFIRM_EXTERNAL_ID',
+  /** BRT-05: create and operate competitions organized by this organization (application-level only). */
+  ORG_MANAGE_COMPETITIONS: 'ORG_MANAGE_COMPETITIONS',
 } as const;
 export type OrgPermission = (typeof OrgPermission)[keyof typeof OrgPermission];
 
