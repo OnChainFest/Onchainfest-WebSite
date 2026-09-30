@@ -30,6 +30,8 @@ export type LoginRole =
   | 'br_api_vault'
   | 'br_operator_app'
   | 'br_verification_operator_app'
+  | 'br_achievement_operator_app'
+  | 'br_achievement_worker_app'
   | 'br_worker_app'
   | 'br_maintenance'
   | 'br_probe';
@@ -97,6 +99,37 @@ export function verificationOperatorDatabaseUrl(database?: string): string | und
   return devUrl('br_verification_operator_app', 'br_verification_operator_app_dev_only', db);
 }
 
+/**
+ * BRT-08 · AchievementRule operator login (`br_achievement_operator_app` → `br_achievement_rules`
+ * only): INTERNAL rule creation, versioning, publication and binding. Optional and never part of
+ * `databaseUrls()`: without it public reads and canonical derivation keep working and rule mutation
+ * fails closed (503). Production uses only an explicitly configured
+ * BR_ACHIEVEMENT_OPERATOR_DATABASE_URL; development/test tooling falls back to the local login. There
+ * is no fallback to the normal API connection (which cannot assume the rule role anyway).
+ */
+export function achievementOperatorDatabaseUrl(database?: string): string | undefined {
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const value = process.env.BR_ACHIEVEMENT_OPERATOR_DATABASE_URL;
+  if (value !== undefined && value !== '')
+    return database === undefined ? value : withDatabase(value, db);
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devUrl('br_achievement_operator_app', 'br_achievement_operator_app_dev_only', db);
+}
+
+/**
+ * BRT-08 · Achievement worker login (`br_achievement_worker_app` → `br_achievements`,
+ * `br_verification`): the worker's idempotent derivation reacting to canonical events. Optional:
+ * without it the worker consumes events as before and skips achievement reactions (logged).
+ */
+export function achievementWorkerDatabaseUrl(database?: string): string | undefined {
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const value = process.env.BR_ACHIEVEMENT_WORKER_DATABASE_URL;
+  if (value !== undefined && value !== '')
+    return database === undefined ? value : withDatabase(value, db);
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devUrl('br_achievement_worker_app', 'br_achievement_worker_app_dev_only', db);
+}
+
 export function withDatabase(url: string, database: string): string {
   const u = new URL(url);
   u.pathname = `/${database}`;
@@ -114,6 +147,10 @@ export function devRolePasswords(): Record<LoginRole, string> {
     br_operator_app: process.env.BR_OPERATOR_PASSWORD ?? 'br_operator_app_dev_only',
     br_verification_operator_app:
       process.env.BR_VERIFICATION_OPERATOR_PASSWORD ?? 'br_verification_operator_app_dev_only',
+    br_achievement_operator_app:
+      process.env.BR_ACHIEVEMENT_OPERATOR_PASSWORD ?? 'br_achievement_operator_app_dev_only',
+    br_achievement_worker_app:
+      process.env.BR_ACHIEVEMENT_WORKER_PASSWORD ?? 'br_achievement_worker_app_dev_only',
     br_worker_app: process.env.BR_WORKER_PASSWORD ?? 'br_worker_app_dev_only',
     br_maintenance: process.env.BR_MAINTENANCE_PASSWORD ?? 'br_maintenance_dev_only',
     br_probe: process.env.BR_PROBE_PASSWORD ?? 'br_probe_dev_only',

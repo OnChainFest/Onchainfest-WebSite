@@ -5,18 +5,24 @@
   "type": "module",
   "description": "Test helpers: integration database lifecycle, authority fixtures",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./achievements": "./src/achievements.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@br/achievements": "workspace:*",
     "@br/authority": "workspace:*",
     "@br/competition": "workspace:*",
     "@br/domain": "workspace:*",
     "@br/evidence": "workspace:*",
     "@br/persistence": "workspace:*",
     "@br/verification": "workspace:*",
-    "kysely": "0.29.6"
+    "kysely": "0.29.6",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
   }
 }

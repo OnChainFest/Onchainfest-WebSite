@@ -7,3 +7,4 @@ export * from './events';
 export * from './errors';
 export * from './evidence';
 export * from './verification';
+export * from './achievements';

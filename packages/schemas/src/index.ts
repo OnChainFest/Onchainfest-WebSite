@@ -1,9 +1,11 @@
 import { createCanonicalizer, type Canonicalizer } from '@br/canonical';
 import { ALL_SCHEMAS, BRT06_SCHEMAS } from './definitions';
 import { BRT07_SCHEMAS } from './verification';
+import { BRT08_SCHEMAS } from './achievements';
 
 export * from './definitions';
 export * from './verification';
+export * from './achievements';
 export { authorityScope, recognitionScope, mark } from './primitives';
 
 /** Schema ids as constants (id, version) so callers never hand-type them. */
@@ -44,6 +46,18 @@ export const SchemaRef = {
   verificationTrace: { id: 'br:verification-trace', version: 1 },
   verificationOutcome: { id: 'br:verification-outcome', version: 1 },
   verificationRunFact: { id: 'br:verification-run-fact', version: 1 },
+  // BRT-08
+  achievementRule: { id: 'br:achievement-rule', version: 1 },
+  achievementDerivationSnapshot: { id: 'br:achievement-derivation-snapshot', version: 1 },
+  achievementDerivationOutcome: { id: 'br:achievement-derivation-outcome', version: 1 },
+  achievementCandidate: { id: 'br:achievement-candidate', version: 1 },
+  achievementIdentity: { id: 'br:achievement-identity', version: 1 },
+  achievementSupportFacts: { id: 'br:achievement-support-facts', version: 1 },
+  achievementCreditedLineup: { id: 'br:achievement-credited-lineup', version: 1 },
+  achievementComparisonSet: { id: 'br:achievement-comparison-set', version: 1 },
+  achievementEvidenceCommitment: { id: 'br:achievement-evidence-commitment', version: 1 },
+  achievementFact: { id: 'br:achievement-fact', version: 1 },
+  achievementStatusFact: { id: 'br:achievement-status-fact', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */
@@ -68,12 +82,27 @@ export const DomainTag = {
   verificationSnapshot: 'verification-snapshot',
   verificationTrace: 'verification-trace',
   verificationOutcome: 'verification-outcome',
+  // BRT-08 (one tag per kind of achievement object)
+  achievementRule: 'achievement-rule',
+  achievementDerivationSnapshot: 'achievement-derivation-snapshot',
+  achievementDerivationOutcome: 'achievement-derivation-outcome',
+  achievementCandidate: 'achievement-candidate',
+  achievementIdentity: 'achievement-identity',
+  achievementSupport: 'achievement-support',
+  achievementLineup: 'achievement-credited-lineup',
+  achievementComparisonSet: 'achievement-comparison-set',
+  achievementEvidenceCommitment: 'achievement-evidence-commitment',
 } as const;
 
 let shared: Canonicalizer | undefined;
 
 /** Process-wide canonicalizer over the immutable platform schema set. */
 export function platformCanonicalizer(): Canonicalizer {
-  shared ??= createCanonicalizer([...ALL_SCHEMAS, ...BRT06_SCHEMAS, ...BRT07_SCHEMAS]);
+  shared ??= createCanonicalizer([
+    ...ALL_SCHEMAS,
+    ...BRT06_SCHEMAS,
+    ...BRT07_SCHEMAS,
+    ...BRT08_SCHEMAS,
+  ]);
   return shared;
 }

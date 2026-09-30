@@ -867,53 +867,9 @@ export class VerificationService {
     return unwrap(r);
   }
 
-  /**
-   * Current snapshot hash for freshness: assembled from real facts at this transaction's time. It
-   * is compared with the latest run's snapshot hash — never by timestamps.
-   */
-  private async currentSnapshotHash(
-    ctx: TxContext,
-    resultVersionId: string,
-    policy: ApplicablePolicy,
-  ): Promise<string> {
-    const rv = await resolveResultVersion(ctx, resultVersionId);
-    if (rv === undefined) throw notFound();
-    const raw = await loadRawVerificationFacts(ctx, rv, policy);
-    return assembleSnapshot(raw, ctx.txTime, 'CURRENT').snapshotHash;
-  }
-
   /** Freshness of the latest run of a result version under the CURRENTLY applicable policy. */
-  private async freshness(ctx: TxContext, resultVersionId: string) {
-    const rv = await resolveResultVersion(ctx, resultVersionId);
-    if (rv === undefined) throw notFound();
-    const path = await resultVersionPath(ctx, rv);
-    const dv = await disciplineVersionOf(ctx, path);
-    const resolution = await resolveApplicablePolicy(ctx, dv.disciplineVersionId, ctx.txTime);
-    const { rows } =
-      await sql<StoredRun>`${RUN_SELECT} WHERE r.result_version_id = ${resultVersionId}
-      ORDER BY r.recorded_at DESC, r.id DESC LIMIT 1`.execute(ctx.trx);
-    const latest = rows[0];
-    if (!resolution.ok)
-      return {
-        path,
-        latest,
-        resolution,
-        freshness: latest === undefined ? 'NOT_EVALUATED' : 'STALE',
-      } as const;
-    if (latest === undefined)
-      return { path, latest, resolution, freshness: 'NOT_EVALUATED' } as const;
-    if (
-      latest.policy_version_id !== resolution.policy.policyVersionId ||
-      latest.engine_version !== ENGINE_VERSION
-    )
-      return { path, latest, resolution, freshness: 'STALE' } as const;
-    const hash = await this.currentSnapshotHash(ctx, resultVersionId, resolution.policy);
-    return {
-      path,
-      latest,
-      resolution,
-      freshness: hash === latest.snapshot_hash ? 'CURRENT' : 'STALE',
-    } as const;
+  private freshness(ctx: TxContext, resultVersionId: string) {
+    return currentVerificationFreshness(ctx, resultVersionId);
   }
 
   /**
@@ -1156,6 +1112,46 @@ export class VerificationService {
       };
     });
   }
+}
+
+/**
+ * BRT-07 hash-based freshness of the latest run of an exact ResultVersion under the CURRENTLY
+ * applicable policy (CURRENT / STALE / NOT_EVALUATED), computed by re-assembling the current snapshot
+ * in the caller's transaction (which must run as br_verification). Exported for BRT-08, which needs
+ * "is this VerificationRun CURRENT?" before issuing an Achievement; behaviour is exactly the
+ * VerificationService's own freshness.
+ */
+export async function currentVerificationFreshness(ctx: TxContext, resultVersionId: string) {
+  const rv = await resolveResultVersion(ctx, resultVersionId);
+  if (rv === undefined) throw notFound();
+  const path = await resultVersionPath(ctx, rv);
+  const dv = await disciplineVersionOf(ctx, path);
+  const resolution = await resolveApplicablePolicy(ctx, dv.disciplineVersionId, ctx.txTime);
+  const { rows } = await sql<StoredRun>`${RUN_SELECT} WHERE r.result_version_id = ${resultVersionId}
+    ORDER BY r.recorded_at DESC, r.id DESC LIMIT 1`.execute(ctx.trx);
+  const latest = rows[0];
+  if (!resolution.ok)
+    return {
+      path,
+      latest,
+      resolution,
+      freshness: latest === undefined ? 'NOT_EVALUATED' : 'STALE',
+    } as const;
+  if (latest === undefined)
+    return { path, latest, resolution, freshness: 'NOT_EVALUATED' } as const;
+  if (
+    latest.policy_version_id !== resolution.policy.policyVersionId ||
+    latest.engine_version !== ENGINE_VERSION
+  )
+    return { path, latest, resolution, freshness: 'STALE' } as const;
+  const raw = await loadRawVerificationFacts(ctx, rv, resolution.policy);
+  const hash = assembleSnapshot(raw, ctx.txTime, 'CURRENT').snapshotHash;
+  return {
+    path,
+    latest,
+    resolution,
+    freshness: hash === latest.snapshot_hash ? 'CURRENT' : 'STALE',
+  } as const;
 }
 
 /** PUBLIC run summary (br_public_read): only visible competitions / events; never the trace. */

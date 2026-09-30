@@ -59,6 +59,35 @@ export interface PassportWallet {
   readonly provenance: Provenance;
 }
 
+/**
+ * BRT-08 Verified Achievements section item — PRESENTATION ONLY. Built from the canonical Achievement
+ * read model; the passport never derives Achievement truth. A TEAM Achievement reaches a credited
+ * athlete through its immutable memberCredits (`creditType: TEAM_MEMBER`): the athlete is shown the
+ * canonical TEAM Achievement, never an athlete copy, and is never presented as its holder.
+ */
+export interface PassportVerifiedAchievement {
+  readonly achievementId: string;
+  readonly type: string;
+  readonly typeLabel: string;
+  readonly displayName: string;
+  readonly creditType: 'HOLDER' | 'TEAM_MEMBER';
+  readonly holderType: 'ATHLETE' | 'TEAM';
+  readonly teamName?: string;
+  readonly sport?: string;
+  readonly discipline?: string;
+  readonly competitionName: string;
+  readonly eventName?: string;
+  readonly qualifyingValue?: string;
+  /** The verification level of the BASIS result at derivation — never "the achievement's level". */
+  readonly verificationLevelAtDerivation: string;
+  readonly derivedFrom: string;
+  readonly currentSupport: 'ACTIVE' | 'SUSPENDED' | 'SUPERSEDED' | 'REVOKED';
+  readonly currentlySupported: boolean;
+  readonly rule: { readonly code: string; readonly version: number };
+  readonly derivedAt: string;
+  readonly provenance: Provenance;
+}
+
 export interface AthletePassportV1 {
   readonly schema: typeof PASSPORT_SCHEMA;
   readonly athlete: {
@@ -73,8 +102,9 @@ export interface AthletePassportV1 {
   readonly affiliations: Section<PassportAffiliation>;
   readonly externalIdentities: Section<PassportExternalIdentity>;
   readonly wallets: Section<PassportWallet>;
-  /** Future sources (BRT-05+). Never fabricated. */
-  readonly verifiedAchievements: Section<never>;
+  /** BRT-08: canonical Achievement read model (derived recognitions; never fabricated). */
+  readonly verifiedAchievements: Section<PassportVerifiedAchievement>;
+  /** Future sources. Never fabricated. */
   readonly records: Section<never>;
   readonly competitionHistory: Section<never>;
   readonly careerStats: Section<never>;
@@ -114,6 +144,8 @@ export interface PassportSource {
     readonly address: string;
     readonly proofStatus: WalletProofStatus;
   }[];
+  /** BRT-08 Achievement read-model rows for this athlete (undefined ⇒ source unavailable). */
+  readonly achievements?: readonly Omit<PassportVerifiedAchievement, 'provenance'>[];
 }
 
 export interface Viewer {
@@ -218,7 +250,16 @@ export function assemblePassport(
           : [{ network: w.network, address: w.address, proofStatus: w.proofStatus, provenance }];
       }),
     },
-    verifiedAchievements: notImplemented,
+    verifiedAchievements:
+      source.achievements === undefined
+        ? notImplemented
+        : {
+            status: 'AVAILABLE',
+            items: source.achievements.map((a) => ({
+              ...a,
+              provenance: Provenance.SYSTEM_DERIVED,
+            })),
+          },
     records: notImplemented,
     competitionHistory: notImplemented,
     careerStats: notImplemented,

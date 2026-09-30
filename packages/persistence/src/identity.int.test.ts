@@ -147,7 +147,8 @@ describe('athletes, profiles and slugs', () => {
       value: 'Ana Ficticia',
       provenance: 'SELF_DECLARED',
     });
-    expect(p?.passport.verifiedAchievements.status).toBe('NOT_AVAILABLE');
+    // BRT-08: the section is backed by the canonical Achievement read model (none for a new athlete).
+    expect(p?.passport.verifiedAchievements).toEqual({ status: 'AVAILABLE', items: [] });
     await rejects(
       identity.createAthlete({
         actorAccountId: a.accountId,
@@ -261,11 +262,8 @@ describe('athletes, profiles and slugs', () => {
       value: 'Verified world champion 2026',
       provenance: 'SELF_DECLARED',
     });
-    expect(p?.verifiedAchievements).toEqual({
-      status: 'NOT_AVAILABLE',
-      reason: 'SOURCE_NOT_IMPLEMENTED',
-      items: [],
-    });
+    // A self-declared "world champion" bio never becomes an Achievement (BRT-08 read model: none).
+    expect(p?.verifiedAchievements).toEqual({ status: 'AVAILABLE', items: [] });
   });
 
   it('PRIVATE and AUTHENTICATED visibility are enforced on the public path', async () => {

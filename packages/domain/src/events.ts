@@ -97,6 +97,15 @@ export const DomainEventType = {
   VerificationPolicyBound: 'VerificationPolicyBound',
   VerificationEvaluated: 'VerificationEvaluated',
   CurrentVerificationChanged: 'CurrentVerificationChanged',
+  // BRT-08 achievements (ids, hashes, types, statuses only — never PII or evidence; never a record,
+  // ranking, prize, trophy or qualification outcome)
+  AchievementRuleCreated: 'AchievementRuleCreated',
+  AchievementRuleVersionCreated: 'AchievementRuleVersionCreated',
+  AchievementRuleVersionPublished: 'AchievementRuleVersionPublished',
+  AchievementRuleVersionRetired: 'AchievementRuleVersionRetired',
+  AchievementRuleBound: 'AchievementRuleBound',
+  AchievementDerived: 'AchievementDerived',
+  AchievementCurrentStateChanged: 'AchievementCurrentStateChanged',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -132,6 +141,9 @@ export const AggregateType = {
   VERIFICATION_POLICY: 'VERIFICATION_POLICY',
   VERIFICATION_POLICY_VERSION: 'VERIFICATION_POLICY_VERSION',
   VERIFICATION_RUN: 'VERIFICATION_RUN',
+  ACHIEVEMENT_RULE: 'ACHIEVEMENT_RULE',
+  ACHIEVEMENT_RULE_VERSION: 'ACHIEVEMENT_RULE_VERSION',
+  ACHIEVEMENT: 'ACHIEVEMENT',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 

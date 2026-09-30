@@ -47,6 +47,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@br/achievements':
+        specifier: workspace:*
+        version: link:../../packages/achievements
       '@br/authority':
         specifier: workspace:*
         version: link:../../packages/authority
@@ -106,6 +109,31 @@ importers:
       '@br/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+
+  packages/achievements:
+    dependencies:
+      '@br/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@br/competition':
+        specifier: workspace:*
+        version: link:../competition
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      '@br/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@br/verification':
+        specifier: workspace:*
+        version: link:../verification
 
   packages/authority:
     dependencies:
@@ -184,6 +212,9 @@ importers:
 
   packages/persistence:
     dependencies:
+      '@br/achievements':
+        specifier: workspace:*
+        version: link:../achievements
       '@br/authority':
         specifier: workspace:*
         version: link:../authority
@@ -233,6 +264,9 @@ importers:
 
   packages/testkit:
     dependencies:
+      '@br/achievements':
+        specifier: workspace:*
+        version: link:../achievements
       '@br/authority':
         specifier: workspace:*
         version: link:../authority
@@ -254,6 +288,13 @@ importers:
       kysely:
         specifier: 0.29.6
         version: 0.29.6
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/verification:
     dependencies:

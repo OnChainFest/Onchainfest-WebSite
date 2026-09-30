@@ -33,3 +33,26 @@ export * from './evidence-reader';
 export * from './verification-loader';
 export * from './verification-projection';
 export * from './verification-store';
+export * from './achievement-rule-store';
+export * from './achievement-projection';
+export {
+  ACHIEVEMENT_ASSEMBLER_VERSION,
+  applicableRules,
+  verificationSummary,
+  type ApplicableRule,
+} from './achievement-loader';
+// NOTE: the lane entry points `persistDerivation` / `recordSupportAssessment` are deliberately NOT
+// exported here; the test harness imports them from `@br/persistence/achievement-lanes`.
+export {
+  AchievementService,
+  AchievementPublicReader,
+  dependencyIndex,
+  liveCurrentSupport,
+  passportAchievements,
+  type DerivationReport,
+  type PassportAchievementItem,
+  type PersistedAchievement,
+  type PublicAchievementV1,
+  type PublicAthleteRef,
+  type ResultVersionDerivation,
+} from './achievement-store';

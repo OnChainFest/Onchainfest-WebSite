@@ -247,24 +247,33 @@ describe('§2 Person ↔ PERSON Principal structural invariant', () => {
 const INVENTORY = [
   {
     fn: 'results.resolve_result_version(uuid)',
-    grantees: ['br_evidence', 'br_rebuild', 'br_verification'],
+    // BRT-08: br_achievements resolves exact basis versions (EXECUTE only).
+    grantees: [
+      'br_achievements',
+      'br_evidence',
+      'br_rebuild',
+      'br_verification',
+      'br_verification_reader',
+    ],
     readOnly: true,
   },
   {
     fn: 'competition.resolve_scope_path(text, uuid)',
     grantees: [
+      'br_achievements',
       'br_authority',
       'br_competition',
       'br_evidence',
       'br_rebuild',
       'br_results',
       'br_verification',
+      'br_verification_reader',
     ],
     readOnly: true,
   },
   {
     fn: 'competition.account_competition_roles(uuid, uuid)',
-    grantees: ['br_evidence', 'br_verification'],
+    grantees: ['br_achievements', 'br_evidence', 'br_verification', 'br_verification_reader'],
     readOnly: true,
   },
   {

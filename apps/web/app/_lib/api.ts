@@ -21,6 +21,8 @@ export interface Section<T> {
   items: T[];
 }
 
+import type { PassportAchievement } from './achievement';
+
 export interface AthletePassport {
   schema: string;
   athlete: {
@@ -50,7 +52,7 @@ export interface AthletePassport {
     proofStatus: string;
     provenance: Provenance;
   }>;
-  verifiedAchievements: Section<never>;
+  verifiedAchievements: Section<PassportAchievement>;
   records: Section<never>;
   competitionHistory: Section<never>;
   careerStats: Section<never>;

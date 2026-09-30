@@ -1,4 +1,5 @@
 import { notFound, permanentRedirect } from 'next/navigation';
+import { PassportAchievementItem } from '../../_lib/achievement';
 import { getPublic, type AthletePassport } from '../../_lib/api';
 import { SectionBlock, TrustBadge, Unavailable } from '../../_lib/trust';
 
@@ -61,7 +62,8 @@ export default async function AthletePage({ params }: Params) {
         }}
       >
         The profile above is described by the athlete. It is not a verified sporting record.
-        Verified achievements will only appear when a recognized authority has confirmed them.
+        Verified achievements appear only when a published rule derives them from exact, currently
+        verified sporting facts — they are never awarded manually.
       </aside>
 
       <SectionBlock
@@ -103,7 +105,7 @@ export default async function AthletePage({ params }: Params) {
         title="Verified achievements"
         section={p.verifiedAchievements}
         empty="None yet."
-        render={() => null}
+        render={(x) => <PassportAchievementItem key={x.achievementId} x={x} />}
       />
       <SectionBlock title="Records" section={p.records} empty="None yet." render={() => null} />
       <SectionBlock
