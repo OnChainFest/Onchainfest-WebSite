@@ -16,6 +16,7 @@
     "@br/domain": "workspace:*",
     "@br/evidence": "workspace:*",
     "@br/persistence": "workspace:*",
+    "@br/verification": "workspace:*",
     "kysely": "0.29.6"
   }
 }

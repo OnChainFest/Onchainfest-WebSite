@@ -88,6 +88,14 @@ export default async function AttestationPage({ params }: Params) {
                 {f.label}
               </span>
               <span style={{ color: '#374151', fontSize: '0.9rem' }}>{f.detail}</span>
+              {f.href && (
+                <>
+                  {' '}
+                  <a href={f.href} style={{ fontSize: '0.9rem' }}>
+                    View the result version’s verification
+                  </a>
+                </>
+              )}
             </li>
           ))}
         </ul>

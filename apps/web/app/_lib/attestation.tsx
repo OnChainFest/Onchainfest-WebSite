@@ -20,7 +20,9 @@ export interface PublicAttestation {
     superseded: boolean;
     keyTrust: 'NOT_EVALUATED';
     authority: 'NOT_EVALUATED';
-    sportingVerification: 'NOT_IMPLEMENTED';
+    /** A V-level is never copied onto an attestation: it is assessed per ResultVersion. */
+    sportingVerification: 'EVALUATED_SEPARATELY';
+    verificationResource: string;
   };
   retraction?: { reasonCode: string; retractedOn: string };
   supersedesAttestationId?: string;
@@ -46,7 +48,7 @@ export function claimText(a: PublicAttestation): string {
  */
 export function trustFacets(
   a: PublicAttestation,
-): { label: string; tone: string; detail: string }[] {
+): { label: string; tone: string; detail: string; href?: string }[] {
   const grey = '#6b7280';
   return [
     {
@@ -95,9 +97,11 @@ export function trustFacets(
       detail: 'Whether this issuer holds sporting authority for this result has not been assessed.',
     },
     {
-      label: 'Sporting verification not yet implemented',
+      label: 'Sporting verification evaluated separately',
       tone: grey,
-      detail: 'No verification level has been computed for this result.',
+      detail:
+        'A signed claim carries no verification level. The result version’s verification is a separate, policy-based assessment.',
+      href: `/result-versions/${a.subject.resultVersionId}/verification`,
     },
   ];
 }

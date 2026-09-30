@@ -38,6 +38,17 @@ export const DomainErrorCode = {
   ISSUER_NOT_CONTROLLED: 'ISSUER_NOT_CONTROLLED',
   /** The PrincipalKey is unknown, not the issuer's, or not admissible at the platform-observed time. */
   KEY_NOT_VALID: 'KEY_NOT_VALID',
+  // BRT-07 verification (system conditions — never a sporting outcome)
+  /**
+   * A stored canonical fact contradicts its own hash or signature (statement, proof, descriptor,
+   * content, policy, snapshot). Never a normal criterion failure; no VerificationRun is produced.
+   */
+  VERIFICATION_INTEGRITY_FAILURE: 'VERIFICATION_INTEGRITY_FAILURE',
+  /**
+   * The evaluation cutoff predates canonical facts that are already recorded (e.g. a database
+   * clock step backwards). A coherent snapshot cannot be assembled; fail closed.
+   */
+  VERIFICATION_TIME_INCONSISTENT: 'VERIFICATION_TIME_INCONSISTENT',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 

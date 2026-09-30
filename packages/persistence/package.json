@@ -18,6 +18,7 @@
     "@br/evidence": "workspace:*",
     "@br/identity": "workspace:*",
     "@br/schemas": "workspace:*",
+    "@br/verification": "workspace:*",
     "kysely": "0.29.6",
     "pg": "8.23.0"
   },

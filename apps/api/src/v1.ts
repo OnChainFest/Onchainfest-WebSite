@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthAdapter } from './auth';
 import { registerCompetitionV1, type CompetitionV1Deps } from './v1-competition';
 import { registerEvidenceV1, type EvidenceV1Deps } from './v1-evidence';
+import { registerVerificationV1, type VerificationV1Deps } from './v1-verification';
 
 /**
  * Endpoint classification (BRT-04 §20). The edge enforces authentication (and the operator flag for
@@ -51,6 +52,8 @@ export interface V1Deps {
   readonly competition?: CompetitionV1Deps;
   /** BRT-06 evidence & attestation (registered when provided). */
   readonly evidence?: EvidenceV1Deps;
+  /** BRT-07 verification (registered when provided). */
+  readonly verification?: VerificationV1Deps;
 }
 
 /** Shared route-registration toolkit (same auth boundary, DTO strictness and classification). */
@@ -61,7 +64,11 @@ export interface V1Toolkit {
     classification: EndpointClass,
     schema: Record<string, unknown>,
     handler: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>,
-    options?: { readonly bodyLimit?: number },
+    options?: {
+      readonly bodyLimit?: number;
+      /** BRT-07: accountability hook for requests refused at the edge (e.g. non-operator). */
+      readonly onDenied?: (request: FastifyRequest) => Promise<void>;
+    },
   ) => void;
   readonly requireAuth: (request: FastifyRequest) => AuthContext;
   readonly operator: (request: FastifyRequest) => AuthContext;
@@ -100,24 +107,61 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   ATTESTATION_PROOF_INVALID: 422,
   ISSUER_NOT_CONTROLLED: 403,
   KEY_NOT_VALID: 422,
+  // BRT-07: system conditions, never sporting outcomes.
+  VERIFICATION_INTEGRITY_FAILURE: 500,
+  VERIFICATION_TIME_INCONSISTENT: 503,
 };
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */
 export function errorBody(err: DomainError): {
   status: number;
-  body: { error: { code: string; message: string; reason?: string } };
+  body: {
+    error: {
+      code: string;
+      message: string;
+      reason?: string;
+      issues?: { path: string; code: string }[];
+    };
+  };
 } {
   const status = HTTP_STATUS[err.code] ?? 500;
   const message = err.message.replace(/^[A-Z_]+: /, '');
   // BRT-06: a fixed-vocabulary reason code (never input values) where it helps a signer.
   const reason = err.details.reason ?? err.details.availability;
   const withReason =
-    (err.code === 'KEY_NOT_VALID' || err.code === 'EVIDENCE_NOT_AVAILABLE') &&
+    (err.code === 'KEY_NOT_VALID' ||
+      err.code === 'EVIDENCE_NOT_AVAILABLE' ||
+      err.code === 'VERIFICATION_INTEGRITY_FAILURE' ||
+      err.code === 'VERIFICATION_TIME_INCONSISTENT') &&
     typeof reason === 'string' &&
     /^[A-Z][A-Z0-9_]{0,39}$/.test(reason);
+  // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
+  const rawIssues = err.code === 'INVALID_INPUT' ? err.details.issues : undefined;
+  const issues = Array.isArray(rawIssues)
+    ? rawIssues
+        .filter(
+          (i): i is { path: string; code: string } =>
+            typeof i === 'object' &&
+            i !== null &&
+            typeof (i as { path?: unknown }).path === 'string' &&
+            typeof (i as { code?: unknown }).code === 'string',
+        )
+        .map((i) => ({
+          path: /^[/A-Za-z0-9._-]{0,200}$/.test(i.path) ? i.path : '/',
+          code: /^[A-Z][A-Z0-9_:]{0,79}$/.test(i.code) ? i.code : 'INVALID',
+        }))
+        .slice(0, 32)
+    : undefined;
   return {
     status,
-    body: { error: { code: err.code, message, ...(withReason ? { reason } : {}) } },
+    body: {
+      error: {
+        code: err.code,
+        message,
+        ...(withReason ? { reason } : {}),
+        ...(issues === undefined ? {} : { issues }),
+      },
+    },
   };
 }
 
@@ -210,7 +254,10 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     classification: EndpointClass,
     schema: Record<string, unknown>,
     handler: Handler,
-    options: { readonly bodyLimit?: number } = {},
+    options: {
+      readonly bodyLimit?: number;
+      readonly onDenied?: (request: FastifyRequest) => Promise<void>;
+    } = {},
   ) => {
     routes.push({ method, url, classification });
     app.route({
@@ -222,8 +269,14 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       // onRequest runs before body/params validation: unauthenticated callers learn nothing about DTOs.
       onRequest: async (request) => {
         request.authContext = await deps.auth.authenticate(request);
-        if (classification === 'INTERNAL') operator(request);
-        else if (classification !== 'PUBLIC') requireAuth(request);
+        try {
+          if (classification === 'INTERNAL') operator(request);
+          else if (classification !== 'PUBLIC') requireAuth(request);
+        } catch (err) {
+          if (options.onDenied !== undefined)
+            await options.onDenied(request).catch(() => undefined);
+          throw err;
+        }
       },
       handler,
     });
@@ -952,6 +1005,8 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     registerCompetitionV1({ route, requireAuth, operator, key }, deps.competition);
   if (deps.evidence !== undefined)
     registerEvidenceV1({ route, requireAuth, operator, key }, deps.evidence);
+  if (deps.verification !== undefined)
+    registerVerificationV1({ route, requireAuth, operator, key }, deps.verification);
 
   return routes;
 }

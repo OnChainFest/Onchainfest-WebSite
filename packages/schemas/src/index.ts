@@ -1,7 +1,9 @@
 import { createCanonicalizer, type Canonicalizer } from '@br/canonical';
 import { ALL_SCHEMAS, BRT06_SCHEMAS } from './definitions';
+import { BRT07_SCHEMAS } from './verification';
 
 export * from './definitions';
+export * from './verification';
 export { authorityScope, recognitionScope, mark } from './primitives';
 
 /** Schema ids as constants (id, version) so callers never hand-type them. */
@@ -36,6 +38,12 @@ export const SchemaRef = {
   attestationRetractionFact: { id: 'br:attestation-retraction-fact', version: 1 },
   evidenceLifecycleFact: { id: 'br:evidence-lifecycle-fact', version: 1 },
   evidenceBundle: { id: 'br:evidence-bundle', version: 1 },
+  // BRT-07
+  verificationPolicy: { id: 'br:verification-policy', version: 1 },
+  verificationSnapshot: { id: 'br:verification-snapshot', version: 1 },
+  verificationTrace: { id: 'br:verification-trace', version: 1 },
+  verificationOutcome: { id: 'br:verification-outcome', version: 1 },
+  verificationRunFact: { id: 'br:verification-run-fact', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */
@@ -55,12 +63,17 @@ export const DomainTag = {
   attestationRetraction: 'attestation-retraction',
   keyRegistration: 'key-registration',
   evidenceBundle: 'evidence-bundle',
+  // BRT-07 (one tag per kind of verification object)
+  verificationPolicy: 'verification-policy',
+  verificationSnapshot: 'verification-snapshot',
+  verificationTrace: 'verification-trace',
+  verificationOutcome: 'verification-outcome',
 } as const;
 
 let shared: Canonicalizer | undefined;
 
 /** Process-wide canonicalizer over the immutable platform schema set. */
 export function platformCanonicalizer(): Canonicalizer {
-  shared ??= createCanonicalizer([...ALL_SCHEMAS, ...BRT06_SCHEMAS]);
+  shared ??= createCanonicalizer([...ALL_SCHEMAS, ...BRT06_SCHEMAS, ...BRT07_SCHEMAS]);
   return shared;
 }

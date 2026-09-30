@@ -22,6 +22,9 @@ import {
   PrincipalKeyCeremony,
   StructureStore,
   TeamStore,
+  VerificationPolicyStore,
+  VerificationPublicReader,
+  VerificationService,
   pendingMigrations,
   type Db,
 } from '@br/persistence';
@@ -40,6 +43,12 @@ export interface ApiOptions {
    * nothing else; without it catalog mutation answers 503 INTERNAL_CAPABILITY_UNAVAILABLE.
    */
   readonly operatorDb?: Db;
+  /**
+   * BRT-07: br_verification_operator_app login (→ br_verification_policy only). INTERNAL policy
+   * mutation uses it and nothing else; without it policy mutation answers 503
+   * INTERNAL_CAPABILITY_UNAVAILABLE while verification reads and evaluations keep working.
+   */
+  readonly verificationOperatorDb?: Db;
   readonly piiCipher?: PiiCipher;
   /** Defaults to `authFromEnvironment` (production: fail closed). */
   readonly auth?: (identity: IdentityStore) => AuthAdapter;
@@ -62,7 +71,7 @@ export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInf
 
 /**
  * API: health/readiness plus the /v1 identity, passport, organization (BRT-04), catalog and
- * competition (BRT-05), evidence and attestation (BRT-06) endpoints.
+ * competition (BRT-05), evidence and attestation (BRT-06), verification (BRT-07) endpoints.
  * Logs never include request bodies or the Authorization header.
  */
 export function buildServer(options: ApiOptions): ApiServer {
@@ -129,7 +138,7 @@ export function buildServer(options: ApiOptions): ApiServer {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'bragging-rights-api',
-    phase: 'BRT-06',
+    phase: 'BRT-07',
   }));
 
   app.get('/ready', async (_request, reply) => {
@@ -175,6 +184,13 @@ export function buildServer(options: ApiOptions): ApiServer {
       persons: new PersonPrincipalService(options.db),
       bundles: new EvidenceBundleService(options.db),
       publicReader: new AttestationPublicReader(options.db),
+    },
+    verification: {
+      verification: new VerificationService(options.db),
+      publicReader: new VerificationPublicReader(options.db),
+      ...(options.verificationOperatorDb === undefined
+        ? {}
+        : { policies: new VerificationPolicyStore(options.verificationOperatorDb) }),
     },
   });
 

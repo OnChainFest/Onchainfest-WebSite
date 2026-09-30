@@ -68,6 +68,9 @@ importers:
       '@br/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@br/verification':
+        specifier: workspace:*
+        version: link:../../packages/verification
       fastify:
         specifier: 5.12.5
         version: 5.12.5
@@ -202,6 +205,9 @@ importers:
       '@br/schemas':
         specifier: workspace:*
         version: link:../schemas
+      '@br/verification':
+        specifier: workspace:*
+        version: link:../verification
       kysely:
         specifier: 0.29.6
         version: 0.29.6
@@ -242,9 +248,37 @@ importers:
       '@br/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@br/verification':
+        specifier: workspace:*
+        version: link:../verification
       kysely:
         specifier: 0.29.6
         version: 0.29.6
+
+  packages/verification:
+    dependencies:
+      '@br/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@br/competition':
+        specifier: workspace:*
+        version: link:../competition
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@br/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      '@br/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
 packages:
 

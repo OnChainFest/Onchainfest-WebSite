@@ -247,17 +247,24 @@ describe('§2 Person ↔ PERSON Principal structural invariant', () => {
 const INVENTORY = [
   {
     fn: 'results.resolve_result_version(uuid)',
-    grantees: ['br_evidence', 'br_rebuild'],
+    grantees: ['br_evidence', 'br_rebuild', 'br_verification'],
     readOnly: true,
   },
   {
     fn: 'competition.resolve_scope_path(text, uuid)',
-    grantees: ['br_authority', 'br_competition', 'br_evidence', 'br_rebuild', 'br_results'],
+    grantees: [
+      'br_authority',
+      'br_competition',
+      'br_evidence',
+      'br_rebuild',
+      'br_results',
+      'br_verification',
+    ],
     readOnly: true,
   },
   {
     fn: 'competition.account_competition_roles(uuid, uuid)',
-    grantees: ['br_evidence'],
+    grantees: ['br_evidence', 'br_verification'],
     readOnly: true,
   },
   {
@@ -351,6 +358,8 @@ describe('§3 cross-module SECURITY DEFINER helpers are narrow', () => {
     };
     const allowed: [Db, Role, (keyof typeof calls)[]][] = [
       [api, ModuleRole.evidence, ['rv', 'path', 'roles', 'repr']],
+      // BRT-07: the verification runtime resolves exact versions, hierarchy and staff roles only.
+      [api, ModuleRole.verification, ['rv', 'path', 'roles']],
       [maintenance, ModuleRole.rebuild, ['rv', 'path']],
       [api, ModuleRole.authority, ['path', 'repr']],
       [api, ModuleRole.identity, ['ensure']],
@@ -482,11 +491,13 @@ describe('§6 cryptographic validity, key trust, authority and verification stay
     expect(r).toMatchObject({
       signature: 'VALID',
       authority: 'NOT_EVALUATED',
-      verification: 'NOT_IMPLEMENTED',
+      verification: 'EVALUATED_SEPARATELY',
     });
+    // BRT-07: accepting an attestation never creates a verification (runs exist only when an
+    // evaluation is explicitly requested, and only from assembled canonical snapshots).
     expect(
       await q(
-        `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name ~ 'verification'`,
+        `SELECT count(*)::int AS n FROM verification.run WHERE result_version_id = '${w.resultVersionId}'`,
       ),
     ).toEqual([{ n: 0 }]);
   });
@@ -517,9 +528,12 @@ describe('§6 cryptographic validity, key trust, authority and verification stay
       superseded: false,
       keyTrust: 'NOT_EVALUATED',
       authority: 'NOT_EVALUATED',
-      sportingVerification: 'NOT_IMPLEMENTED',
+      sportingVerification: 'EVALUATED_SEPARATELY',
+      verificationResource: expect.stringMatching(
+        /^\/v1\/result-versions\/[0-9a-f-]{36}\/verification$/,
+      ),
     });
-    expect(JSON.stringify(card)).not.toMatch(/verified|trusted|TRUSTED|VERIFIED/);
+    expect(JSON.stringify(card)).not.toMatch(/verified|trusted|TRUSTED|VERIFIED|NOT_IMPLEMENTED/);
     const bundle = await bundles.build({
       actor: { internal: true },
       resultVersionId: w.resultVersionId,
