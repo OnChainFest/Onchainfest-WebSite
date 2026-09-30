@@ -6,3 +6,4 @@ export * from './refs';
 export * from './events';
 export * from './errors';
 export * from './evidence';
+export * from './verification';

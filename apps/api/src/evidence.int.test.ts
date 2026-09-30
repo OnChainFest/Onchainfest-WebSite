@@ -385,7 +385,7 @@ describe('BRT-06 /v1 signing: keys, attestations, retractions, public cards, bun
     expect(ok.json).toMatchObject({
       signature: 'VALID',
       authority: 'NOT_EVALUATED',
-      verification: 'NOT_IMPLEMENTED',
+      verification: 'EVALUATED_SEPARATELY',
     });
     expect(ok.json.notice).toMatch(/not a verified result/);
     attestationId = ok.json.attestationId;
@@ -450,11 +450,19 @@ describe('BRT-06 /v1 signing: keys, attestations, retractions, public cards, bun
         signature: 'VALID_AT_ACCEPTANCE',
         claim: 'ACTIVE',
         authority: 'NOT_EVALUATED',
-        sportingVerification: 'NOT_IMPLEMENTED',
+        sportingVerification: 'EVALUATED_SEPARATELY',
       },
       evidence: { count: 1, available: 1 },
     });
     expect(card.text).not.toMatch(/sha256:|"nonce"|"protected"|"statementHash"|accountId|personId/);
+    // BRT-07R: verification is a separate per-ResultVersion resource; no V-level is ever copied
+    // onto the attestation, and no "NOT_IMPLEMENTED" remains on the public card.
+    const resource = card.json.trust.verificationResource as string;
+    expect(resource).toBe(`/v1/result-versions/${card.json.subject.resultVersionId}/verification`);
+    expect(card.text).not.toMatch(/NOT_IMPLEMENTED|highestSatisfiedLevel|"level"|"V[0-4]"/);
+    const linked = await call('GET', resource);
+    expect(linked.status).toBe(200);
+    expect(linked.json.resultVersionId).toBe(card.json.subject.resultVersionId);
     expect((await call('GET', `/v1/attestations/${newId()}`)).status).toBe(404);
     expect(
       (await call('GET', `/v1/attestations/${attestationId}/detail`, orgH)).json.trust.signature,
@@ -515,8 +523,10 @@ describe('BRT-06 /v1 signing: keys, attestations, retractions, public cards, bun
   });
 
   it('route classification is explicit and non-PUBLIC routes refuse anonymous callers', () => {
-    const brt06 = app.v1Routes.filter((r) =>
-      /evidence|attestation|principal|result-versions/.test(r.url),
+    // BRT-06 routes only (BRT-07 verification routes are classified in verification.int.test.ts).
+    const brt06 = app.v1Routes.filter(
+      (r) =>
+        /evidence|attestation|principal|result-versions/.test(r.url) && !/verification/.test(r.url),
     );
     expect(brt06.length).toBeGreaterThanOrEqual(18);
     for (const r of brt06)

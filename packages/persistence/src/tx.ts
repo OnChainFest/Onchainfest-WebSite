@@ -6,7 +6,8 @@ import type { Database, Db } from './db';
  * Module roles (BRT-02 data access model §2). Logins hold none of them implicitly (NOINHERIT,
  * INHERIT FALSE) and may SET only the module roles granted to them:
  *   br_api → br_authority, br_results, br_identity, br_organizations, br_public_read,
- *            br_competition, br_evidence
+ *            br_competition, br_evidence, br_verification
+ *   br_verification_operator_app → br_verification_policy (BRT-07 policy mutation only)
  *   br_api_vault → br_identity_private · br_worker_app → br_worker · br_maintenance → br_rebuild
  * A transaction on a connection whose login is not a member of `role` fails at SET ROLE.
  */
@@ -23,6 +24,10 @@ export const ModuleRole = {
   competition: 'br_competition',
   /** BRT-06 evidence + attestation module. */
   evidence: 'br_evidence',
+  /** BRT-07 verification runtime (reads canonical facts; writes runs + its read model only). */
+  verification: 'br_verification',
+  /** BRT-07 verification-policy writer (reachable only from br_verification_operator_app). */
+  verificationPolicy: 'br_verification_policy',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 
@@ -47,6 +52,9 @@ const RETRYABLE_CONSTRAINTS = new Set([
   'item_provenance_key_key',
   'attachment_evidence_id_target_type_target_id_role_key',
   'person_principal_pkey',
+  // BRT-07: identical concurrent evaluations collapse to one logical run; version-number races.
+  'run_identity_key',
+  'policy_version_number_key',
 ]);
 
 function pgError(err: unknown): { code?: string; constraint?: string } {
@@ -72,10 +80,21 @@ export async function inTransaction<T>(
   role: ModuleRole,
   fn: (ctx: TxContext) => Promise<T>,
   maxAttempts = 4,
+  options: {
+    /**
+     * BRT-07: REPEATABLE READ gives multi-statement readers (verification snapshots) one consistent
+     * snapshot. Default: the database default (READ COMMITTED).
+     */
+    readonly isolation?: 'repeatable read';
+  } = {},
 ): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await db.transaction().execute(async (trx) => {
+      const builder =
+        options.isolation === undefined
+          ? db.transaction()
+          : db.transaction().setIsolationLevel(options.isolation);
+      return await builder.execute(async (trx) => {
         await sql`SET LOCAL ROLE ${sql.id(role)}`.execute(trx);
         const { rows } = await sql<{ t: Date }>`SELECT platform.tx_time_ms() AS t`.execute(trx);
         const txTime = rows[0]?.t;

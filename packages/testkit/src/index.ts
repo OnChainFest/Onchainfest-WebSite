@@ -19,6 +19,9 @@ import {
   type OrganizationStore,
   type PrincipalKeyCeremony,
   type ResultLedger,
+  type AttestationStore,
+  type VerificationPolicyStore,
+  PersonPrincipalService,
   type StructureStore,
   inTransaction,
   ModuleRole,
@@ -26,12 +29,14 @@ import {
   createDb,
   databaseUrls,
   operatorDatabaseUrl,
+  verificationOperatorDatabaseUrl,
   devRolePasswords,
   migrate,
   resetDatabase,
   type Db,
 } from '@br/persistence';
-import type { EphemeralSigner } from '@br/evidence';
+import { createEphemeralSigner, type EphemeralSigner } from '@br/evidence';
+import { REFERENCE_POLICY_SPEC, type PolicySpec } from '@br/verification';
 import { sql } from 'kysely';
 
 export const TEST_DATABASE = process.env.BR_TEST_DATABASE_NAME ?? 'bragging_rights_test';
@@ -61,6 +66,13 @@ export function vaultDb(): Db {
 export function operatorDb(): Db {
   const url = operatorDatabaseUrl(TEST_DATABASE);
   if (url === undefined) throw new Error('no operator database URL');
+  return createDb(url, { max: 2 });
+}
+
+/** BRT-07: login br_verification_operator_app — may assume br_verification_policy only. */
+export function verificationOperatorDb(): Db {
+  const url = verificationOperatorDatabaseUrl(TEST_DATABASE);
+  if (url === undefined) throw new Error('no verification operator database URL');
   return createDb(url, { max: 2 });
 }
 
@@ -468,6 +480,12 @@ export async function newContestResult(deps: {
   resolver: CompetitionHierarchyResolver;
   catalog: TestCatalog;
   organizer?: Awaited<ReturnType<typeof newOrganizer>>;
+  /**
+   * BRT-07: who submits. REFEREE (default, BRT-06 behaviour) = a bare PERSON principal without a
+   * Person mapping; ATHLETE_A = the first athlete's explicit PERSON principal (a participant
+   * submitting a claim about their own contest — SUBMIT_RESULT is conflict-exempt).
+   */
+  submitAs?: 'REFEREE' | 'ATHLETE_A';
 }) {
   const org = deps.organizer ?? (await newOrganizer(deps.identity, deps.orgs));
   const k = () => `fx-${newId()}`;
@@ -557,6 +575,24 @@ export async function newContestResult(deps: {
     scope: { recognitionLevel: ['PLATFORM'], competition: [competitionId as Uuid] },
     delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
   });
+  let submitter = referee.id;
+  if (deps.submitAs === 'ATHLETE_A') {
+    const a = athletes[0];
+    if (a === undefined) throw new Error('no athlete');
+    const { principalId } = await new PersonPrincipalService(deps.db).ensure({
+      actorAccountId: a.accountId,
+      personId: a.personId,
+    });
+    submitter = principalId as Uuid;
+    await deps.authority.issueGrant({
+      actorPrincipalId: platform.id,
+      grantorPrincipalId: platform.id,
+      granteePrincipalId: submitter,
+      capabilities: ['SUBMIT_RESULT'],
+      scope: { recognitionLevel: ['PLATFORM'], competition: [competitionId as Uuid] },
+      delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+    });
+  }
   const result = await deps.ledger.createResult({
     scopeType: 'CONTEST',
     scopeTargetId: contest.contestId as Uuid,
@@ -584,13 +620,13 @@ export async function newContestResult(deps: {
   const submit = async (winner: string, loser: string) => {
     const { draftId } = await deps.ledger.saveDraft({
       resultId: result.id,
-      authorPrincipalId: referee.id,
+      authorPrincipalId: submitter,
       disciplineVersionRef: 'tennis.singles@1',
       content: content(winner, loser),
     });
     return deps.ledger.submitDraft({
       draftId,
-      actorPrincipalId: referee.id,
+      actorPrincipalId: submitter,
       scope,
       idempotencyKey: k(),
     });
@@ -604,6 +640,8 @@ export async function newContestResult(deps: {
     participantIds: [p1, p2],
     athletes,
     refereePrincipalId: referee.id,
+    platformPrincipalId: platform.id,
+    submitterPrincipalId: submitter,
     resultId: result.id,
     resultVersionId: v1.resultVersionId,
     contentHash: v1.contentHash,
@@ -653,4 +691,159 @@ export function signPrepared(
       ...signer.signJws(prepared.signing.kid, prepared.statementHash),
     },
   };
+}
+
+// ───────────── BRT-07 verification fixtures (fictional data; real canonical facts only) ─────────────
+
+/**
+ * Creates, publishes and binds a verification policy (default: the fictional development reference
+ * policy) to an exact DisciplineVersion, through the dedicated operator store.
+ */
+export async function publishPolicy(
+  store: VerificationPolicyStore,
+  operatorAccountId: string,
+  disciplineVersionId: string,
+  spec: PolicySpec = REFERENCE_POLICY_SPEC,
+  code = `test-${newId().replace(/-/g, '').slice(-12)}`,
+) {
+  const { policyId } = await store.createPolicy({
+    operatorAccountId,
+    code,
+    name: 'Fictional test policy',
+    idempotencyKey: `vp-${newId()}`,
+  });
+  const v = await store.createPolicyVersion({
+    operatorAccountId,
+    policyId,
+    spec,
+    idempotencyKey: `vpv-${newId()}`,
+  });
+  await store.changeVersionStatus({
+    operatorAccountId,
+    policyVersionId: v.policyVersionId,
+    status: 'PUBLISHED',
+  });
+  const b = await store.bindPolicy({
+    operatorAccountId,
+    disciplineVersionId,
+    policyVersionId: v.policyVersionId,
+    idempotencyKey: `vpb-${newId()}`,
+  });
+  return { policyId, code, policyVersionId: v.policyVersionId, bindingId: b.bindingId };
+}
+
+/**
+ * A signer for a principal the account represents (its own PERSON principal, or an ORGANIZATION
+ * principal it administers): registers a fresh in-memory key (proof of possession) and returns
+ * helpers that sign claims about exact ResultVersions and retract them.
+ */
+export async function principalSigner(
+  deps: { ceremony: PrincipalKeyCeremony; attestations: AttestationStore },
+  who: { accountId: string; principalId: string },
+) {
+  const { principalId } = who;
+  const addKey = async () => {
+    const signer = createEphemeralSigner('EdDSA');
+    const keyId = await registerSigningKey(deps.ceremony, who.accountId, principalId, signer);
+    return { signer, keyId };
+  };
+  const first = await addKey();
+  const attest = async (
+    resultVersionId: string,
+    claim: {
+      type: 'RESULT_ACCURATE' | 'CONDITIONS_COMPLIANT';
+      polarity: 'AFFIRM' | 'DENY';
+      payload?: Record<string, unknown>;
+    },
+    key: { signer: EphemeralSigner; keyId: string } = first,
+    extra: { evidenceIds?: string[] } = {},
+  ) => {
+    const prepared = await deps.attestations.prepare({
+      actorAccountId: who.accountId,
+      idempotencyKey: `ap-${newId()}`,
+      issuerPrincipalId: principalId,
+      keyId: key.keyId,
+      subject: { type: 'RESULT_VERSION', id: resultVersionId },
+      claim: claim as never,
+      visibility: 'PUBLIC',
+      ...(extra.evidenceIds === undefined ? {} : { evidenceIds: extra.evidenceIds }),
+    });
+    const accepted = await deps.attestations.submit({
+      actorAccountId: who.accountId,
+      idempotencyKey: `as-${newId()}`,
+      ...signPrepared(key.signer, prepared),
+    });
+    return accepted.attestationId;
+  };
+  const retract = async (
+    attestationId: string,
+    key: { signer: EphemeralSigner; keyId: string } = first,
+  ) => {
+    const prepared = await deps.attestations.prepareRetraction({
+      actorAccountId: who.accountId,
+      idempotencyKey: `rp-${newId()}`,
+      attestationId,
+      keyId: key.keyId,
+      reasonCode: 'WITHDRAWN',
+    });
+    await deps.attestations.submitRetraction({
+      actorAccountId: who.accountId,
+      idempotencyKey: `rs-${newId()}`,
+      ...signPrepared(key.signer, prepared),
+    });
+  };
+  return { principalId, key: first, addKey, attest, retract, accountId: who.accountId };
+}
+
+/** principalSigner for the account's own PERSON principal (explicit Person ↔ Principal mapping). */
+export async function personSigner(
+  deps: { db: Db; ceremony: PrincipalKeyCeremony; attestations: AttestationStore },
+  who: { accountId: string; personId: string },
+) {
+  const { principalId } = await new PersonPrincipalService(deps.db).ensure({
+    actorAccountId: who.accountId,
+    personId: who.personId,
+  });
+  return principalSigner(deps, { accountId: who.accountId, principalId });
+}
+
+/**
+ * Test / demo HARNESS ONLY (never product code): waits until the database clock has passed
+ * `instant`. WSL2 / Docker Desktop hosts step the VM clock back by up to ~1 s every ~30 s; an
+ * "as known then" replay at a previous cutoff is correctly refused as "in the future" while the
+ * clock is behind. This waits instead of weakening the product rule.
+ */
+export async function awaitDbTimePast(
+  db: Db,
+  instant: Date | string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const target = new Date(instant).getTime();
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await sql<{ t: Date }>`SELECT clock_timestamp() AS t`.execute(db);
+    if ((rows[0]?.t.getTime() ?? 0) > target) return;
+    if (Date.now() > end) throw new Error('database clock did not pass the reference instant');
+    await sleep(100);
+  }
+}
+
+/**
+ * Test / demo HARNESS ONLY: re-runs `fn` when a CURRENT assembly fails closed with
+ * VERIFICATION_TIME_INCONSISTENT because the development VM clock stepped back (the same bounded
+ * policy the VerificationService applies). A persistent inconsistency still fails the test.
+ */
+export async function retryOnClockStep<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (
+        (err as { code?: string }).code !== 'VERIFICATION_TIME_INCONSISTENT' ||
+        attempt >= attempts
+      )
+        throw err;
+      await sleep(600 * attempt);
+    }
+  }
 }

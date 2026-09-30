@@ -419,7 +419,12 @@ export interface PublicAttestationV1 {
     /** Whether the signing key is trustworthy NOW (compromise, revocation) is BRT-07's evaluation. */
     readonly keyTrust: 'NOT_EVALUATED';
     readonly authority: 'NOT_EVALUATED';
-    readonly sportingVerification: 'NOT_IMPLEMENTED';
+    /**
+     * Sporting verification is a separate, per-ResultVersion assessment (BRT-07): a V-level is
+     * NEVER copied onto an attestation. `verificationResource` points to where it is served.
+     */
+    readonly sportingVerification: 'EVALUATED_SEPARATELY';
+    readonly verificationResource: string;
   };
   readonly retraction?: { readonly reasonCode: string; readonly retractedOn: string };
   readonly supersedesAttestationId?: string;
@@ -500,7 +505,8 @@ export class AttestationPublicReader {
             superseded: r.superseded,
             keyTrust: 'NOT_EVALUATED',
             authority: 'NOT_EVALUATED',
-            sportingVerification: 'NOT_IMPLEMENTED',
+            sportingVerification: 'EVALUATED_SEPARATELY',
+            verificationResource: `/v1/result-versions/${r.subject_id}/verification`,
           },
           ...(r.retracted && r.retracted_at !== null
             ? {

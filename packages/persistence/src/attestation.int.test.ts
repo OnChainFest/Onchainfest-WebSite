@@ -283,7 +283,7 @@ describe('attestation ceremony: exact statement, single-use challenge, productio
     expect(r).toMatchObject({
       signature: 'VALID',
       authority: 'NOT_EVALUATED',
-      verification: 'NOT_IMPLEMENTED',
+      verification: 'EVALUATED_SEPARATELY',
       created: true,
     });
     const [row] = await q<{
@@ -299,7 +299,7 @@ describe('attestation ceremony: exact statement, single-use challenge, productio
       signature: 'VALID',
       claim: 'ACTIVE',
       authority: 'NOT_EVALUATED',
-      sportingVerification: 'NOT_IMPLEMENTED',
+      sportingVerification: 'EVALUATED_SEPARATELY',
     });
     // no lifecycle movement, no verification / achievement / record / prize anything
     expect(
@@ -312,7 +312,7 @@ describe('attestation ceremony: exact statement, single-use challenge, productio
     );
     expect(
       await q(
-        `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name ~ '(verification|achievement|record_mark|prize)'`,
+        `SELECT ((SELECT count(*) FROM information_schema.tables WHERE table_name ~ '(achievement|record_mark|prize)') + (SELECT count(*) FROM verification.run WHERE result_version_id = '${w.resultVersionId}'))::int AS n`,
       ),
     ).toEqual([{ n: 0 }]);
     expect(
@@ -333,11 +333,13 @@ describe('attestation ceremony: exact statement, single-use challenge, productio
       trust: {
         signature: 'VALID_AT_ACCEPTANCE',
         authority: 'NOT_EVALUATED',
-        sportingVerification: 'NOT_IMPLEMENTED',
+        sportingVerification: 'EVALUATED_SEPARATELY',
+        verificationResource: `/v1/result-versions/${w.resultVersionId}/verification`,
       },
       evidence: { count: 1, available: 1 },
     });
     expect(JSON.stringify(card)).not.toMatch(/verified result|"VERIFIED"/i);
+    expect(JSON.stringify(card)).not.toMatch(/NOT_IMPLEMENTED|highestSatisfiedLevel|"V[0-4]"/);
   });
 
   it('replay, tampering, cross-challenge reuse, wrong audience and expiry all fail closed', async () => {

@@ -48,19 +48,19 @@ jobs:
           echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
       - name: Format check
         run: pnpm format:check
-      - name: Lint (incl. key-material guard)
+      - name: Lint (incl. key-material, result-ledger composition and no-manual-verification guards)
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles, BRT-06 crypto/vectors, storage encryption, bundle determinism)
+      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles, BRT-06 crypto/vectors, storage encryption, bundle determinism, BRT-07 V0–V4 engine / policy / snapshot determinism / reference fixtures)
         run: pnpm test
-      - name: Golden vectors — BR-JSON v1 + BRT-06, reproduce + independent reference checkers
+      - name: Golden vectors — BR-JSON v1 + BRT-06 + BRT-07, reproduce + independent reference checkers
         run: pnpm vectors:check
       - name: Bootstrap roles and databases
         run: pnpm db:bootstrap
       - name: Migrate from a clean database
         run: pnpm db:migrate
-      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles, evidence/attestation, concurrency)
+      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles, evidence/attestation, verification runs / freshness / participation / authority / concurrency / fixture non-persistence)
         run: pnpm test:integration
       - name: Acceptance walkthrough (BRT-03 foundation)
         run: pnpm demo:foundation
@@ -82,5 +82,14 @@ jobs:
           pnpm -s db:seed:evidence > seed-evidence-1.json
           pnpm -s db:seed:evidence > seed-evidence-2.json
           cmp seed-evidence-1.json seed-evidence-2.json
+      - name: Acceptance walkthrough (BRT-07 verification engine / sports oracle)
+        run: pnpm demo:verification
+      - name: Verification seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:verification > seed-verification-1.json
+          pnpm -s db:seed:verification > seed-verification-2.json
+          cmp seed-verification-1.json seed-verification-2.json
+      - name: Worker smoke (one outbox polling round, incl. verification events)
+        run: pnpm --filter @br/worker exec tsx src/main.ts --once
       - name: Web build
         run: pnpm --filter @br/web build

@@ -34,3 +34,9 @@ The format is lightweight MADR: Context → Decision → Consequences → Altern
 | [0028](./ADR-0028-deterministic-evidence-bundle.md) | The deterministic Evidence Bundle is the BRT-07 input identity | Proposed | BRT-06 |
 | [0029](./ADR-0029-attestation-acceptance-without-authority-verdict.md) | Attestation acceptance without an authority verdict; server-canonicalized ceremony; signed retraction | Proposed | BRT-06 |
 | [0030](./ADR-0030-development-encrypted-evidence-store-and-fail-closed-production.md) | Development encrypted evidence store; production evidence ingestion fails closed | Proposed | BRT-06 |
+| [0031](./ADR-0031-verification-is-an-immutable-assessment.md) | Verification is an immutable, append-only assessment; current state is a projection | Proposed | BRT-07 |
+| [0032](./ADR-0032-declarative-verification-policies-bound-to-discipline-versions.md) | Declarative, versioned verification policies bound to exact DisciplineVersions | Proposed | BRT-07 |
+| [0033](./ADR-0033-deterministic-verification-snapshot-and-hash-freshness.md) | The VerificationSnapshot is the deterministic Oracle input; freshness is hash-based | Proposed | BRT-07 |
+| [0034](./ADR-0034-conservative-independence-and-structural-participation.md) | Conservative principal- and provenance-based independence over a structural participation resolver | Proposed | BRT-07 |
+| [0035](./ADR-0035-unsupported-canonical-facts-and-unpersisted-fixtures.md) | Typed canonical facts without producers are INPUT_NOT_SUPPORTED; synthetic fixtures are never persisted | Proposed | BRT-07 |
+| [0036](./ADR-0036-counterparty-deny-outranked-only-by-certification.md) | A counterparty DENY blocks V1 unless the same evaluation fully meets the V2 certification exception (BRT-01 §5.3 reconciliation) | Accepted | BRT-07 |

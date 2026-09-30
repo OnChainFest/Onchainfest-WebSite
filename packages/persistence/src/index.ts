@@ -30,3 +30,6 @@ export * from './evidence-store';
 export * from './attestation-store';
 export * from './key-ceremony-store';
 export * from './evidence-reader';
+export * from './verification-loader';
+export * from './verification-projection';
+export * from './verification-store';

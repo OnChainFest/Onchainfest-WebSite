@@ -336,6 +336,8 @@ describe('maintenance, probe, vault and owner', () => {
       'br_evidence',
       'br_rebuild',
       'br_results',
+      // BRT-07: verification snapshots resolve the exact hierarchy (EXECUTE only).
+      'br_verification',
     ]);
   });
 });

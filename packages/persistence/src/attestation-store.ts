@@ -629,7 +629,7 @@ export class AttestationStore {
         issuedAt: ctx.txTime.toISOString(),
         signature: 'VALID',
         authority: 'NOT_EVALUATED',
-        verification: 'NOT_IMPLEMENTED',
+        verification: 'EVALUATED_SEPARATELY',
         created: true,
       };
       await idem.record(response);
@@ -914,7 +914,7 @@ export class AttestationStore {
           signature: valid ? 'VALID' : 'INVALID',
           claim: ret[0] === undefined ? 'ACTIVE' : 'RETRACTED',
           authority: 'NOT_EVALUATED',
-          sportingVerification: 'NOT_IMPLEMENTED',
+          sportingVerification: 'EVALUATED_SEPARATELY',
           meaning:
             'A cryptographically signed claim. It proves who signed this exact statement, not that the statement is correct.',
         },
@@ -938,7 +938,8 @@ export interface AttestationAccepted {
   readonly issuedAt: string;
   readonly signature: 'VALID';
   readonly authority: 'NOT_EVALUATED';
-  readonly verification: 'NOT_IMPLEMENTED';
+  /** Sporting verification is a separate per-ResultVersion assessment (never on the claim). */
+  readonly verification: 'EVALUATED_SEPARATELY';
   readonly created: boolean;
 }
 
@@ -964,7 +965,7 @@ export interface AttestationDetailV1 {
     signature: 'VALID' | 'INVALID';
     claim: 'ACTIVE' | 'RETRACTED';
     authority: 'NOT_EVALUATED';
-    sportingVerification: 'NOT_IMPLEMENTED';
+    sportingVerification: 'EVALUATED_SEPARATELY';
     meaning: string;
   };
   readonly retraction: {

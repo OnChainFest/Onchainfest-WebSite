@@ -29,6 +29,7 @@ export type LoginRole =
   | 'br_api'
   | 'br_api_vault'
   | 'br_operator_app'
+  | 'br_verification_operator_app'
   | 'br_worker_app'
   | 'br_maintenance'
   | 'br_probe';
@@ -79,6 +80,23 @@ export function operatorDatabaseUrl(database?: string): string | undefined {
   return devUrl('br_operator_app', 'br_operator_app_dev_only', db);
 }
 
+/**
+ * BRT-07 · Verification-policy operator login (`br_verification_operator_app` →
+ * `br_verification_policy` only): INTERNAL policy creation, publication and binding. Optional and
+ * never part of `databaseUrls()`: without it verification reads and evaluations keep working and
+ * policy mutation fails closed (503). Production uses only an explicitly configured
+ * BR_VERIFICATION_OPERATOR_DATABASE_URL; development/test tooling falls back to the local login.
+ * There is no fallback to the normal API connection (which cannot assume the policy role anyway).
+ */
+export function verificationOperatorDatabaseUrl(database?: string): string | undefined {
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const value = process.env.BR_VERIFICATION_OPERATOR_DATABASE_URL;
+  if (value !== undefined && value !== '')
+    return database === undefined ? value : withDatabase(value, db);
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devUrl('br_verification_operator_app', 'br_verification_operator_app_dev_only', db);
+}
+
 export function withDatabase(url: string, database: string): string {
   const u = new URL(url);
   u.pathname = `/${database}`;
@@ -94,6 +112,8 @@ export function devRolePasswords(): Record<LoginRole, string> {
     br_api: process.env.BR_API_PASSWORD ?? 'br_api_dev_only',
     br_api_vault: process.env.BR_VAULT_PASSWORD ?? 'br_api_vault_dev_only',
     br_operator_app: process.env.BR_OPERATOR_PASSWORD ?? 'br_operator_app_dev_only',
+    br_verification_operator_app:
+      process.env.BR_VERIFICATION_OPERATOR_PASSWORD ?? 'br_verification_operator_app_dev_only',
     br_worker_app: process.env.BR_WORKER_PASSWORD ?? 'br_worker_app_dev_only',
     br_maintenance: process.env.BR_MAINTENANCE_PASSWORD ?? 'br_maintenance_dev_only',
     br_probe: process.env.BR_PROBE_PASSWORD ?? 'br_probe_dev_only',

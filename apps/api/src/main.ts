@@ -17,6 +17,12 @@ const vaultDb = createDb(urls.vault, { max: 2 });
 const operatorUrl = process.env.BR_OPERATOR_DATABASE_URL;
 const operatorDb =
   operatorUrl !== undefined && operatorUrl !== '' ? createDb(operatorUrl, { max: 2 }) : undefined;
+// BRT-07: the verification-policy operator connection is opt-in as well (no fallback to br_api).
+const verificationOperatorUrl = process.env.BR_VERIFICATION_OPERATOR_DATABASE_URL;
+const verificationOperatorDb =
+  verificationOperatorUrl !== undefined && verificationOperatorUrl !== ''
+    ? createDb(verificationOperatorUrl, { max: 2 })
+    : undefined;
 
 // No KMS-backed cipher exists yet. Production runs without private-data storage (503
 // PRIVATE_DATA_UNAVAILABLE). Development uses the dev cipher only when BR_VAULT_DEV_KEY is set
@@ -36,6 +42,7 @@ const app = buildServer({
   db,
   vaultDb,
   ...(operatorDb === undefined ? {} : { operatorDb }),
+  ...(verificationOperatorDb === undefined ? {} : { verificationOperatorDb }),
   ...(piiCipher === undefined ? {} : { piiCipher }),
   ...(evidenceBlobStore === undefined ? {} : { evidenceBlobStore }),
   ...(signatureAudience === undefined || signatureAudience === '' ? {} : { signatureAudience }),
@@ -49,7 +56,12 @@ const port = Number(process.env.PORT ?? 4000);
 
 const shutdown = async () => {
   await app.close();
-  await Promise.all([db.destroy(), vaultDb.destroy(), operatorDb?.destroy()]);
+  await Promise.all([
+    db.destroy(),
+    vaultDb.destroy(),
+    operatorDb?.destroy(),
+    verificationOperatorDb?.destroy(),
+  ]);
   process.exit(0);
 };
 process.on('SIGINT', shutdown);

@@ -88,6 +88,15 @@ export const DomainEventType = {
   AttestationRetracted: 'AttestationRetracted',
   AttestationSuperseded: 'AttestationSuperseded',
   PersonPrincipalMapped: 'PersonPrincipalMapped',
+  // BRT-07 verification (ids, hashes, levels, statuses only — never PII, evidence or authority
+  // topology; never an achievement, record, ranking, prize or trophy outcome)
+  VerificationPolicyCreated: 'VerificationPolicyCreated',
+  VerificationPolicyVersionCreated: 'VerificationPolicyVersionCreated',
+  VerificationPolicyVersionPublished: 'VerificationPolicyVersionPublished',
+  VerificationPolicyVersionRetired: 'VerificationPolicyVersionRetired',
+  VerificationPolicyBound: 'VerificationPolicyBound',
+  VerificationEvaluated: 'VerificationEvaluated',
+  CurrentVerificationChanged: 'CurrentVerificationChanged',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -120,6 +129,9 @@ export const AggregateType = {
   CONTEST: 'CONTEST',
   EVIDENCE_ITEM: 'EVIDENCE_ITEM',
   ATTESTATION: 'ATTESTATION',
+  VERIFICATION_POLICY: 'VERIFICATION_POLICY',
+  VERIFICATION_POLICY_VERSION: 'VERIFICATION_POLICY_VERSION',
+  VERIFICATION_RUN: 'VERIFICATION_RUN',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 
