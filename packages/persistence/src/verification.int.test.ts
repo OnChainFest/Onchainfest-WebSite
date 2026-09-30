@@ -787,7 +787,8 @@ describe('policy fail-closed, determinism, concurrency, integrity, time consiste
     expect(await count()).toEqual(before);
     const { rows } = await sql<{
       event_type: string;
-    }>`SELECT DISTINCT event_type FROM platform.outbox_event WHERE event_type ~ '(Achievement|Record|Ranking|Prize|Trophy)'`.execute(
+      // BRT-08: AchievementRule administration events are not consequences; verification derives none.
+    }>`SELECT DISTINCT event_type FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|Record|Ranking|Prize|Trophy)'`.execute(
       owner,
     );
     expect(rows).toEqual([]);

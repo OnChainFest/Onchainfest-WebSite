@@ -330,6 +330,8 @@ describe('maintenance, probe, vault and owner', () => {
       owner,
     );
     expect(grants.map((g) => g.grantee).filter((g) => g !== 'br_owner')).toEqual([
+      // BRT-08: achievement derivation resolves the exact hierarchy of a basis (EXECUTE only).
+      'br_achievements',
       'br_authority',
       'br_competition',
       // BRT-06: evidence attachment/bundle hierarchy and metadata-only card rebuilds (EXECUTE only).
@@ -338,6 +340,8 @@ describe('maintenance, probe, vault and owner', () => {
       'br_results',
       // BRT-07: verification snapshots resolve the exact hierarchy (EXECUTE only).
       'br_verification',
+      // BRT-08R: the SELECT-only verification reader (achievement freshness), EXECUTE only.
+      'br_verification_reader',
     ]);
   });
 });

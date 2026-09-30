@@ -12,15 +12,24 @@
 --                                        br_verification (BRT-07)
 --                          (never br_catalog: catalog mutation has its own login — BRT-05R)
 --                          (never br_verification_policy: policy mutation has its own login — BRT-07)
+--                                        br_achievements, br_verification_reader (BRT-08)
+--                          (never br_achievement_rules: rule mutation has its own login — BRT-08)
 --   br_operator_app LOGIN NOINHERIT → SET br_catalog
 --                          (BRT-05R: INTERNAL sport-catalog mutation only; nothing else)
 --                          (normal request processing; never the PII vault)
 --   br_verification_operator_app LOGIN NOINHERIT → SET br_verification_policy
 --                          (BRT-07: INTERNAL verification-policy mutation only; nothing else)
+--   br_achievement_operator_app LOGIN NOINHERIT → SET br_achievement_rules
+--                          (BRT-08: INTERNAL AchievementRule mutation only; nothing else)
 --   br_api_vault    LOGIN NOINHERIT → SET br_identity_private
 --                          (BRT-04: the PII vault repository's own connection, nothing else)
 --   br_worker_app   LOGIN NOINHERIT → SET br_worker
 --                          (outbox consumption, job queue)
+--   br_achievement_worker_app LOGIN NOINHERIT → SET br_achievements, br_verification_reader
+--                          (BRT-08: the worker's idempotent achievement derivation and current-support
+--                          re-assessment reacting to canonical events. Achievement CONSUMES
+--                          Verification: the login can never become br_verification (no run, trace,
+--                          policy or binding writes); br_verification_reader is SELECT-only.)
 --   br_maintenance  LOGIN NOINHERIT → SET br_rebuild
 --                          (projection rebuild; operator/maintenance jobs only)
 --   br_probe        LOGIN  development/test only: connected but unprivileged.
@@ -32,6 +41,11 @@
 --   br_evidence (BRT-06 evidence + attestation module; no blob credentials live in the database)
 --   br_verification (BRT-07 verification runtime: reads canonical facts, writes only runs + read model)
 --   br_verification_policy (BRT-07 policies/bindings; reachable only from br_verification_operator_app)
+--   br_achievements (BRT-08 achievement runtime: reads exact sporting/verification facts, writes only
+--                    achievement facts + its read model)
+--   br_achievement_rules (BRT-08 rules/bindings; reachable only from br_achievement_operator_app)
+--   br_verification_reader (BRT-08: SELECT-only view of Verification inputs / runs / traces for
+--                    Achievement freshness and governing-recognition reads; writes nothing)
 --                   NOLOGIN module roles (table privileges).
 --
 -- Memberships are granted WITH INHERIT FALSE, SET TRUE, ADMIN FALSE: a login holds no module
@@ -41,7 +55,7 @@ DO $$
 DECLARE
   r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['br_owner', 'br_api', 'br_api_vault', 'br_operator_app', 'br_verification_operator_app', 'br_worker_app', 'br_maintenance', 'br_probe'] LOOP
+  FOREACH r IN ARRAY ARRAY['br_owner', 'br_api', 'br_api_vault', 'br_operator_app', 'br_verification_operator_app', 'br_achievement_operator_app', 'br_achievement_worker_app', 'br_worker_app', 'br_maintenance', 'br_probe'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
     END IF;
@@ -49,7 +63,8 @@ BEGIN
   FOREACH r IN ARRAY ARRAY['br_authority', 'br_results', 'br_worker', 'br_rebuild',
                            'br_identity', 'br_identity_private', 'br_organizations', 'br_public_read',
                            'br_catalog', 'br_competition', 'br_evidence',
-                           'br_verification', 'br_verification_policy'] LOOP
+                           'br_verification', 'br_verification_policy',
+                           'br_achievements', 'br_achievement_rules', 'br_verification_reader'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
     END IF;
@@ -67,6 +82,8 @@ ALTER ROLE br_api NOINHERIT;
 ALTER ROLE br_api_vault NOINHERIT;
 ALTER ROLE br_operator_app NOINHERIT;
 ALTER ROLE br_verification_operator_app NOINHERIT;
+ALTER ROLE br_achievement_operator_app NOINHERIT;
+ALTER ROLE br_achievement_worker_app NOINHERIT;
 ALTER ROLE br_worker_app NOINHERIT;
 ALTER ROLE br_maintenance NOINHERIT;
 ALTER ROLE br_probe NOINHERIT;
@@ -74,18 +91,23 @@ ALTER ROLE br_probe NOINHERIT;
 -- Converge: remove any membership outside the intended graph.
 -- BRT-05R: br_api must never reach the catalog writer (also removes the BRT-05 grant on upgrade).
 -- BRT-07: br_api must never reach the verification-policy writer.
-REVOKE br_worker, br_rebuild, br_identity_private, br_catalog, br_verification_policy FROM br_api;
-REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_competition, br_evidence, br_verification, br_verification_policy FROM br_operator_app;
-REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification FROM br_verification_operator_app;
-REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy FROM br_api_vault;
-REVOKE br_authority, br_results, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy FROM br_worker_app;
-REVOKE br_authority, br_results, br_worker, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy FROM br_maintenance;
-REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy FROM br_probe, br_owner;
-REVOKE br_owner FROM br_api, br_api_vault, br_operator_app, br_verification_operator_app, br_worker_app, br_maintenance, br_probe;
+-- BRT-08: br_api must never reach the achievement-rule writer.
+REVOKE br_worker, br_rebuild, br_identity_private, br_catalog, br_verification_policy, br_achievement_rules FROM br_api;
+REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_achievement_rules, br_verification_reader FROM br_operator_app;
+REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_achievements, br_achievement_rules, br_verification_reader FROM br_verification_operator_app;
+REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_verification_reader FROM br_achievement_operator_app;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_achievement_rules, br_verification_reader FROM br_api_vault;
+REVOKE br_authority, br_results, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_achievement_rules, br_verification_reader FROM br_worker_app;
+REVOKE br_owner, br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievement_rules FROM br_achievement_worker_app;
+REVOKE br_authority, br_results, br_worker, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_achievement_rules, br_verification_reader FROM br_maintenance;
+REVOKE br_authority, br_results, br_worker, br_rebuild, br_identity, br_identity_private, br_organizations, br_public_read, br_catalog, br_competition, br_evidence, br_verification, br_verification_policy, br_achievements, br_achievement_rules, br_verification_reader FROM br_probe, br_owner;
+REVOKE br_owner FROM br_api, br_api_vault, br_operator_app, br_verification_operator_app, br_achievement_operator_app, br_achievement_worker_app, br_worker_app, br_maintenance, br_probe;
 
-GRANT br_authority, br_results, br_identity, br_organizations, br_public_read, br_competition, br_evidence, br_verification TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_authority, br_results, br_identity, br_organizations, br_public_read, br_competition, br_evidence, br_verification, br_achievements, br_verification_reader TO br_api WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_catalog TO br_operator_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_verification_policy TO br_verification_operator_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_achievement_rules TO br_achievement_operator_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_identity_private TO br_api_vault WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_worker TO br_worker_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT br_achievements, br_verification_reader TO br_achievement_worker_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT br_rebuild TO br_maintenance WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;

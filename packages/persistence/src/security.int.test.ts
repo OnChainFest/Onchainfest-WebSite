@@ -50,6 +50,31 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       WHERE m.rolname LIKE 'br\\_%' AND r.rolname LIKE 'br\\_%'
       ORDER BY 1, 2`.execute(owner);
     expect(rows.filter((r) => r.member !== 'br_runtime')).toEqual([
+      // BRT-08: the achievement worker has its own login (never the generic worker).
+      {
+        member: 'br_achievement_operator_app',
+        role: 'br_achievement_rules',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      {
+        member: 'br_achievement_worker_app',
+        role: 'br_achievements',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      // BRT-08R: Achievement consumes Verification — the worker gets the SELECT-only reader, never br_verification.
+      {
+        member: 'br_achievement_worker_app',
+        role: 'br_verification_reader',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      // BRT-08: achievement runtime (reads exact facts; writes achievement facts + read model only).
+      { member: 'br_api', role: 'br_achievements', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_authority', inherit: false, set: true, admin: false },
       // BRT-05: competition operations.
       { member: 'br_api', role: 'br_competition', inherit: false, set: true, admin: false },
@@ -61,6 +86,8 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_api', role: 'br_results', inherit: false, set: true, admin: false },
       // BRT-07: verification runtime (reads canonical facts; writes runs + read model only).
       { member: 'br_api', role: 'br_verification', inherit: false, set: true, admin: false },
+      // BRT-08R: read-only Verification interface used by the achievement runtime.
+      { member: 'br_api', role: 'br_verification_reader', inherit: false, set: true, admin: false },
       // BRT-04: the PII vault is reachable only through its own login.
       {
         member: 'br_api_vault',

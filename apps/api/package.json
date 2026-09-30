@@ -11,6 +11,7 @@
     "dev-token": "tsx src/dev-token.ts"
   },
   "dependencies": {
+    "@br/achievements": "workspace:*",
     "@br/authority": "workspace:*",
     "@br/canonical": "workspace:*",
     "@br/domain": "workspace:*",

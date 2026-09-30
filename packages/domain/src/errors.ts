@@ -49,6 +49,13 @@ export const DomainErrorCode = {
    * clock step backwards). A coherent snapshot cannot be assembled; fail closed.
    */
   VERIFICATION_TIME_INCONSISTENT: 'VERIFICATION_TIME_INCONSISTENT',
+  // BRT-08 achievements (system condition — never a sporting outcome)
+  /**
+   * A derivation candidate, snapshot or stored Achievement contradicts its canonical basis (hash,
+   * rule version, ResultVersion, VerificationRun, holder credit, qualifying value). No Achievement is
+   * persisted.
+   */
+  ACHIEVEMENT_INTEGRITY_FAILURE: 'ACHIEVEMENT_INTEGRITY_FAILURE',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 

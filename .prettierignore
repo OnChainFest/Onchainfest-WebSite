@@ -7,3 +7,4 @@ docs
 packages/canonical/test-vectors/*.vectors.json
 packages/evidence/test-vectors/
 packages/verification/test-vectors/
+packages/achievements/test-vectors/

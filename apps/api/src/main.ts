@@ -24,6 +24,13 @@ const verificationOperatorDb =
     ? createDb(verificationOperatorUrl, { max: 2 })
     : undefined;
 
+// BRT-08: the achievement-rule operator connection is opt-in as well (no fallback to br_api).
+const achievementOperatorUrl = process.env.BR_ACHIEVEMENT_OPERATOR_DATABASE_URL;
+const achievementOperatorDb =
+  achievementOperatorUrl !== undefined && achievementOperatorUrl !== ''
+    ? createDb(achievementOperatorUrl, { max: 2 })
+    : undefined;
+
 // No KMS-backed cipher exists yet. Production runs without private-data storage (503
 // PRIVATE_DATA_UNAVAILABLE). Development uses the dev cipher only when BR_VAULT_DEV_KEY is set
 // explicitly — there is no built-in key.
@@ -43,6 +50,7 @@ const app = buildServer({
   vaultDb,
   ...(operatorDb === undefined ? {} : { operatorDb }),
   ...(verificationOperatorDb === undefined ? {} : { verificationOperatorDb }),
+  ...(achievementOperatorDb === undefined ? {} : { achievementOperatorDb }),
   ...(piiCipher === undefined ? {} : { piiCipher }),
   ...(evidenceBlobStore === undefined ? {} : { evidenceBlobStore }),
   ...(signatureAudience === undefined || signatureAudience === '' ? {} : { signatureAudience }),
@@ -61,6 +69,7 @@ const shutdown = async () => {
     vaultDb.destroy(),
     operatorDb?.destroy(),
     verificationOperatorDb?.destroy(),
+    achievementOperatorDb?.destroy(),
   ]);
   process.exit(0);
 };

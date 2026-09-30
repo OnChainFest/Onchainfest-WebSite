@@ -15,6 +15,7 @@ import {
   type WalletProofStatus,
 } from '@br/identity';
 import { sql } from 'kysely';
+import { passportAchievements, withLiveSupport } from './achievement-store';
 import type { Db } from './db';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
@@ -285,6 +286,8 @@ async function loadSource(ctx: TxContext, athleteId: string): Promise<PassportSo
       address: w.address,
       proofStatus: w.proof_status,
     })),
+    // BRT-08: presentation of the canonical Achievement read model (no derivation here).
+    achievements: await passportAchievements(ctx, athleteId),
   };
 }
 
@@ -304,12 +307,20 @@ export class PassportReader {
   }
 
   /** Public passport by athlete id; undefined for unknown, private, restricted or inactive athletes (indistinguishable). */
-  passport(athleteId: string, viewer: Viewer): Promise<AthletePassportV1 | undefined> {
-    return inTransaction(this.db, ModuleRole.publicRead, async (ctx) => {
-      const source = await loadSource(ctx, athleteId);
-      if (source === undefined || !isPassportVisible(source.card, viewer)) return undefined;
-      return assemblePassport(source, { testProofs: this.testProofs });
+  async passport(athleteId: string, viewer: Viewer): Promise<AthletePassportV1 | undefined> {
+    const source = await inTransaction(this.db, ModuleRole.publicRead, async (ctx) => {
+      const s = await loadSource(ctx, athleteId);
+      return s === undefined || !isPassportVisible(s.card, viewer) ? undefined : s;
     });
+    if (source === undefined) return undefined;
+    return assemblePassport(await this.live(source), { testProofs: this.testProofs });
+  }
+
+  /** BRT-08: Verified Achievement current support is re-assessed live (never a stale "current"). */
+  private async live(source: PassportSource): Promise<PassportSource> {
+    return source.achievements === undefined || source.achievements.length === 0
+      ? source
+      : { ...source, achievements: await withLiveSupport(this.db, source.achievements) };
   }
 
   /** Slug → passport. Former slugs resolve to the athlete and report `redirected` (clients redirect). */
@@ -327,15 +338,19 @@ export class PassportReader {
       if (id === undefined) return undefined;
       const source = await loadSource(ctx, id);
       if (source === undefined || !isPassportVisible(source.card, viewer)) return undefined;
-      return {
-        passport: assemblePassport(source, { testProofs: this.testProofs }),
-        resolution: {
-          athleteId: id,
-          currentSlug: source.card.slug,
-          redirected: source.card.slug !== key,
-        },
-      };
-    });
+      return { id, source };
+    }).then(async (r) =>
+      r === undefined
+        ? undefined
+        : {
+            passport: assemblePassport(await this.live(r.source), { testProofs: this.testProofs }),
+            resolution: {
+              athleteId: r.id,
+              currentSlug: r.source.card.slug,
+              redirected: r.source.card.slug !== key,
+            },
+          },
+    );
   }
 
   /** Public affiliations of an organization (visible athletes only). */

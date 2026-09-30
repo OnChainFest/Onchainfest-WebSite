@@ -655,7 +655,8 @@ try {
       (
         await sql<{
           n: number;
-        }>`SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(Verified|Achievement|Record|Prize)'`.execute(
+          // BRT-08: AchievementRule administration events are not consequences; none are derived here.
+        }>`SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(Verified|AchievementDerived|AchievementCurrentStateChanged|Record|Prize)'`.execute(
           ctx.trx,
         )
       ).rows[0]?.n,

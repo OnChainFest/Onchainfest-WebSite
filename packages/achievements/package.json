@@ -1,0 +1,25 @@
+{
+  "name": "@br/achievements",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-08 Verified Achievement engine (pure; no database, network, filesystem, clock, randomness or environment): declarative AchievementRules with platform floors, deterministic AchievementDerivationSnapshot, derivation of candidates with exact basis, TEAM memberCredits from the credited lineup, current-support assessment and public-safe wording. Never a manual award.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/competition": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*",
+    "@br/verification": "workspace:*"
+  }
+}
