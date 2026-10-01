@@ -2,10 +2,12 @@ import { createCanonicalizer, type Canonicalizer } from '@br/canonical';
 import { ALL_SCHEMAS, BRT06_SCHEMAS } from './definitions';
 import { BRT07_SCHEMAS } from './verification';
 import { BRT08_SCHEMAS } from './achievements';
+import { BRT09_SCHEMAS } from './records';
 
 export * from './definitions';
 export * from './verification';
 export * from './achievements';
+export * from './records';
 export { authorityScope, recognitionScope, mark } from './primitives';
 
 /** Schema ids as constants (id, version) so callers never hand-type them. */
@@ -58,6 +60,18 @@ export const SchemaRef = {
   achievementEvidenceCommitment: { id: 'br:achievement-evidence-commitment', version: 1 },
   achievementFact: { id: 'br:achievement-fact', version: 1 },
   achievementStatusFact: { id: 'br:achievement-status-fact', version: 1 },
+  // BRT-09
+  recordCategoryVersion: { id: 'br:record-category-version', version: 1 },
+  recordCategoryUniverse: { id: 'br:record-category-universe', version: 1 },
+  recordEvaluationSnapshot: { id: 'br:record-evaluation-snapshot', version: 1 },
+  recordEvaluationOutcome: { id: 'br:record-evaluation-outcome', version: 1 },
+  recordMark: { id: 'br:record-mark', version: 1 },
+  recordMarkIdentity: { id: 'br:record-mark-identity', version: 1 },
+  recordRatification: { id: 'br:record-ratification', version: 1 },
+  recordReplayInput: { id: 'br:record-replay-input', version: 1 },
+  recordSupportFacts: { id: 'br:record-support-facts', version: 1 },
+  recordMarkFact: { id: 'br:record-mark-fact', version: 1 },
+  recordMarkStatusFact: { id: 'br:record-mark-status-fact', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */
@@ -92,6 +106,16 @@ export const DomainTag = {
   achievementLineup: 'achievement-credited-lineup',
   achievementComparisonSet: 'achievement-comparison-set',
   achievementEvidenceCommitment: 'achievement-evidence-commitment',
+  // BRT-09 (one tag per kind of record object)
+  recordCategoryVersion: 'record-category-version',
+  recordCategoryUniverse: 'record-category-universe',
+  recordEvaluationSnapshot: 'record-evaluation-snapshot',
+  recordEvaluationOutcome: 'record-evaluation-outcome',
+  recordMark: 'record-mark',
+  recordMarkIdentity: 'record-mark-identity',
+  recordRatification: 'record-ratification',
+  recordReplay: 'record-replay',
+  recordSupport: 'record-support',
 } as const;
 
 let shared: Canonicalizer | undefined;
@@ -103,6 +127,7 @@ export function platformCanonicalizer(): Canonicalizer {
     ...BRT06_SCHEMAS,
     ...BRT07_SCHEMAS,
     ...BRT08_SCHEMAS,
+    ...BRT09_SCHEMAS,
   ]);
   return shared;
 }

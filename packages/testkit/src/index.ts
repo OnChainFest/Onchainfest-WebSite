@@ -337,11 +337,22 @@ export const RUNNING_5K_SPEC: DisciplineVersionSpec = {
   participation: { participantKinds: ['INDIVIDUAL'], lineupSize: { min: 1, max: 1 } },
 };
 
+/**
+ * BRT-09: a fictional timed discipline contested head-to-head (MATCH contests, INDIVIDUAL entries)
+ * whose comparator is METRICS / LOWER_IS_BETTER on elapsed time — a record-comparable metric.
+ */
+export const TIMED_SINGLES_SPEC: DisciplineVersionSpec = {
+  ...RUNNING_5K_SPEC,
+  validation: { bounds: [] },
+  allowedContestTypes: ['MATCH'],
+};
+
 export interface TestCatalog {
   readonly operatorAccountId: string;
   readonly padelDoubles: string;
   readonly tennisSingles: string;
   readonly running5k: string;
+  readonly timedSingles: string;
   readonly singleElimination: string;
   readonly roundRobin: string;
 }
@@ -418,6 +429,7 @@ export async function seedTestCatalog(
       TENNIS_SINGLES_SPEC,
     ),
     running5k: await version(running, 'running', '5k', 'Running 5K', RUNNING_5K_SPEC),
+    timedSingles: await version(running, 'running', 'duel', 'Timed duel', TIMED_SINGLES_SPEC),
     singleElimination: await format('single-elimination', 'single-elimination'),
     roundRobin: await format('round-robin', 'round-robin'),
   };
@@ -486,6 +498,12 @@ export async function newContestResult(deps: {
    * submitting a claim about their own contest — SUBMIT_RESULT is conflict-exempt).
    */
   submitAs?: 'REFEREE' | 'ATHLETE_A';
+  /**
+   * BRT-09: contest the timed discipline and include one elapsed-time Performance per entrant
+   * (winner, loser values in ms), and start the contest (after `startAfter`, database time) so the
+   * sporting occurrence time exists.
+   */
+  timed?: { readonly winnerMs: string; readonly loserMs: string; readonly startAfter?: string };
 }) {
   const org = deps.organizer ?? (await newOrganizer(deps.identity, deps.orgs));
   const k = () => `fx-${newId()}`;
@@ -501,7 +519,8 @@ export async function newContestResult(deps: {
     actorAccountId: org.ownerAccountId,
     competitionId,
     slug: uniqueSlug('eve'),
-    disciplineVersionId: deps.catalog.tennisSingles,
+    disciplineVersionId:
+      deps.timed === undefined ? deps.catalog.tennisSingles : deps.catalog.timedSingles,
     formatVersionId: deps.catalog.singleElimination,
     settings: { name: 'Fictional Singles' },
     idempotencyKey: k(),
@@ -553,6 +572,22 @@ export async function newContestResult(deps: {
     };
   });
 
+  if (deps.timed !== undefined) {
+    await deps.comps.activateCompetition({ actorAccountId: org.ownerAccountId, competitionId });
+    await deps.comps.startEvent({ actorAccountId: org.ownerAccountId, eventId });
+    await deps.structure.scheduleContest({
+      actorAccountId: org.ownerAccountId,
+      contestId: contest.contestId,
+      scheduledStart: new Date(Date.now() + 60_000),
+      idempotencyKey: k(),
+    });
+    if (deps.timed.startAfter !== undefined)
+      await awaitDbTimePast(deps.db, deps.timed.startAfter, 15_000);
+    await deps.structure.startContest({
+      actorAccountId: org.ownerAccountId,
+      contestId: contest.contestId,
+    });
+  }
   const platform = await deps.authority.registerPrincipal({
     principalType: 'PLATFORM',
     label: 'platform (evidence fixture)',
@@ -598,6 +633,32 @@ export async function newContestResult(deps: {
     scopeTargetId: contest.contestId as Uuid,
   });
   const content = (winner: string, loser: string) => ({
+    ...(deps.timed === undefined
+      ? {}
+      : {
+          performances: [
+            {
+              participantId: winner,
+              ordinal: 1,
+              mark: {
+                metricId: 'athletics.100m.time',
+                value: deps.timed.winnerMs,
+                unit: 'ms',
+                precision: 0,
+              },
+            },
+            {
+              participantId: loser,
+              ordinal: 1,
+              mark: {
+                metricId: 'athletics.100m.time',
+                value: deps.timed.loserMs,
+                unit: 'ms',
+                precision: 0,
+              },
+            },
+          ],
+        }),
     entries: [
       {
         participantId: winner,

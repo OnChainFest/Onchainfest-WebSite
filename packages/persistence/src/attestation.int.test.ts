@@ -312,14 +312,15 @@ describe('attestation ceremony: exact statement, single-use challenge, productio
     );
     expect(
       await q(
-        // BRT-08: achievement tables now exist; an attestation still derives no Achievement.
-        `SELECT ((SELECT count(*) FROM information_schema.tables WHERE table_name ~ '(record_mark|prize)') + (SELECT count(*) FROM verification.run WHERE result_version_id = '${w.resultVersionId}') + (SELECT count(*) FROM achievement.basis_item WHERE result_version_id = '${w.resultVersionId}'))::int AS n`,
+        // BRT-08 / BRT-09: achievement and record tables now exist; an attestation still derives no
+        // Achievement and no RecordMark (and no prize table exists).
+        `SELECT ((SELECT count(*) FROM information_schema.tables WHERE table_name ~ 'prize') + (SELECT count(*) FROM verification.run WHERE result_version_id = '${w.resultVersionId}') + (SELECT count(*) FROM achievement.basis_item WHERE result_version_id = '${w.resultVersionId}') + (SELECT count(*) FROM record.record_mark WHERE result_version_id = '${w.resultVersionId}'))::int AS n`,
       ),
     ).toEqual([{ n: 0 }]);
     expect(
       await q(
         // BRT-08 rule administration events are not consequences; an attestation derives nothing.
-        `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(Verified|AchievementDerived|AchievementCurrentStateChanged|Record|Prize)'`,
+        `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(Verified|AchievementDerived|AchievementCurrentStateChanged|RecordMark|CurrentRecordChanged|Prize)'`,
       ),
     ).toEqual([{ n: 0 }]);
     // no dependency resolution (WINNER_OF…) and no bracket change: contestants and cards identical

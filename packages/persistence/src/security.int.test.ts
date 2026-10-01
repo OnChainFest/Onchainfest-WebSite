@@ -83,6 +83,8 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_api', role: 'br_identity', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_organizations', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_public_read', inherit: false, set: true, admin: false },
+      // BRT-09: record runtime (reads exact facts; writes record facts + record read models only).
+      { member: 'br_api', role: 'br_records', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_results', inherit: false, set: true, admin: false },
       // BRT-07: verification runtime (reads canonical facts; writes runs + read model only).
       { member: 'br_api', role: 'br_verification', inherit: false, set: true, admin: false },
@@ -99,6 +101,28 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_maintenance', role: 'br_rebuild', inherit: false, set: true, admin: false },
       // BRT-05R: catalog mutation has its own login; br_api can no longer reach br_catalog.
       { member: 'br_operator_app', role: 'br_catalog', inherit: false, set: true, admin: false },
+      // BRT-09: category mutation has its own login; the record worker consumes Verification read-only.
+      {
+        member: 'br_record_operator_app',
+        role: 'br_record_rules',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      {
+        member: 'br_record_worker_app',
+        role: 'br_records',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      {
+        member: 'br_record_worker_app',
+        role: 'br_verification_reader',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
       // BRT-07: verification-policy mutation has its own login; br_api cannot reach it.
       {
         member: 'br_verification_operator_app',

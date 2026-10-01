@@ -12,6 +12,9 @@ import type { Database, Db } from './db';
  *   br_api_vault → br_identity_private · br_worker_app → br_worker · br_maintenance → br_rebuild
  *   br_achievement_worker_app → br_achievements, br_verification_reader (BRT-08 worker derivation;
  *                                never br_verification)
+ *   br_record_operator_app → br_record_rules (BRT-09 category mutation only)
+ *   br_record_worker_app → br_records, br_verification_reader (BRT-09 worker evaluation; never
+ *                          br_verification / br_achievements / br_evidence / br_authority)
  * A transaction on a connection whose login is not a member of `role` fails at SET ROLE.
  */
 export const ModuleRole = {
@@ -41,6 +44,13 @@ export const ModuleRole = {
    * write VerificationRuns, traces or policies.
    */
   verificationReader: 'br_verification_reader',
+  /**
+   * BRT-09 record runtime: reads exact sporting / verification facts (verification via the SELECT-only
+   * br_verification_reader) and RECORD_SET links; writes only record facts + record read models.
+   */
+  records: 'br_records',
+  /** BRT-09 RecordCategory writer (reachable only from br_record_operator_app). */
+  recordRules: 'br_record_rules',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 
@@ -70,6 +80,15 @@ const RETRYABLE_CONSTRAINTS = new Set([
   'policy_version_number_key',
   // BRT-08: identical concurrent derivations collapse to one logical Achievement.
   'achievement_identity_key',
+  // BRT-09: identical concurrent evaluations / ratifications collapse to one logical fact.
+  'record_mark_identity_key',
+  'record_evaluation_identity_key',
+  'mark_status_ratification_once',
+  'mark_status_ratified_once_per_mark',
+  'category_version_number_key',
+  'mark_supersession_pkey',
+  'record_basis_mark_key',
+  'record_basis_pkey',
   'rule_version_number_key',
   'supersession_pkey',
 ]);

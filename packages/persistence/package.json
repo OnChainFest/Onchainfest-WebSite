@@ -6,7 +6,8 @@
   "description": "PostgreSQL persistence primitives: migrations, ledger streams, projections, outbox, idempotency, authority store, result ledger",
   "exports": {
     ".": "./src/index.ts",
-    "./achievement-lanes": "./src/achievement-lanes.ts"
+    "./achievement-lanes": "./src/achievement-lanes.ts",
+    "./record-lanes": "./src/record-lanes.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
@@ -19,6 +20,7 @@
     "@br/domain": "workspace:*",
     "@br/evidence": "workspace:*",
     "@br/identity": "workspace:*",
+    "@br/records": "workspace:*",
     "@br/schemas": "workspace:*",
     "@br/verification": "workspace:*",
     "kysely": "0.29.6",

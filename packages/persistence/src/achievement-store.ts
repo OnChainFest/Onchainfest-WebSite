@@ -1,5 +1,4 @@
 import {
-  ACHIEVEMENT_ENGINE_VERSION,
   assessSupport,
   blockingReasons,
   currentSupportStatement,
@@ -27,6 +26,7 @@ import {
   DomainErrorCode,
   newId,
   VERIFICATION_LEVEL_LABEL,
+  verificationLevelIndex,
   type AchievementStatus,
   type AchievementType,
   type DomainEvent,
@@ -35,14 +35,17 @@ import {
   type VerificationLevel,
 } from '@br/domain';
 import { SchemaRef } from '@br/schemas';
+import { categoryFloor, type RecordCategorySpec } from '@br/records';
 import { sql } from 'kysely';
 import {
   applicableRules,
   assembleCanonicalSnapshot,
   canonicalBasisFact,
   loadVersionFacts,
+  ratifiedRecordMarks,
   verificationSummary,
   type ApplicableRule,
+  type VersionFacts,
 } from './achievement-loader';
 import { refreshAchievementCard } from './achievement-projection';
 import type { Db } from './db';
@@ -120,8 +123,30 @@ export function validateCandidate(
     throw integrity('CANDIDATE_HASH_MISMATCH', 'candidate hash does not recompute');
   if (identityOf(c).identityHash !== entry.identityHash)
     throw integrity('IDENTITY_HASH_MISMATCH', 'identity hash does not recompute');
-  if (c.provenance !== s.provenance || c.engineVersion !== ACHIEVEMENT_ENGINE_VERSION)
+  if (c.provenance !== s.provenance || c.engineVersion !== s.rule.spec.targetEngine)
     throw integrity('CANDIDATE_PROVENANCE_MISMATCH', 'candidate provenance / engine mismatch');
+  // BRT-09 RECORD_SET: the record pin must be exactly the snapshot's RecordMark facts.
+  if (c.achievementType === 'RECORD_SET') {
+    const r = s.record;
+    const pin = c.record;
+    if (
+      r === undefined ||
+      pin === undefined ||
+      pin.recordMarkId !== r.recordMarkId ||
+      pin.markHash !== r.markHash ||
+      pin.categoryId !== r.categoryId ||
+      pin.categoryVersionId !== r.categoryVersionId ||
+      pin.categoryVersionHash !== r.categoryVersionHash ||
+      pin.ratificationEntryId !== r.ratificationEntryId ||
+      pin.ratificationHash !== r.ratificationHash ||
+      pin.standing !== r.standing ||
+      c.holder.holderType !== r.holder.holderType ||
+      c.holder.holderId !== r.holder.holderId ||
+      !sameMark(c.qualifyingValue, r.value)
+    )
+      throw integrity('RECORD_PIN_MISMATCH', 'RECORD_SET pin does not match the RecordMark facts');
+  } else if (c.record !== undefined)
+    throw integrity('RECORD_PIN_MISMATCH', 'only a RECORD_SET carries a record pin');
   if (
     c.rule.ruleId !== s.rule.ruleId ||
     c.rule.ruleVersionId !== s.rule.ruleVersionId ||
@@ -164,7 +189,9 @@ export function validateCandidate(
     if (b.performanceOrdinal !== undefined && perf === undefined)
       throw integrity('BASIS_PERFORMANCE_UNKNOWN', 'performance is not in the basis version');
     const value =
-      c.achievementType === 'PERFORMANCE_THRESHOLD' || c.achievementType === 'PERSONAL_BEST';
+      c.achievementType === 'PERFORMANCE_THRESHOLD' ||
+      c.achievementType === 'PERSONAL_BEST' ||
+      c.achievementType === 'RECORD_SET';
     if (value ? !sameMark(c.qualifyingValue, perf?.mark) : c.qualifyingValue !== undefined)
       throw integrity(
         'QUALIFYING_VALUE_MISMATCH',
@@ -290,7 +317,19 @@ async function insertDerived(
     memberCredits: credits,
     supersedes,
   });
-  await lockKeys(ctx, `achievement:${entry.identityHash}`);
+  await lockKeys(
+    ctx,
+    `achievement:${entry.identityHash}`,
+    ...(c.record === undefined ? [] : [`record-set:${c.record.recordMarkId}`]),
+  );
+  if (c.record !== undefined) {
+    // One RECORD_SET per RecordMark, whatever run / rule version re-derives it (idempotent).
+    const { rows: linked } = await sql<{ achievement_id: string }>`
+      SELECT achievement_id FROM achievement.record_basis WHERE record_mark_id = ${c.record.recordMarkId}`.execute(
+      ctx.trx,
+    );
+    if (linked[0] !== undefined) return view(linked[0].achievement_id, false, []);
+  }
   const { rows: existing } = await sql<{ id: string; candidate_hash: string }>`
     SELECT id, candidate_hash FROM achievement.achievement WHERE identity_hash = ${entry.identityHash}`.execute(
     ctx.trx,
@@ -330,6 +369,14 @@ async function insertDerived(
   for (const m of c.memberCredits ?? [])
     await sql`INSERT INTO achievement.member_credit (achievement_id, athlete_id, credit_role, recorded_at)
       VALUES (${id}, ${m.athleteId}, ${m.creditRole}, ${ctx.txTime})`.execute(ctx.trx);
+  // BRT-09 (ADR-0045): the append-only RECORD_SET → RecordMark link (the mark row is never mutated).
+  if (c.record !== undefined)
+    await sql`INSERT INTO achievement.record_basis
+        (achievement_id, record_mark_id, mark_hash, category_id, category_version_id, category_version_hash,
+         ratification_entry_id, ratification_hash, standing, recorded_at)
+      VALUES (${id}, ${c.record.recordMarkId}, ${c.record.markHash}, ${c.record.categoryId},
+              ${c.record.categoryVersionId}, ${c.record.categoryVersionHash}, ${c.record.ratificationEntryId},
+              ${c.record.ratificationHash}, ${c.record.standing}, ${ctx.txTime})`.execute(ctx.trx);
 
   const stream = await openStream(ctx, id as Uuid, StreamType.ACHIEVEMENT);
   await stream.append({
@@ -362,6 +409,7 @@ async function insertDerived(
       })),
       holdSupported: s.supportedFactKinds.includes('HOLD_STATE'),
       ...(s.hold === undefined ? {} : { holdActive: s.hold.active }),
+      ...(s.record === undefined ? {} : { recordMarkStatus: s.record.currentStatus }),
     }),
   );
   await emitEvent(ctx, {
@@ -476,6 +524,25 @@ async function persistSealed(
   };
 }
 
+/**
+ * BRT-09: RECORD_SET rules applicable to a ratified mark — bound (no retroactivity) at the moment the
+ * mark was ratified, which is the fact that creates a RECORD_SET (BRT-01 §8.2).
+ */
+async function recordSetRulesAt(
+  ctx: TxContext,
+  facts: VersionFacts,
+  ratifiedAt: Date,
+): Promise<ApplicableRule[]> {
+  return (
+    await applicableRules(ctx, {
+      disciplineVersionId: facts.disciplineVersionId,
+      competitionId: facts.path.competitionId,
+      eventId: facts.path.eventId,
+      submittedAt: ratifiedAt,
+    })
+  ).filter((r) => r.spec.achievementType === 'RECORD_SET');
+}
+
 /** Re-assembles the canonical snapshot a CANONICAL_ASSEMBLY claim names, from live facts. */
 async function reassembleCanonical(
   ctx: TxContext,
@@ -484,6 +551,30 @@ async function reassembleCanonical(
   const facts = await loadVersionFacts(ctx, claimed.snapshot.resultVersion.resultVersionId);
   if (facts === undefined)
     throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'result version not found');
+  if (claimed.snapshot.record !== undefined) {
+    const mark = (await ratifiedRecordMarks(ctx, facts.rv.resultVersionId)).find(
+      (m) => m.recordMarkId === claimed.snapshot.record?.recordMarkId,
+    );
+    const rule =
+      mark === undefined
+        ? undefined
+        : (await recordSetRulesAt(ctx, facts, mark.ratifiedAt)).find(
+            (r) => r.ruleVersionId === claimed.snapshot.rule.ruleVersionId,
+          );
+    if (mark === undefined || rule === undefined)
+      throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'record mark / rule is not applicable');
+    const { ratifiedAt: _t, ...record } = mark;
+    const sealed = await assembleCanonicalSnapshot(
+      ctx,
+      facts,
+      rule,
+      await verificationSummary(ctx, facts.rv.resultVersionId),
+      record,
+    );
+    if (sealed.snapshotHash !== claimed.snapshotHash)
+      throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'snapshot is not the canonical assembly');
+    return sealed;
+  }
   const rule = (
     await applicableRules(ctx, {
       disciplineVersionId: facts.disciplineVersionId,
@@ -646,13 +737,30 @@ async function canonicalSupportFacts(
           : 'HOLDER_DOES_NOT_QUALIFY';
     }
   }
+  const { rows: rec } = await sql<{ status: SupportFacts['recordMarkStatus'] }>`
+    SELECT (SELECT s.status FROM record.mark_status_entry s WHERE s.record_mark_id = b.record_mark_id
+            ORDER BY s.seq DESC LIMIT 1) AS status
+    FROM achievement.record_basis b WHERE b.achievement_id = ${achievementId}`.execute(ctx.trx);
+  const { rows: floorSpec } = await sql<{ spec: RecordCategorySpec }>`
+    SELECT v.spec FROM achievement.record_basis b JOIN record.category_version v ON v.id = b.category_version_id
+    WHERE b.achievement_id = ${achievementId}`.execute(ctx.trx);
+  const base = effectiveRequirements(a.spec).level;
+  // RECORD_SET: current support is measured against the recognized mark's category floor.
+  const recordFloor = floorSpec[0] === undefined ? undefined : categoryFloor(floorSpec[0].spec);
   return {
     provenance: 'CANONICAL_ASSEMBLY',
     achievementId,
-    requiredLevel: effectiveRequirements(a.spec).level,
+    requiredLevel:
+      recordFloor !== undefined &&
+      verificationLevelIndex(recordFloor) > verificationLevelIndex(base)
+        ? recordFloor
+        : base,
     basis,
     holdSupported: false,
     ...(successorDerivation === undefined ? {} : { successorDerivation }),
+    ...(rec[0]?.status === undefined || rec[0].status === null
+      ? {}
+      : { recordMarkStatus: rec[0].status }),
   };
 }
 
@@ -746,6 +854,9 @@ export interface ResultVersionDerivation {
 }
 
 const DERIVATION_EVENTS = new Set([
+  // BRT-09: a validly ratified RecordMark ⇒ its RECORD_SET (validated derivation, idempotent).
+  'RecordMarkRatified',
+  'RecordMarkCanonicalized',
   'VerificationEvaluated',
   'AchievementRuleBound',
   'ResultSubmitted',
@@ -772,6 +883,8 @@ const SWEEP_EVENTS = new Set([
   'EvidenceAvailabilityChanged',
   'VerificationPolicyBound',
   'CurrentVerificationChanged',
+  // BRT-09: a rescinded RecordMark revokes its RECORD_SET.
+  'RecordMarkRescinded',
 ]);
 
 /**
@@ -853,12 +966,14 @@ export class AchievementService {
   ): Promise<ResultVersionDerivation | undefined> {
     const facts = await loadVersionFacts(ctx, resultVersionId);
     if (facts === undefined) return undefined;
-    const rules = await applicableRules(ctx, {
-      disciplineVersionId: facts.disciplineVersionId,
-      competitionId: facts.path.competitionId,
-      eventId: facts.path.eventId,
-      submittedAt: facts.submittedAt,
-    });
+    const rules = (
+      await applicableRules(ctx, {
+        disciplineVersionId: facts.disciplineVersionId,
+        competitionId: facts.path.competitionId,
+        eventId: facts.path.eventId,
+        submittedAt: facts.submittedAt,
+      })
+    ).filter((r) => r.spec.achievementType !== 'RECORD_SET');
     const verification =
       rules.length === 0 ? undefined : await verificationSummary(ctx, resultVersionId);
     const reports: DerivationReport[] = [];
@@ -900,6 +1015,33 @@ export class AchievementService {
         outcome: 'SUCCEEDED',
         details: { state: 'NO_APPLICABLE_RULE' },
       });
+    // BRT-09 RECORD_SET: one snapshot per validly ratified mark of this version, under the RECORD_SET
+    // rules in force when it was ratified. Marks already linked are skipped (one RECORD_SET per mark).
+    for (const mark of await ratifiedRecordMarks(ctx, resultVersionId)) {
+      const { rows: linked } = await sql<{ n: number }>`
+        SELECT count(*)::int AS n FROM achievement.record_basis WHERE record_mark_id = ${mark.recordMarkId}`.execute(
+        ctx.trx,
+      );
+      if ((linked[0]?.n ?? 0) > 0) continue;
+      const { ratifiedAt: _t, ...record } = mark;
+      for (const rule of await recordSetRulesAt(ctx, facts, mark.ratifiedAt)) {
+        const sealed = await assembleCanonicalSnapshot(
+          ctx,
+          facts,
+          rule,
+          await verificationSummary(ctx, resultVersionId),
+          record,
+        );
+        reports.push(
+          await persistSealed(
+            ctx,
+            sealed,
+            { code: rule.code, version: rule.version },
+            actorAccountId,
+          ),
+        );
+      }
+    }
     const reassessed = await this.reassessDependents(ctx, [
       resultVersionId,
       facts.supersedesVersionId,

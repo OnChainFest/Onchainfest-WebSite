@@ -40,7 +40,14 @@ describe('rule validation (bounded, declarative, floors never lowered)', () => {
   });
 
   it('rejects unknown kinds, types, levels, fields and scripts', () => {
-    expect(codes({ ...title, achievementType: 'RECORD_SET' })).toContain('BRJ_ENUM');
+    // BRT-09: RECORD_SET exists, but only on achievement-engine/2 with the RECORD_MARK_RATIFIED kind.
+    expect(codes({ ...title, achievementType: 'RECORD_SET' })).toEqual(
+      expect.arrayContaining([
+        'RECORD_SET_REQUIRES_ACHIEVEMENT_ENGINE_2',
+        'CRITERION_KIND_NOT_ALLOWED_FOR_TYPE',
+      ]),
+    );
+    expect(codes({ ...title, achievementType: 'QUALIFIED' })).toContain('BRJ_ENUM');
     expect(codes({ ...title, achievementType: 'WORLD_RECORD' })).toContain('BRJ_ENUM');
     expect(codes({ ...title, criterion: { ...title.criterion, kind: 'JAVASCRIPT' } })).toContain(
       'BRJ_ENUM',

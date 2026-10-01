@@ -9,8 +9,9 @@
 //     result.achievement / verification.achievement / achievement columns on results or verification;
 //   · raw SQL writes into achievement.achievement / basis_item / member_credit / status_entry /
 //     supersession anywhere except the validated writer (tests and the throwaway-DB harness exempt);
-//   · consequence leapfrogging in BRT-08 code and migrations: RecordMark / RecordCategory /
-//     PrizeEntitlement / TrophyMinted / RankingUpdated / RECORD_SET issuance;
+//   · consequence leapfrogging in achievement code and BRT-08 migrations: PrizeEntitlement /
+//     TrophyMinted / RankingUpdated / PrizePaid (records exist since BRT-09: RECORD_SET is derived
+//     through the validated writer only — see tooling/check-no-manual-record.mjs);
 //   · application code (apps/*) importing fixture lanes: @br/achievements/fixtures,
 //     @br/persistence/achievement-lanes, @br/testkit/achievements — except the demo CLI, whose
 //     Part B / Part C are explicitly labelled reference fixtures (Part C in a throwaway database).
@@ -21,21 +22,23 @@ const repo = new URL('../', import.meta.url).pathname;
 const scanDirs = ['packages', 'apps', 'db/migrations'];
 const isTest = /\.(int\.)?test\.ts$/;
 const WRITER = 'packages/persistence/src/achievement-store.ts';
-const DEMO = 'apps/api/src/cli/demo-achievements.ts';
+const DEMOS = new Set([
+  'apps/api/src/cli/demo-achievements.ts',
+  'apps/api/src/cli/demo-records.ts',
+]);
 const code = [
   /\b(awardAchievement|setAchievement|forceAchievement|markWinnerAchievement|grantAchievement|insertAchievement|overrideAchievement|manualAchievement)\s*\(/,
   /\b(isWinner|is_winner|hasAchievement)\b/,
   /\b(result|verification)\.achievement\b/,
 ];
 const achievementWrite =
-  /INSERT\s+INTO\s+achievement\.(achievement|basis_item|member_credit|status_entry|supersession)\b/i;
-const leapfrog =
-  /\b(RecordMark|RecordCategory|PrizeEntitlement|TrophyMinted|RankingUpdated|RecordRatified|PrizePaid)\b/;
+  /INSERT\s+INTO\s+achievement\.(achievement|basis_item|member_credit|status_entry|supersession|record_basis)\b/i;
+const leapfrog = /\b(PrizeEntitlement|TrophyMinted|RankingUpdated|PrizePaid)\b/;
 const fixtureImport =
   /from\s+['"]@br\/(achievements\/fixtures|persistence\/achievement-lanes|testkit\/achievements)['"]/;
 const sqlRules = [
   /ALTER\s+TABLE\s+(results|verification)\.[a-z_]+\s+ADD\s+(COLUMN\s+)?[a-z_]*achievement/i,
-  /\b(record_mark|record_category|prize_entitlement|trophy)\b/i,
+  /\b(prize_entitlement|trophy)\b/i,
 ];
 const offenders = [];
 
@@ -64,10 +67,10 @@ const walk = (dir) => {
             offenders.push(`${at} raw Achievement write outside the validated writer`);
           if (!test && brt08 && leapfrog.test(line))
             offenders.push(`${at} record/prize/trophy/ranking leapfrog`);
-          if (!test && rel.startsWith('apps/') && rel !== DEMO && fixtureImport.test(line))
+          if (!test && rel.startsWith('apps/') && !DEMOS.has(rel) && fixtureImport.test(line))
             offenders.push(`${at} application code imports a fixture lane`);
         });
-    } else if (name.endsWith('.sql') && /^001[6-9]_|^002/.test(name)) {
+    } else if (name.endsWith('.sql') && /^001[6-8]_/.test(name)) {
       readFileSync(path, 'utf8')
         .split('\n')
         .forEach((line, i) => {
@@ -85,5 +88,5 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 console.log(
-  'achievement guard: no manual award path, no result/verification shortcut, no raw Achievement write, no fixture lane in apps, no record/prize/trophy/ranking',
+  'achievement guard: no manual award path, no result/verification shortcut, no raw Achievement write, no fixture lane in apps, no prize/trophy/ranking',
 );

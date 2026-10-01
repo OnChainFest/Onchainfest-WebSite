@@ -16,8 +16,8 @@ import { scopeContains, wideningDimensions } from '@br/authority';
 import { DomainTag, platformCanonicalizer, SchemaRef } from '@br/schemas';
 import { precisionFits, satisfiesThreshold, strictlyBetter } from './marks';
 import {
-  ACHIEVEMENT_ENGINE_VERSION,
   RECOGNITION_RANK,
+  SUPPORTED_ACHIEVEMENT_ENGINES,
   effectiveRequirements,
   validateAchievementRuleSpec,
   type AchievementRuleSpec,
@@ -29,6 +29,7 @@ import {
   type GoverningRecognition,
   type SnapshotComparison,
   type SnapshotPerformance,
+  type SnapshotRecordMark,
 } from './snapshot';
 
 /**
@@ -51,7 +52,8 @@ export type GateName =
   | 'VERIFICATION'
   | 'HOLD_STATE'
   | 'OCCURRENCE'
-  | 'GOVERNING_RECOGNITION';
+  | 'GOVERNING_RECOGNITION'
+  | 'RECORD_MARK';
 
 export interface Gate {
   readonly gate: GateName;
@@ -103,7 +105,8 @@ export interface AchievementCandidate {
     readonly creditRole: MemberCreditRole;
   }[];
   readonly scope: {
-    readonly scopeType: 'CONTEST' | 'ROUND' | 'EVENT' | 'COMPETITION' | 'CAREER';
+    readonly scopeType:
+      'CONTEST' | 'ROUND' | 'EVENT' | 'COMPETITION' | 'CAREER' | 'RECORD_CATEGORY';
     readonly scopeId: string;
   };
   readonly context: {
@@ -122,7 +125,14 @@ export interface AchievementCandidate {
   readonly evidenceCommitment: string;
   /** BRT-01 §8.1 governingAuthority, pinned from the basis run's immutable trace. */
   readonly governingAuthority?: GoverningRecognition;
+  /** RECORD_SET only (ADR-0045): the exact ratified RecordMark this Achievement recognizes. */
+  readonly record?: RecordPin;
 }
+
+export type RecordPin = Omit<
+  SnapshotRecordMark,
+  'currentStatus' | 'requiredLevel' | 'holder' | 'participantId' | 'performanceOrdinal' | 'value'
+>;
 
 export interface CandidateEntry {
   readonly candidateHash: string;
@@ -256,11 +266,20 @@ export function deriveAchievements(input: unknown): Derivation {
   const v = validateAchievementRuleSpec(s.rule.spec);
   if (!v.ok || v.specHash !== s.rule.specHash)
     throw integrity('RULE_HASH_MISMATCH', 'rule spec does not match its hash or is invalid');
-  if (v.spec.targetEngine !== ACHIEVEMENT_ENGINE_VERSION)
+  if (!SUPPORTED_ACHIEVEMENT_ENGINES.includes(v.spec.targetEngine))
     throw integrity('ENGINE_VERSION_UNSUPPORTED', 'rule targets another engine version');
   const spec: AchievementRuleSpec = v.spec;
+  const engineVersion = spec.targetEngine;
   const supported = new Set(s.supportedFactKinds);
-  const req = effectiveRequirements(spec);
+  const baseReq = effectiveRequirements(spec);
+  // RECORD_SET: the rule floor (V2 · FINAL) is raised to the pinned RecordMark's category floor.
+  const recordFloor =
+    spec.criterion.kind === 'RECORD_MARK_RATIFIED' ? s.record?.requiredLevel : undefined;
+  const req =
+    recordFloor !== undefined &&
+    verificationLevelIndex(recordFloor) > verificationLevelIndex(baseReq.level)
+      ? { ...baseReq, level: recordFloor }
+      : baseReq;
   const rv = s.resultVersion;
 
   // ─────────────── issuance gates ───────────────
@@ -345,6 +364,18 @@ export function deriveAchievements(input: unknown): Derivation {
         rec.push('RECOGNITION_BELOW_CLAIMED_SCOPE');
     }
     gate('GOVERNING_RECOGNITION', rec);
+  }
+
+  // BRT-09 RECORD_SET: only after the RecordMark is validly RATIFIED / CANONICAL (never pending,
+  // never rescinded). The mark's facts come from a producer that does not exist canonically yet.
+  if (spec.criterion.kind === 'RECORD_MARK_RATIFIED') {
+    const rm: string[] = [];
+    const rec = s.record;
+    if (!supported.has('RECORD_RATIFICATION')) rm.push('RECORD_RATIFICATION_UNAVAILABLE');
+    else if (rec === undefined) rm.push('RECORD_MARK_UNAVAILABLE');
+    else if (rec.currentStatus === 'RESCINDED') rm.push('RECORD_MARK_RESCINDED');
+    else if (rec.currentStatus === 'PENDING_RATIFICATION') rm.push('RECORD_MARK_NOT_RATIFIED');
+    gate('RECORD_MARK', rm);
   }
 
   if (spec.criterion.kind === 'PERSONAL_BEST') {
@@ -514,6 +545,43 @@ export function deriveAchievements(input: unknown): Derivation {
     case 'PERSONAL_BEST':
       evaluatePersonalBest();
       break;
+    case 'RECORD_MARK_RATIFIED':
+      evaluateRecordMark();
+      break;
+  }
+
+  function evaluateRecordMark() {
+    const rec = s.record;
+    if (rec === undefined) return;
+    const perf = (s.performances ?? []).find(
+      (p) => p.participantId === rec.participantId && p.ordinal === rec.performanceOrdinal,
+    );
+    if (perf === undefined) {
+      consider(
+        rec.participantId,
+        undefined,
+        ['RECORD_PERFORMANCE_NOT_IN_VERSION'],
+        'HOLDER_UNRESOLVED',
+      );
+      return;
+    }
+    const h = resolvePerformer(perf);
+    const r: string[] = [];
+    if (!perf.valid) r.push('PERFORMANCE_INVALID');
+    // RecordMark.value must be exactly the canonical Performance mark it pins.
+    if (
+      perf.mark.metricId !== rec.value.metricId ||
+      perf.mark.value !== rec.value.value ||
+      perf.mark.unit !== rec.value.unit ||
+      perf.mark.precision !== rec.value.precision
+    )
+      r.push('RECORD_VALUE_MISMATCH');
+    if (
+      typeof h !== 'string' &&
+      (h.holderType !== rec.holder.holderType || h.holderId !== rec.holder.holderId)
+    )
+      r.push('RECORD_HOLDER_MISMATCH');
+    consider(perf.participantId, perf, r, h);
   }
 
   function evaluatePersonalBest() {
@@ -619,10 +687,14 @@ export function deriveAchievements(input: unknown): Derivation {
         evidenceBundleHash: vs.evidenceBundleHash,
         evidenceBundleAsOf: vs.evaluatedAsOf,
       };
-      const valueAchievement = c.kind === 'PERFORMANCE_THRESHOLD' || c.kind === 'PERSONAL_BEST';
+      const valueAchievement =
+        c.kind === 'PERFORMANCE_THRESHOLD' ||
+        c.kind === 'PERSONAL_BEST' ||
+        c.kind === 'RECORD_MARK_RATIFIED';
+      const rec = c.kind === 'RECORD_MARK_RATIFIED' ? s.record : undefined;
       const candidate: AchievementCandidate = {
         provenance: s.provenance,
-        engineVersion: ACHIEVEMENT_ENGINE_VERSION,
+        engineVersion,
         achievementType: spec.achievementType,
         rule: {
           ruleId: s.rule.ruleId,
@@ -644,7 +716,9 @@ export function deriveAchievements(input: unknown): Derivation {
         scope:
           spec.criterion.kind === 'PERSONAL_BEST'
             ? { scopeType: 'CAREER', scopeId: s.discipline.disciplineVersionId }
-            : scope,
+            : rec !== undefined
+              ? { scopeType: 'RECORD_CATEGORY', scopeId: rec.categoryId }
+              : scope,
         context: {
           competitionId: s.hierarchy.competitionId,
           ...(s.hierarchy.eventId === undefined ? {} : { eventId: s.hierarchy.eventId }),
@@ -662,6 +736,22 @@ export function deriveAchievements(input: unknown): Derivation {
         ...(vs.governingRecognition === undefined
           ? {}
           : { governingAuthority: vs.governingRecognition }),
+        ...(rec === undefined
+          ? {}
+          : {
+              record: {
+                recordMarkId: rec.recordMarkId,
+                markHash: rec.markHash,
+                categoryId: rec.categoryId,
+                categoryVersionId: rec.categoryVersionId,
+                categoryVersionHash: rec.categoryVersionHash,
+                scopeType: rec.scopeType,
+                standing: rec.standing,
+                ratificationEntryId: rec.ratificationEntryId,
+                ratificationHash: rec.ratificationHash,
+                recognitionLevel: rec.recognitionLevel,
+              },
+            }),
       };
       const h = hashDoc(DomainTag.achievementCandidate, SchemaRef.achievementCandidate, candidate);
       const normalized = h.normalized as unknown as AchievementCandidate;
@@ -674,7 +764,7 @@ export function deriveAchievements(input: unknown): Derivation {
   }
 
   const outcome: DerivationOutcome = {
-    engineVersion: ACHIEVEMENT_ENGINE_VERSION,
+    engineVersion,
     snapshotHash,
     provenance: s.provenance,
     ruleVersionId: s.rule.ruleVersionId,

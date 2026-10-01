@@ -1,0 +1,25 @@
+{
+  "name": "@br/records",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-09 Records engine (pure; no database, network, filesystem, clock, randomness or environment): immutable declarative RecordCategoryVersions with BRT-01 platform floors, deterministic RecordEvaluationSnapshot, record candidate / ratification evaluation over verified Performance basis, chronological history replay (RC-1…RC-3), current-support assessment and model-enforced record naming. Never a manual record.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/achievements": "workspace:*",
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/competition": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}

@@ -56,3 +56,16 @@ export {
   type PublicAthleteRef,
   type ResultVersionDerivation,
 } from './achievement-store';
+export * from './record-category-store';
+export * from './record-projection';
+export * from './record-reader';
+export {
+  RecordService,
+  recordDependencyIndex,
+  liveRecordSupport,
+  canonicalRecordSupportSource,
+  replayCategory,
+  type RecordEvaluationReport,
+  type ResultVersionRecordEvaluation,
+  type RecordSupportSource,
+} from './record-store';

@@ -247,11 +247,12 @@ describe('§2 Person ↔ PERSON Principal structural invariant', () => {
 const INVENTORY = [
   {
     fn: 'results.resolve_result_version(uuid)',
-    // BRT-08: br_achievements resolves exact basis versions (EXECUTE only).
+    // BRT-08: br_achievements resolves exact basis versions (EXECUTE only). BRT-09: br_records too.
     grantees: [
       'br_achievements',
       'br_evidence',
       'br_rebuild',
+      'br_records',
       'br_verification',
       'br_verification_reader',
     ],
@@ -265,6 +266,7 @@ const INVENTORY = [
       'br_competition',
       'br_evidence',
       'br_rebuild',
+      'br_records',
       'br_results',
       'br_verification',
       'br_verification_reader',
@@ -273,7 +275,14 @@ const INVENTORY = [
   },
   {
     fn: 'competition.account_competition_roles(uuid, uuid)',
-    grantees: ['br_achievements', 'br_evidence', 'br_verification', 'br_verification_reader'],
+    // BRT-09: br_records checks competition-staff permission for staff-requested evaluations.
+    grantees: [
+      'br_achievements',
+      'br_evidence',
+      'br_records',
+      'br_verification',
+      'br_verification_reader',
+    ],
     readOnly: true,
   },
   {

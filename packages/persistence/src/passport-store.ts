@@ -17,6 +17,7 @@ import {
 import { sql } from 'kysely';
 import { passportAchievements, withLiveSupport } from './achievement-store';
 import type { Db } from './db';
+import { passportRecords } from './record-reader';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 /**
@@ -288,6 +289,8 @@ async function loadSource(ctx: TxContext, athleteId: string): Promise<PassportSo
     })),
     // BRT-08: presentation of the canonical Achievement read model (no derivation here).
     achievements: await passportAchievements(ctx, athleteId),
+    // BRT-09: presentation of the canonical RecordMark read model (legitimate records only).
+    records: await passportRecords(ctx, athleteId),
   };
 }
 

@@ -80,6 +80,39 @@ export interface SnapshotComparison extends SnapshotPerformance {
   readonly verification: VerificationSummary;
 }
 
+/**
+ * BRT-09 RECORD_SET (RECORD_RATIFICATION kind): the exact RecordMark facts — its pin, current status,
+ * the category floor, holder and Performance basis + value. Never present in production today (no
+ * canonical ratification producer, ADR-0045).
+ */
+export interface SnapshotRecordMark {
+  readonly recordMarkId: string;
+  readonly markHash: string;
+  readonly categoryId: string;
+  readonly categoryVersionId: string;
+  readonly categoryVersionHash: string;
+  readonly scopeType:
+    | 'PERSONAL'
+    | 'VENUE'
+    | 'COMPETITION'
+    | 'LEAGUE'
+    | 'PLATFORM'
+    | 'NATIONAL'
+    | 'CONTINENTAL'
+    | 'WORLD';
+  readonly standing: 'RATIFIED' | 'CANONICAL';
+  readonly ratificationEntryId: string;
+  readonly ratificationHash: string;
+  readonly recognitionLevel: RecognitionLevelValue;
+  readonly currentStatus:
+    'PENDING_RATIFICATION' | 'RATIFIED' | 'CANONICAL' | 'SUPERSEDED' | 'RESCINDED';
+  readonly requiredLevel: VerificationLevel;
+  readonly holder: { readonly holderType: 'ATHLETE' | 'TEAM'; readonly holderId: string };
+  readonly participantId: string;
+  readonly performanceOrdinal: number;
+  readonly value: Mark;
+}
+
 export interface AchievementDerivationSnapshot {
   readonly provenance: DerivationProvenance;
   readonly assembler: string;
@@ -142,6 +175,7 @@ export interface AchievementDerivationSnapshot {
   }[];
   readonly occurrence?: { readonly startedAt: Timestamp };
   readonly comparisons?: readonly SnapshotComparison[];
+  readonly record?: SnapshotRecordMark;
 }
 
 export interface SealedDerivationSnapshot {

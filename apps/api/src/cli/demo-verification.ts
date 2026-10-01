@@ -433,8 +433,9 @@ try {
     { unresolvedDependencySlots: unresolved },
   );
   const consequences = await count(
-    // BRT-08: AchievementRule administration events are not consequences; verification derives none.
-    `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|Record|Ranking|Prize|Trophy)'`,
+    // BRT-08/09: rule / category administration and record-evaluation log events are not
+    // consequences; verification derives none.
+    `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|RecordMark|CurrentRecordChanged|Ranking|Prize|Trophy)'`,
   );
   show('No Achievement / Record / Ranking / Prize / Trophy events exist', {
     consequenceEvents: consequences,

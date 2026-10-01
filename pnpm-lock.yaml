@@ -68,6 +68,9 @@ importers:
       '@br/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@br/records':
+        specifier: workspace:*
+        version: link:../../packages/records
       '@br/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
@@ -233,6 +236,9 @@ importers:
       '@br/identity':
         specifier: workspace:*
         version: link:../identity
+      '@br/records':
+        specifier: workspace:*
+        version: link:../records
       '@br/schemas':
         specifier: workspace:*
         version: link:../schemas
@@ -252,6 +258,31 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+
+  packages/records:
+    dependencies:
+      '@br/achievements':
+        specifier: workspace:*
+        version: link:../achievements
+      '@br/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@br/competition':
+        specifier: workspace:*
+        version: link:../competition
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      '@br/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/schemas:
     dependencies:
@@ -282,6 +313,9 @@ importers:
       '@br/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@br/records':
+        specifier: workspace:*
+        version: link:../records
       '@br/verification':
         specifier: workspace:*
         version: link:../verification

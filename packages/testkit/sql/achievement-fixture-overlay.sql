@@ -2,7 +2,8 @@
 -- TEST-ONLY DDL OVERLAY — REFERENCE PERSISTENCE FIXTURE LANE (BRT-08, ADR-0037).
 -- NOT A MIGRATION. NEVER applied by db:bootstrap, db:migrate, any seed, the API, the worker or any
 -- runtime role. Installed only by the test harness (@br/testkit/achievements), as the migration
--- OWNER, into an explicitly THROWAWAY database (name br_achfx_<12 hex>) that is dropped after use.
+-- OWNER, into an explicitly THROWAWAY database (name br_achfx_<12 hex>, or br_recfx_<12 hex> for the
+-- BRT-09 record lane) that is dropped after use.
 --
 -- It relaxes ONLY the two provenance CHECK constraints of the normal schema so that REFERENCE_FIXTURE
 -- derivations (synthetic V2 / FINAL / hold / credited-lineup facts, in memory) can exercise BRT-08's
@@ -13,7 +14,7 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 DO $$
 BEGIN
-  IF current_database() !~ '^br_achfx_[0-9a-f]{12}$' THEN
+  IF current_database() !~ '^br_(achfx|recfx)_[0-9a-f]{12}$' THEN
     RAISE EXCEPTION 'refusing to install the achievement fixture overlay into %: not a throwaway fixture database', current_database();
   END IF;
 END

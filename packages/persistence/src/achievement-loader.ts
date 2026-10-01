@@ -9,6 +9,7 @@ import {
   type PinnedGoverningDecision,
   type SealedDerivationSnapshot,
   type SnapshotComparison,
+  type SnapshotRecordMark,
   type SupportBasisFact,
   type VerificationSummary,
 } from '@br/achievements';
@@ -33,6 +34,7 @@ import { canonicalHash } from './hashing';
 import { ModuleRole, withModuleRole, type TxContext } from './tx';
 import { hashOutcome, hashTrace, type VerificationTrace } from '@br/verification';
 import { currentVerificationFreshness } from './verification-store';
+import { categoryFloor, type RecordCategorySpec } from '@br/records';
 
 /**
  * BRT-08 canonical assembly (the CANONICAL PRODUCTION lane). Loads ONLY facts today's producers
@@ -284,7 +286,7 @@ export async function loadVersionFacts(
   };
 }
 
-async function contestStartedAt(ctx: TxContext, contestId: string | undefined) {
+export async function contestStartedAt(ctx: TxContext, contestId: string | undefined) {
   if (contestId === undefined) return undefined;
   const { rows } = await sql<{ t: Date | null }>`
     SELECT min(recorded_at) AS t FROM competition.contest_status_change
@@ -355,6 +357,7 @@ export async function assembleCanonicalSnapshot(
   facts: VersionFacts,
   rule: ApplicableRule,
   verification: VerificationSummary,
+  record?: SnapshotRecordMark,
 ): Promise<SealedDerivationSnapshot> {
   const { rows: dv } = await sql<{
     spec: DisciplineVersionSpec;
@@ -465,8 +468,70 @@ export async function assembleCanonicalSnapshot(
     })),
     ...(started === undefined ? {} : { occurrence: { startedAt: started.toISOString() } }),
     ...(comparisons.length === 0 ? {} : { comparisons }),
+    // BRT-09 RECORD_SET: the exact RecordMark facts. RECORD_RATIFICATION is NOT a supported kind in
+    // production (no canonical RECORD_RATIFIED / REVIEW_COMPLETED producer): the gate fails closed.
+    ...(record === undefined ? {} : { record }),
   };
   return sealDerivationSnapshot(snapshot);
+}
+
+/**
+ * BRT-09: the RecordMarks of one ResultVersion that were validly ratified (a ratification entry by
+ * authority exists; latest status RATIFIED / CANONICAL / SUPERSEDED — never PENDING, never RESCINDED),
+ * as RECORD_SET snapshot facts, with the ratification instant (RECORD_SET rule applicability time).
+ */
+export async function ratifiedRecordMarks(
+  ctx: TxContext,
+  resultVersionId: string,
+  provenance: 'CANONICAL_ASSEMBLY' | 'REFERENCE_FIXTURE' = 'CANONICAL_ASSEMBLY',
+): Promise<(SnapshotRecordMark & { readonly ratifiedAt: Date })[]> {
+  const { rows } = await sql<{
+    id: string;
+    mark_hash: string;
+    category_id: string;
+    category_version_id: string;
+    category_spec_hash: string;
+    scope_type: SnapshotRecordMark['scopeType'];
+    holder_type: 'ATHLETE' | 'TEAM';
+    holder_id: string;
+    participant_id: string;
+    performance_ordinal: number;
+    value: SnapshotRecordMark['value'];
+    spec: RecordCategorySpec;
+    rat_id: string;
+    rat_status: 'RATIFIED' | 'CANONICAL';
+    rat_hash: string;
+    rat_at: Date;
+    latest: SnapshotRecordMark['currentStatus'];
+  }>`
+    SELECT m.id, m.mark_hash, m.category_id, m.category_version_id, m.category_spec_hash, m.scope_type,
+           m.holder_type, m.holder_id, m.participant_id, m.performance_ordinal, m.value, v.spec,
+           r.id AS rat_id, r.status AS rat_status, r.ratification_hash AS rat_hash, r.recorded_at AS rat_at,
+           (SELECT s.status FROM record.mark_status_entry s WHERE s.record_mark_id = m.id ORDER BY s.seq DESC LIMIT 1) AS latest
+    FROM record.record_mark m
+    JOIN record.category_version v ON v.id = m.category_version_id
+    JOIN record.mark_status_entry r ON r.record_mark_id = m.id AND r.ratification_ref IS NOT NULL
+    WHERE m.result_version_id = ${resultVersionId} AND m.provenance = ${provenance}
+    ORDER BY m.id`.execute(ctx.trx);
+  return rows.map((r) => ({
+    recordMarkId: r.id,
+    markHash: r.mark_hash,
+    categoryId: r.category_id,
+    categoryVersionId: r.category_version_id,
+    categoryVersionHash: r.category_spec_hash,
+    scopeType: r.scope_type,
+    standing: r.rat_status,
+    ratificationEntryId: r.rat_id,
+    ratificationHash: r.rat_hash,
+    recognitionLevel: r.spec.recognition.level,
+    currentStatus: r.latest,
+    requiredLevel: categoryFloor(r.spec),
+    holder: { holderType: r.holder_type, holderId: r.holder_id },
+    participantId: r.participant_id,
+    performanceOrdinal: r.performance_ordinal,
+    value: r.value,
+    ratifiedAt: r.rat_at,
+  }));
 }
 
 /** Canonical current state of one basis item (for current-support assessment). */
