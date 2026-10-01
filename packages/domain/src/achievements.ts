@@ -22,20 +22,24 @@ export const AchievementType = {
   TITLE: 'TITLE',
   PERFORMANCE_THRESHOLD: 'PERFORMANCE_THRESHOLD',
   PERSONAL_BEST: 'PERSONAL_BEST',
+  /**
+   * BRT-09 (ADR-0045): created ONLY after a RecordMark is validly RATIFIED / CANONICAL, derived by
+   * the same validated engine path from the mark's exact performance basis + its ratification.
+   */
+  RECORD_SET: 'RECORD_SET',
 } as const;
 export type AchievementType = (typeof AchievementType)[keyof typeof AchievementType];
 export const ACHIEVEMENT_TYPES = Object.values(AchievementType);
 
 /**
  * BRT-01 §8.2 types NOT derived by BRT-08: STREAK (needs a sequence of achievements), SEASON_TITLE
- * (no season/league entity), RANKING_MILESTONE (rankings), RECORD_SET (records — BRT-09),
- * QUALIFIED (qualification engine). Rule validation rejects them.
+ * (no season/league entity), RANKING_MILESTONE (rankings), QUALIFIED (qualification engine). Rule
+ * validation rejects them. RECORD_SET is derived since BRT-09 (from a ratified RecordMark).
  */
 export const DEFERRED_ACHIEVEMENT_TYPES = [
   'STREAK',
   'SEASON_TITLE',
   'RANKING_MILESTONE',
-  'RECORD_SET',
   'QUALIFIED',
 ] as const;
 
@@ -87,6 +91,8 @@ export type DerivationProvenance = (typeof DerivationProvenance)[keyof typeof De
  *   CONTEST_OCCURRENCE  contest start from contest status facts                     (produced)
  *   HOLD_STATE          admitted-dispute holds (BRT-01 §1.3)                        (NO producer)
  *   CREDITED_LINEUP     the lineup inside Result content (ADR-0026)                 (NO producer)
+ *   RECORD_RATIFICATION a RecordMark's valid ratification (BRT-09; RECORD_RATIFIED /
+ *                       REVIEW_COMPLETED producer deferred to BRT-06R)              (NO producer)
  */
 export const DerivationFactKind = {
   RESULT_STATUS: 'RESULT_STATUS',
@@ -94,6 +100,7 @@ export const DerivationFactKind = {
   CONTEST_OCCURRENCE: 'CONTEST_OCCURRENCE',
   HOLD_STATE: 'HOLD_STATE',
   CREDITED_LINEUP: 'CREDITED_LINEUP',
+  RECORD_RATIFICATION: 'RECORD_RATIFICATION',
 } as const;
 export type DerivationFactKind = (typeof DerivationFactKind)[keyof typeof DerivationFactKind];
 export const ALL_DERIVATION_FACT_KINDS = Object.values(DerivationFactKind);
@@ -163,6 +170,9 @@ export const ACHIEVEMENT_PLATFORM_FLOOR: Readonly<Record<AchievementType, Conseq
     minimumResultStatus: 'OFFICIAL',
     holdBlocks: true,
   },
+  // BRT-01 §8.2 "per record category": V2 · FINAL is the lowest record floor (PLATFORM V2 + review);
+  // the engine raises it to the pinned RecordMark's category floor (V3 / V4) at derivation.
+  RECORD_SET: { minimumVerificationLevel: 'V2', minimumResultStatus: 'FINAL', holdBlocks: true },
 };
 
 /** Public labels per type (never "Verified ✓"). */
@@ -173,4 +183,5 @@ export const ACHIEVEMENT_TYPE_LABEL: Readonly<Record<AchievementType, string>> =
   TITLE: 'Title',
   PERFORMANCE_THRESHOLD: 'Performance threshold',
   PERSONAL_BEST: 'Personal best',
+  RECORD_SET: 'Record set',
 };

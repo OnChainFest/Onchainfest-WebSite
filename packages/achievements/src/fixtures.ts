@@ -7,6 +7,7 @@ import {
 } from '@br/domain';
 import {
   referencePersonalBestRule,
+  referenceRecordSetRule,
   referenceThresholdRule,
   referenceTitleRule,
   validateAchievementRuleSpec,
@@ -14,6 +15,7 @@ import {
 } from './rule';
 import type {
   AchievementDerivationSnapshot,
+  SnapshotRecordMark,
   GoverningRecognitionScope,
   RecognitionLevelValue,
   SnapshotComparison,
@@ -103,6 +105,7 @@ export const FIXTURE_RULES = {
     key: 'elapsedTimeMs',
     markMetricId: 'elapsed_time_ms',
   }),
+  runningRecordSet: referenceRecordSetRule(FX.runningDv),
 } satisfies Record<string, AchievementRuleSpec>;
 
 /** Snapshot `rule` member for a fixture rule spec (ids from labels, real spec hash). */
@@ -172,7 +175,11 @@ function base(o: FixtureOptions, dv0: string, metrics: readonly unknown[]) {
   return {
     provenance: 'REFERENCE_FIXTURE' as const,
     assembler: 'reference-fixture/1',
-    supportedFactKinds: ALL_DERIVATION_FACT_KINDS.filter((k) => !(o.unsupported ?? []).includes(k)),
+    // RECORD_RATIFICATION (BRT-09) is declared only by RECORD_SET fixtures (recordSetFixture), so
+    // every BRT-08 reference snapshot — and its committed vector — is byte-identical.
+    supportedFactKinds: ALL_DERIVATION_FACT_KINDS.filter(
+      (k) => k !== 'RECORD_RATIFICATION' && !(o.unsupported ?? []).includes(k),
+    ),
     discipline: {
       disciplineVersionId: dv,
       sport: o.sport ?? 'fixture',
@@ -427,5 +434,64 @@ export function personalBestFixture(
         ...(p.state === undefined ? {} : { state: p.state }),
       }),
     ),
+  } as AchievementDerivationSnapshot;
+}
+
+/**
+ * BRT-09 RECORD_SET fixture: one running performance (elapsed time, lower is better) that a
+ * synthetic, validly ratified RecordMark pins. REFERENCE ENGINE FIXTURE — NOT PERSISTED SPORTING
+ * TRUTH: the ratification it assumes has no canonical producer (deferred BRT-06R).
+ */
+export function recordSetFixture(
+  o: FixtureOptions & {
+    readonly value?: string;
+    readonly record?: Partial<SnapshotRecordMark> | null;
+  } = {},
+): AchievementDerivationSnapshot {
+  const b = base(o, FX.runningDv, RUNNING_METRICS);
+  const { rvLabel, ...rest } = b;
+  const value = o.value ?? '598000';
+  const mark = { metricId: 'elapsed_time_ms', value, unit: 'ms', precision: 0 };
+  const record: SnapshotRecordMark = {
+    recordMarkId: fixtureId(`record-mark:${rvLabel}`),
+    markHash: fixtureHash(`record-mark:${rvLabel}`),
+    categoryId: fixtureId('record-category:running-platform'),
+    categoryVersionId: fixtureId('record-category:running-platform:v1'),
+    categoryVersionHash: fixtureHash('record-category:running-platform:v1'),
+    scopeType: 'COMPETITION',
+    standing: 'RATIFIED',
+    ratificationEntryId: fixtureId(`record-ratification-entry:${rvLabel}`),
+    ratificationHash: fixtureHash(`record-ratification:${rvLabel}`),
+    recognitionLevel: 'PLATFORM',
+    currentStatus: 'RATIFIED',
+    requiredLevel: 'V3',
+    holder: { holderType: 'ATHLETE', holderId: FX.runner },
+    participantId: FX.runnerParticipant,
+    performanceOrdinal: 1,
+    value: mark,
+    ...(o.record ?? {}),
+  };
+  return {
+    ...rest,
+    supportedFactKinds: [
+      ...rest.supportedFactKinds,
+      ...((o.unsupported ?? []).includes('RECORD_RATIFICATION')
+        ? []
+        : (['RECORD_RATIFICATION'] as const)),
+    ],
+    rule: fixtureRule(
+      o.ruleSpec ?? FIXTURE_RULES.runningRecordSet,
+      o.ruleLabel ?? 'running-record-set',
+      o.ruleVersion,
+      o.ruleIdentity,
+    ),
+    resultVersion: resultVersion(o, rvLabel, 'CONTEST', FX.contest),
+    entries: [{ participantId: FX.runnerParticipant, outcome: 'RANKED', rank: 1 }],
+    participants: [
+      { participantId: FX.runnerParticipant, kind: 'INDIVIDUAL', athleteId: FX.runner },
+    ],
+    performances: [{ participantId: FX.runnerParticipant, ordinal: 1, mark, valid: true }],
+    occurrence: { startedAt: fixtureTime(60) },
+    ...(o.record === null ? {} : { record }),
   } as AchievementDerivationSnapshot;
 }

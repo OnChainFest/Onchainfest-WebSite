@@ -10,6 +10,7 @@ import type {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthAdapter } from './auth';
 import { registerAchievementsV1, type AchievementsV1Deps } from './v1-achievements';
+import { registerRecordsV1, type RecordsV1Deps } from './v1-records';
 import { registerCompetitionV1, type CompetitionV1Deps } from './v1-competition';
 import { registerEvidenceV1, type EvidenceV1Deps } from './v1-evidence';
 import { registerVerificationV1, type VerificationV1Deps } from './v1-verification';
@@ -57,6 +58,8 @@ export interface V1Deps {
   readonly verification?: VerificationV1Deps;
   /** BRT-08 achievements (registered when provided). */
   readonly achievements?: AchievementsV1Deps;
+  /** BRT-09 records & Record Hall of Fame (registered when provided). */
+  readonly records?: RecordsV1Deps;
 }
 
 /** Shared route-registration toolkit (same auth boundary, DTO strictness and classification). */
@@ -115,6 +118,8 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   VERIFICATION_TIME_INCONSISTENT: 503,
   // BRT-08: a system condition (basis / hash mismatch), never a sporting outcome.
   ACHIEVEMENT_INTEGRITY_FAILURE: 500,
+  // BRT-09: a system condition (category / value / subject-hash mismatch), never a sporting outcome.
+  RECORD_INTEGRITY_FAILURE: 500,
 };
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */
@@ -138,7 +143,8 @@ export function errorBody(err: DomainError): {
       err.code === 'EVIDENCE_NOT_AVAILABLE' ||
       err.code === 'VERIFICATION_INTEGRITY_FAILURE' ||
       err.code === 'VERIFICATION_TIME_INCONSISTENT' ||
-      err.code === 'ACHIEVEMENT_INTEGRITY_FAILURE') &&
+      err.code === 'ACHIEVEMENT_INTEGRITY_FAILURE' ||
+      err.code === 'RECORD_INTEGRITY_FAILURE') &&
     typeof reason === 'string' &&
     /^[A-Z][A-Z0-9_]{0,39}$/.test(reason);
   // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
@@ -1017,6 +1023,11 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     registerAchievementsV1(
       { route, requireAuth, operator, key },
       { ...deps.achievements, passports: deps.passports },
+    );
+  if (deps.records !== undefined)
+    registerRecordsV1(
+      { route, requireAuth, operator, key },
+      { ...deps.records, passports: deps.passports },
     );
 
   return routes;

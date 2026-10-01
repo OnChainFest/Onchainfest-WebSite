@@ -22,6 +22,7 @@ When a result changed, nothing could tell which awards depended on it. Duplicate
 2. An **Achievement** is a *derived recognition*, produced by a versioned AchievementRule from one or more verified result versions.
 3. An Achievement **references** its basis (result version ids and hashes, verification ids, performance ids). It does not copy raw result data. The only exception is a `qualifyingValue` when the achievement is *about* a value, and that value must equal the referenced performance.
 4. Records, rankings, prizes and trophies derive from Achievements or FINAL classifications, never directly from raw submissions.
+   - *Clarification (BRT-09, [ADR-0044](./ADR-0044-records-consume-verified-performance-basis.md)):* comparative records are computed over a **verified immutable Performance basis** (FINAL, CURRENT verification at the category floor, exact hashes) and recognized by the RECORD_SET Achievement after ratification — never from raw submissions.
 
 ## Consequences
 

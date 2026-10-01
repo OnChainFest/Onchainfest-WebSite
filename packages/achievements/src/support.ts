@@ -15,6 +15,7 @@ import type { VerificationSummary } from './snapshot';
  * current state of its exact basis:
  *
  *   basis ResultVersion REVOKED                                   → REVOKED    BASIS_RESULT_REVOKED
+ *   RECORD_SET whose RecordMark was RESCINDED (BRT-09)             → REVOKED    RECORD_MARK_RESCINDED
  *   a newer Achievement (same type/rule/holder/scope) replaced it → SUPERSEDED REPLACED_BY_NEWER_BASIS
  *   basis superseded; the successor was derived with every gate
  *     passing and this holder no longer qualifies                → REVOKED    HOLDER_NO_LONGER_QUALIFIES
@@ -48,6 +49,12 @@ export interface SupportFacts {
   readonly holdActive?: boolean;
   readonly replacementAchievementId?: string;
   readonly successorDerivation?: 'HOLDER_QUALIFIES' | 'HOLDER_DOES_NOT_QUALIFY' | 'BLOCKED';
+  /**
+   * RECORD_SET only (BRT-09): the recognized RecordMark's current status. RESCINDED ⇒ REVOKED; a
+   * SUPERSEDED record still WAS set, so the RECORD_SET stays supported.
+   */
+  readonly recordMarkStatus?:
+    'PENDING_RATIFICATION' | 'RATIFIED' | 'CANONICAL' | 'SUPERSEDED' | 'RESCINDED';
 }
 
 export interface SupportAssessment {
@@ -82,6 +89,7 @@ export function assessSupport(input: SupportFacts): SupportAssessment {
   });
   const marker = f.holdSupported === true && f.holdActive === true ? ['UNDER_DISPUTE'] : [];
   if (f.basis.some((b) => b.status === 'REVOKED')) return done('REVOKED', ['BASIS_RESULT_REVOKED']);
+  if (f.recordMarkStatus === 'RESCINDED') return done('REVOKED', ['RECORD_MARK_RESCINDED']);
   if (f.replacementAchievementId !== undefined)
     return done('SUPERSEDED', ['REPLACED_BY_NEWER_BASIS'], f.replacementAchievementId);
   const superseded = f.basis.some(

@@ -8,3 +8,4 @@ export * from './errors';
 export * from './evidence';
 export * from './verification';
 export * from './achievements';
+export * from './records';

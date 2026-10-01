@@ -5,6 +5,8 @@ import {
   consumeOutbox,
   createDb,
   databaseUrls,
+  RecordService,
+  recordWorkerDatabaseUrl,
   runOneJob,
 } from '@br/persistence';
 
@@ -19,6 +21,14 @@ import {
  *                          logical effects through the Achievement natural identity. There is no
  *                          fixture job, flag or event: only canonical assembly is ever used.
  *
+ *   records.evaluate       BRT-09: idempotent CANONICAL record evaluation (pending claims, logged blockers)
+ *                          and standing-mark support reassessment (rescission only on basis
+ *                          invalidation — never on temporary staleness), reacting to canonical events.
+ *                          Runs on the dedicated br_record_worker_app login (br_records +
+ *                          SELECT-only br_verification_reader); skipped (logged) when not configured.
+ *                          RECORD_SET derivation stays in achievements.derive (RecordMarkRatified).
+ *                          No ranking / qualification / prize / trophy consumer exists.
+ *
  *   --once   process one polling round and exit (used by the demos / CI smoke test)
  */
 const CONSUMER = 'dev.event-log';
@@ -31,8 +41,17 @@ const achievementDb =
   achievementUrl === undefined ? undefined : createDb(achievementUrl, { max: 3 });
 const achievements =
   achievementDb === undefined ? undefined : new AchievementService(achievementDb);
+const RECORD_CONSUMER = 'records.evaluate';
+const recordUrl = recordWorkerDatabaseUrl();
+const recordDb = recordUrl === undefined ? undefined : createDb(recordUrl, { max: 3 });
+const records = recordDb === undefined ? undefined : new RecordService(recordDb);
 
-async function round(): Promise<{ events: number; achievementEvents: number; job?: string }> {
+async function round(): Promise<{
+  events: number;
+  achievementEvents: number;
+  recordEvents: number;
+  job?: string;
+}> {
   const events = await consumeOutbox(db, CONSUMER, async (event) => {
     console.log(`[${CONSUMER}] ${event.eventType} ${event.aggregateType}/${event.aggregateId}`);
   });
@@ -45,12 +64,21 @@ async function round(): Promise<{ events: number; achievementEvents: number; job
           `[${ACHIEVEMENT_CONSUMER}] ${event.eventType}: derived=${r.derived} reassessed=${r.reassessed}`,
         );
     });
+  let recordEvents = 0;
+  if (records !== undefined)
+    recordEvents = await consumeOutbox(db, RECORD_CONSUMER, async (event) => {
+      const r = await records.react(event);
+      if (r !== undefined)
+        console.log(
+          `[${RECORD_CONSUMER}] ${event.eventType}: evaluated=${r.evaluated} rescinded=${r.rescinded}`,
+        );
+    });
   const job = await runOneJob(db, workerId, {
     noop: async () => undefined,
   });
   return job === undefined
-    ? { events, achievementEvents }
-    : { events, achievementEvents, job: `${job.kind}:${job.status}` };
+    ? { events, achievementEvents, recordEvents }
+    : { events, achievementEvents, recordEvents, job: `${job.kind}:${job.status}` };
 }
 
 let stopping = false;
@@ -61,17 +89,17 @@ process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 
 console.log(
-  `worker ${workerId} started (consumers ${CONSUMER}${achievements === undefined ? '; achievements.derive DISABLED: no achievement worker login' : `, ${ACHIEVEMENT_CONSUMER}`})`,
+  `worker ${workerId} started (consumers ${CONSUMER}${achievements === undefined ? '; achievements.derive DISABLED: no achievement worker login' : `, ${ACHIEVEMENT_CONSUMER}`}${records === undefined ? '; records.evaluate DISABLED: no record worker login' : `, ${RECORD_CONSUMER}`})`,
 );
 try {
   do {
     const r = await round();
-    if (r.events > 0 || r.achievementEvents > 0 || r.job !== undefined)
+    if (r.events > 0 || r.achievementEvents > 0 || r.recordEvents > 0 || r.job !== undefined)
       console.log(
-        `round: ${r.events} event(s), ${r.achievementEvents} achievement reaction(s)${r.job === undefined ? '' : `, job ${r.job}`}`,
+        `round: ${r.events} event(s), ${r.achievementEvents} achievement reaction(s), ${r.recordEvents} record reaction(s)${r.job === undefined ? '' : `, job ${r.job}`}`,
       );
     if (!once && !stopping) await new Promise((resolve) => setTimeout(resolve, 1000));
   } while (!once && !stopping);
 } finally {
-  await Promise.all([db.destroy(), achievementDb?.destroy()]);
+  await Promise.all([db.destroy(), achievementDb?.destroy(), recordDb?.destroy()]);
 }

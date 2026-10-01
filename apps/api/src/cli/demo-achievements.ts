@@ -420,10 +420,12 @@ try {
   );
   const { rows: events } = await sql<{ event_type: string }>`
     SELECT DISTINCT event_type FROM platform.outbox_event
-    WHERE event_type ~* '(record|trophy|prize|ranking|qualif|mint)'`.execute(owner);
+    WHERE event_type ~* '(recordmark|currentrecordchanged|trophy|prize|ranking|qualif|mint)'`.execute(
+    owner,
+  );
   expectThat(
     events.length === 0,
-    'no Record / Trophy / Prize / Ranking / Qualification / Mint event exists',
+    'no RecordMark / Trophy / Prize / Ranking / Qualification / Mint consequence event exists',
   );
 
   // ───────────────────────────── PART B ─────────────────────────────

@@ -50,7 +50,7 @@ export async function resetDatabase(adminUrl: string, database: string): Promise
   await client.connect();
   try {
     await client.query(
-      'DROP SCHEMA IF EXISTS achievement_read, achievement, verification_read, verification, evidence_read, attestation, evidence, competition_read, competition, sports, passport, organizations, identity_private, identity, results, authority, platform, br_migrations CASCADE',
+      'DROP SCHEMA IF EXISTS record_read, record, achievement_read, achievement, verification_read, verification, evidence_read, attestation, evidence, competition_read, competition, sports, passport, organizations, identity_private, identity, results, authority, platform, br_migrations CASCADE',
     );
   } finally {
     await client.end();

@@ -34,6 +34,7 @@ export function currentSupportStatement(status: AchievementStatus): string {
 
 const REASON_TEXT: Readonly<Record<string, string>> = {
   BASIS_RESULT_REVOKED: 'The basis result was revoked.',
+  RECORD_MARK_RESCINDED: 'The record mark this recognition was derived from was rescinded.',
   REPLACED_BY_NEWER_BASIS: 'A newer recognition with a corrected or re-verified basis replaced it.',
   BASIS_RESULT_SUPERSEDED: 'The basis result was superseded by a corrected version.',
   AWAITING_REDERIVATION: 'The corrected version has not (yet) produced a replacement recognition.',
@@ -72,6 +73,11 @@ const BLOCKER_TEXT: Readonly<Record<string, string>> = {
   RESULT_SCOPE_MISMATCH: 'The rule applies to another kind of result.',
   RULE_DISCIPLINE_VERSION_MISMATCH: 'The rule applies to another discipline version.',
   OCCURRENCE_TIME_UNKNOWN: 'The contest occurrence time is not known.',
+  RECORD_RATIFICATION_UNAVAILABLE:
+    'Record ratification attestations are not yet produced on the platform (deferred producer).',
+  RECORD_MARK_UNAVAILABLE: 'No ratified record mark exists for this performance.',
+  RECORD_MARK_NOT_RATIFIED: 'The record mark is pending ratification — not a record.',
+  RECORD_MARK_RESCINDED: 'The record mark was rescinded.',
 };
 
 export function publicBlocker(reason: string): string {
