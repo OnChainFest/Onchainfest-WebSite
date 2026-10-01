@@ -106,6 +106,20 @@ export const DomainEventType = {
   AchievementRuleBound: 'AchievementRuleBound',
   AchievementDerived: 'AchievementDerived',
   AchievementCurrentStateChanged: 'AchievementCurrentStateChanged',
+  // BRT-09 records (ids, hashes, statuses, values only — never PII, evidence or authority topology;
+  // never a ranking, qualification, prize, payout or trophy outcome)
+  RecordCategoryCreated: 'RecordCategoryCreated',
+  RecordCategoryVersionCreated: 'RecordCategoryVersionCreated',
+  RecordCategoryVersionPublished: 'RecordCategoryVersionPublished',
+  RecordCategoryVersionRetired: 'RecordCategoryVersionRetired',
+  RecordCandidateEvaluated: 'RecordCandidateEvaluated',
+  RecordMarkPendingRatification: 'RecordMarkPendingRatification',
+  RecordMarkRatified: 'RecordMarkRatified',
+  RecordMarkCanonicalized: 'RecordMarkCanonicalized',
+  RecordMarkSuperseded: 'RecordMarkSuperseded',
+  RecordMarkRestored: 'RecordMarkRestored',
+  RecordMarkRescinded: 'RecordMarkRescinded',
+  CurrentRecordChanged: 'CurrentRecordChanged',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -144,6 +158,9 @@ export const AggregateType = {
   ACHIEVEMENT_RULE: 'ACHIEVEMENT_RULE',
   ACHIEVEMENT_RULE_VERSION: 'ACHIEVEMENT_RULE_VERSION',
   ACHIEVEMENT: 'ACHIEVEMENT',
+  RECORD_CATEGORY: 'RECORD_CATEGORY',
+  RECORD_CATEGORY_VERSION: 'RECORD_CATEGORY_VERSION',
+  RECORD_MARK: 'RECORD_MARK',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 

@@ -31,6 +31,13 @@ const achievementOperatorDb =
     ? createDb(achievementOperatorUrl, { max: 2 })
     : undefined;
 
+// BRT-09: the record-category operator connection is opt-in as well (no fallback to br_api).
+const recordOperatorUrl = process.env.BR_RECORD_OPERATOR_DATABASE_URL;
+const recordOperatorDb =
+  recordOperatorUrl !== undefined && recordOperatorUrl !== ''
+    ? createDb(recordOperatorUrl, { max: 2 })
+    : undefined;
+
 // No KMS-backed cipher exists yet. Production runs without private-data storage (503
 // PRIVATE_DATA_UNAVAILABLE). Development uses the dev cipher only when BR_VAULT_DEV_KEY is set
 // explicitly — there is no built-in key.
@@ -51,6 +58,7 @@ const app = buildServer({
   ...(operatorDb === undefined ? {} : { operatorDb }),
   ...(verificationOperatorDb === undefined ? {} : { verificationOperatorDb }),
   ...(achievementOperatorDb === undefined ? {} : { achievementOperatorDb }),
+  ...(recordOperatorDb === undefined ? {} : { recordOperatorDb }),
   ...(piiCipher === undefined ? {} : { piiCipher }),
   ...(evidenceBlobStore === undefined ? {} : { evidenceBlobStore }),
   ...(signatureAudience === undefined || signatureAudience === '' ? {} : { signatureAudience }),
@@ -70,6 +78,7 @@ const shutdown = async () => {
     operatorDb?.destroy(),
     verificationOperatorDb?.destroy(),
     achievementOperatorDb?.destroy(),
+    recordOperatorDb?.destroy(),
   ]);
   process.exit(0);
 };

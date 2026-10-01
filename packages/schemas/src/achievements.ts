@@ -59,7 +59,15 @@ const metricKey = code('^[a-z][A-Za-z0-9]{0,63}$', 64);
 const markMetricId = code('^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$', 128);
 const decimal: BrStringSchema = { type: 'string', 'x-br-type': 'decimal' };
 const statusNoDraft = enumOf(Object.values(ResultVersionStatus).filter((s) => s !== 'DRAFT'));
-const achievementScopeType = enumOf(['CONTEST', 'ROUND', 'EVENT', 'COMPETITION', 'CAREER']);
+// RECORD_CATEGORY (BRT-09): the scope of a RECORD_SET Achievement is the record category universe.
+const achievementScopeType = enumOf([
+  'CONTEST',
+  'ROUND',
+  'EVENT',
+  'COMPETITION',
+  'CAREER',
+  'RECORD_CATEGORY',
+]);
 const verificationState = enumOf(['CURRENT', 'STALE', 'NOT_EVALUATED', 'POLICY_UNAVAILABLE']);
 
 // ───────────────────────────── rule ─────────────────────────────
@@ -105,6 +113,8 @@ export const achievementRuleV1 = root('br:achievement-rule', 1, {
           'CONTEST_OUTCOME',
           'PERFORMANCE_THRESHOLD',
           'PERSONAL_BEST',
+          // BRT-09 RECORD_SET: the Performance basis of a validly RATIFIED / CANONICAL RecordMark.
+          'RECORD_MARK_RATIFIED',
         ]),
         resultScope: enumOf(Object.values(ResultScopeType)),
         rank: obj(
@@ -190,6 +200,47 @@ const verificationSummary = obj(
   },
   ['state'],
 );
+
+/**
+ * BRT-09 (ADR-0045): the exact RecordMark a RECORD_SET recognizes — its identity + content hash, the
+ * category version it was evaluated under, and the ratification status entry (+ hash of the pinned
+ * br:record-ratification@1 document) that made it valid. The mark row itself is never mutated to
+ * point at the Achievement: the link is this immutable, hash-bound pin (append-only).
+ */
+const recordPin = {
+  recordMarkId: uuid,
+  markHash: hashRef,
+  categoryId: uuid,
+  categoryVersionId: uuid,
+  categoryVersionHash: hashRef,
+  scopeType: enumOf([
+    'PERSONAL',
+    'VENUE',
+    'COMPETITION',
+    'LEAGUE',
+    'PLATFORM',
+    'NATIONAL',
+    'CONTINENTAL',
+    'WORLD',
+  ]),
+  standing: enumOf(['RATIFIED', 'CANONICAL']),
+  ratificationEntryId: uuid,
+  ratificationHash: hashRef,
+  recognitionLevel: recognitionLevelSchema,
+} as const;
+const recordHolder = obj({ holderType, holderId: uuid }, ['holderType', 'holderId']);
+const recordPinRequired = [
+  'recordMarkId',
+  'markHash',
+  'categoryId',
+  'categoryVersionId',
+  'categoryVersionHash',
+  'scopeType',
+  'standing',
+  'ratificationEntryId',
+  'ratificationHash',
+  'recognitionLevel',
+] as const;
 
 const performanceFact = {
   participantId: uuid,
@@ -343,6 +394,36 @@ export const achievementDerivationSnapshotV1 = root('br:achievement-derivation-s
     ),
     /** Contest occurrence (start) — the PB temporal order. */
     occurrence: obj({ startedAt: timestamp }, ['startedAt']),
+    /**
+     * RECORD_SET only (RECORD_RATIFICATION kind): the RecordMark facts — its pin, current status,
+     * category floor, holder and exact Performance basis + value.
+     */
+    record: obj(
+      {
+        ...recordPin,
+        currentStatus: enumOf([
+          'PENDING_RATIFICATION',
+          'RATIFIED',
+          'CANONICAL',
+          'SUPERSEDED',
+          'RESCINDED',
+        ]),
+        requiredLevel: level,
+        holder: recordHolder,
+        participantId: uuid,
+        performanceOrdinal: { type: 'integer', minimum: 1 },
+        value: mark,
+      },
+      [
+        ...recordPinRequired,
+        'currentStatus',
+        'requiredLevel',
+        'holder',
+        'participantId',
+        'performanceOrdinal',
+        'value',
+      ],
+    ),
     /** PB only: the athlete's eligible-or-not comparison performances known at the cutoff. */
     comparisons: bounded(
       setOf(
@@ -484,6 +565,8 @@ export const achievementCandidateV1 = root('br:achievement-candidate', 1, {
     evidenceCommitment: hashRef,
     /** BRT-01 §8.1 governingAuthority, pinned from the basis run's immutable trace (AC-4). */
     governingAuthority: governingRecognition,
+    /** RECORD_SET only: the exact ratified RecordMark this Achievement recognizes (ADR-0045). */
+    record: obj(recordPin, recordPinRequired),
   },
 });
 
@@ -609,6 +692,14 @@ export const achievementSupportFactsV1 = root('br:achievement-support-facts', 1,
     holdActive: { type: 'boolean' },
     replacementAchievementId: uuid,
     successorDerivation: enumOf(['HOLDER_QUALIFIES', 'HOLDER_DOES_NOT_QUALIFY', 'BLOCKED']),
+    /** RECORD_SET only: the recognized RecordMark's current status (RESCINDED ⇒ REVOKED). */
+    recordMarkStatus: enumOf([
+      'PENDING_RATIFICATION',
+      'RATIFIED',
+      'CANONICAL',
+      'SUPERSEDED',
+      'RESCINDED',
+    ]),
   },
 });
 

@@ -56,6 +56,12 @@ export const DomainErrorCode = {
    * persisted.
    */
   ACHIEVEMENT_INTEGRITY_FAILURE: 'ACHIEVEMENT_INTEGRITY_FAILURE',
+  // BRT-09 records (system condition — never a sporting outcome)
+  /**
+   * A record evaluation snapshot, candidate, ratification or stored RecordMark contradicts its
+   * canonical basis (category hash, value, metric, holder, scope, subject hash). Nothing is persisted.
+   */
+  RECORD_INTEGRITY_FAILURE: 'RECORD_INTEGRITY_FAILURE',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 

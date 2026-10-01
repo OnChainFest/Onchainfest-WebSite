@@ -22,14 +22,24 @@ import { operatorFitsOrder, thresholdFits, type ThresholdOperator } from './mark
  */
 export const ACHIEVEMENT_ENGINE_ID = 'bragging-rights-achievement-engine';
 export const ACHIEVEMENT_ENGINE_VERSION = 'achievement-engine/1';
-export const SUPPORTED_ACHIEVEMENT_ENGINES: readonly string[] = [ACHIEVEMENT_ENGINE_VERSION];
+/**
+ * BRT-09 (ADR-0045): achievement-engine/2 = achievement-engine/1 for EVERY /1 criterion (identical
+ * derivations, hashes and vectors) + the RECORD_MARK_RATIFIED criterion of RECORD_SET. A /1 rule is
+ * still derived by /1 semantics and its candidates carry engineVersion achievement-engine/1.
+ */
+export const ACHIEVEMENT_ENGINE_VERSION_2 = 'achievement-engine/2';
+export const SUPPORTED_ACHIEVEMENT_ENGINES: readonly string[] = [
+  ACHIEVEMENT_ENGINE_VERSION,
+  ACHIEVEMENT_ENGINE_VERSION_2,
+];
 
 export type CriterionKind =
   | 'CLASSIFICATION_POSITION'
   | 'CLASSIFICATION_COMPLETION'
   | 'CONTEST_OUTCOME'
   | 'PERFORMANCE_THRESHOLD'
-  | 'PERSONAL_BEST';
+  | 'PERSONAL_BEST'
+  | 'RECORD_MARK_RATIFIED';
 
 export type HolderStrategy = 'ENTRY_PARTICIPANT' | 'PERFORMER';
 
@@ -112,6 +122,7 @@ export const TYPE_SHAPE: Readonly<
     scopes: ['CONTEST'],
   },
   PERSONAL_BEST: { kind: 'PERSONAL_BEST', holder: 'PERFORMER', scopes: ['CONTEST'] },
+  RECORD_SET: { kind: 'RECORD_MARK_RATIFIED', holder: 'PERFORMER', scopes: ['CONTEST'] },
 };
 
 /** Parameters each criterion kind takes (anything else is rejected). */
@@ -121,6 +132,7 @@ const KIND_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriterion)
   CONTEST_OUTCOME: ['outcomes'],
   PERFORMANCE_THRESHOLD: ['metric', 'operator', 'threshold'],
   PERSONAL_BEST: ['metric', 'firstEligibleEstablishesBest'],
+  RECORD_MARK_RATIFIED: [],
 };
 const REQUIRED_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriterion)[]>> = {
   CLASSIFICATION_POSITION: ['rank'],
@@ -128,6 +140,7 @@ const REQUIRED_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriter
   CONTEST_OUTCOME: ['outcomes'],
   PERFORMANCE_THRESHOLD: ['metric', 'operator', 'threshold'],
   PERSONAL_BEST: ['metric', 'firstEligibleEstablishesBest'],
+  RECORD_MARK_RATIFIED: [],
 };
 
 /**
@@ -216,7 +229,16 @@ export function validateAchievementRuleSpec(
     issue('/targetEngine', 'ENGINE_VERSION_UNSUPPORTED');
   if (!ACHIEVEMENT_TYPES.includes(spec.achievementType))
     issue('/achievementType', 'ACHIEVEMENT_TYPE_UNSUPPORTED');
-  if (ALWAYS_FORBIDDEN_CLAIM.test(spec.displayName))
+  // RECORD_SET exists only on achievement-engine/2; every other type keeps its /1 semantics.
+  if (spec.achievementType === 'RECORD_SET' && spec.targetEngine !== ACHIEVEMENT_ENGINE_VERSION_2)
+    issue('/targetEngine', 'RECORD_SET_REQUIRES_ACHIEVEMENT_ENGINE_2');
+  // The word "record" is admissible ONLY for RECORD_SET, whose recognition is structurally backed by
+  // a ratified RecordMark; recognition-level words stay refused (labels come from the RecordMark).
+  const nameForClaims =
+    spec.achievementType === 'RECORD_SET'
+      ? spec.displayName.replace(/\b(record|r[eé]cord)s?\b/gi, '')
+      : spec.displayName;
+  if (ALWAYS_FORBIDDEN_CLAIM.test(nameForClaims))
     issue('/displayName', 'DISPLAY_NAME_CLAIMS_RECOGNITION');
   const claimObj = spec.criterion.recognitionClaim;
   const claimed = claimObj?.level;
@@ -366,6 +388,22 @@ export function referenceThresholdRule(
       operator,
       threshold,
     },
+  };
+}
+
+/** The development RECORD_SET rule of one DisciplineVersion (the floor is raised per mark). */
+export function referenceRecordSetRule(
+  disciplineVersionId: string,
+  displayName = 'Record set',
+): AchievementRuleSpec {
+  return {
+    targetEngine: ACHIEVEMENT_ENGINE_VERSION_2,
+    achievementType: 'RECORD_SET',
+    displayName,
+    disciplineVersionId,
+    holder: 'PERFORMER',
+    requirements: { minimumVerificationLevel: 'V2', minimumResultStatus: 'FINAL' },
+    criterion: { kind: 'RECORD_MARK_RATIFIED', resultScope: 'CONTEST' },
   };
 }
 

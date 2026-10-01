@@ -1,5 +1,6 @@
 import { notFound, permanentRedirect } from 'next/navigation';
 import { PassportAchievementItem } from '../../_lib/achievement';
+import { PassportRecordItemView } from '../../_lib/record';
 import { getPublic, type AthletePassport } from '../../_lib/api';
 import { SectionBlock, TrustBadge, Unavailable } from '../../_lib/trust';
 
@@ -107,7 +108,12 @@ export default async function AthletePage({ params }: Params) {
         empty="None yet."
         render={(x) => <PassportAchievementItem key={x.achievementId} x={x} />}
       />
-      <SectionBlock title="Records" section={p.records} empty="None yet." render={() => null} />
+      <SectionBlock
+        title="Records"
+        section={p.records}
+        empty="None yet. (Personal bests appear under Verified achievements.)"
+        render={(x) => <PassportRecordItemView key={x.recordMarkId} x={x} />}
+      />
       <SectionBlock
         title="Competition history"
         section={p.competitionHistory}

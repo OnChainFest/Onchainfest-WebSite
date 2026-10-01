@@ -88,6 +88,32 @@ export interface PassportVerifiedAchievement {
   readonly provenance: Provenance;
 }
 
+/**
+ * BRT-09 Records section item — PRESENTATION ONLY, from the canonical RecordMark read model. Only
+ * legitimate record honours appear: CURRENT (RATIFIED / CANONICAL) and FORMER (SUPERSEDED after
+ * holding it). PENDING claims and RESCINDED marks never appear as records here. A TEAM-held record
+ * reaches a credited athlete through its immutable member credits (`creditType: TEAM_MEMBER`) — the
+ * athlete is shown the canonical TEAM mark, never an athlete copy. Personal bests are NOT records:
+ * they stay in the Verified Achievements section (PERSONAL_BEST).
+ */
+export interface PassportRecord {
+  readonly recordMarkId: string;
+  readonly categoryCode: string;
+  readonly recordLabel: string;
+  readonly scopeType: string;
+  readonly holding: 'CURRENT' | 'FORMER';
+  readonly status: 'RATIFIED' | 'CANONICAL' | 'SUPERSEDED';
+  readonly creditType: 'HOLDER' | 'TEAM_MEMBER';
+  readonly holderType: 'ATHLETE' | 'TEAM';
+  readonly value: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string;
+  readonly sport?: string;
+  readonly discipline?: string;
+  readonly recordSetAchievementId?: string;
+  readonly provenance: Provenance;
+}
+
 export interface AthletePassportV1 {
   readonly schema: typeof PASSPORT_SCHEMA;
   readonly athlete: {
@@ -104,8 +130,9 @@ export interface AthletePassportV1 {
   readonly wallets: Section<PassportWallet>;
   /** BRT-08: canonical Achievement read model (derived recognitions; never fabricated). */
   readonly verifiedAchievements: Section<PassportVerifiedAchievement>;
+  /** BRT-09: canonical RecordMark read model (current + former legitimate records). */
+  readonly records: Section<PassportRecord>;
   /** Future sources. Never fabricated. */
-  readonly records: Section<never>;
   readonly competitionHistory: Section<never>;
   readonly careerStats: Section<never>;
   readonly trophies: Section<never>;
@@ -146,6 +173,8 @@ export interface PassportSource {
   }[];
   /** BRT-08 Achievement read-model rows for this athlete (undefined ⇒ source unavailable). */
   readonly achievements?: readonly Omit<PassportVerifiedAchievement, 'provenance'>[];
+  /** BRT-09 RecordMark read-model rows for this athlete (undefined ⇒ source unavailable). */
+  readonly records?: readonly Omit<PassportRecord, 'provenance'>[];
 }
 
 export interface Viewer {
@@ -260,7 +289,13 @@ export function assemblePassport(
               provenance: Provenance.SYSTEM_DERIVED,
             })),
           },
-    records: notImplemented,
+    records:
+      source.records === undefined
+        ? notImplemented
+        : {
+            status: 'AVAILABLE',
+            items: source.records.map((r) => ({ ...r, provenance: Provenance.SYSTEM_DERIVED })),
+          },
     competitionHistory: notImplemented,
     careerStats: notImplemented,
     trophies: notImplemented,

@@ -18,6 +18,7 @@
     "@br/evidence": "workspace:*",
     "@br/identity": "workspace:*",
     "@br/persistence": "workspace:*",
+    "@br/records": "workspace:*",
     "@br/schemas": "workspace:*",
     "@br/verification": "workspace:*",
     "fastify": "5.12.5",

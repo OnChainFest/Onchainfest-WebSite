@@ -9,6 +9,9 @@ import {
   AchievementPublicReader,
   AchievementRuleStore,
   AchievementService,
+  RecordCategoryStore,
+  RecordPublicReader,
+  RecordService,
   AttestationPublicReader,
   AttestationStore,
   CatalogStore,
@@ -58,6 +61,11 @@ export interface ApiOptions {
    * while public reads and canonical derivation keep working.
    */
   readonly achievementOperatorDb?: Db;
+  /**
+   * BRT-09: br_record_operator_app login (→ br_record_rules only). INTERNAL category mutation is
+   * available only when this connection is configured (503 otherwise; no fallback to br_api).
+   */
+  readonly recordOperatorDb?: Db;
   readonly piiCipher?: PiiCipher;
   /** Defaults to `authFromEnvironment` (production: fail closed). */
   readonly auth?: (identity: IdentityStore) => AuthAdapter;
@@ -80,7 +88,7 @@ export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInf
 
 /**
  * API: health/readiness plus the /v1 identity, passport, organization (BRT-04), catalog and
- * competition (BRT-05), evidence and attestation (BRT-06), verification (BRT-07), achievement (BRT-08) endpoints.
+ * competition (BRT-05), evidence and attestation (BRT-06), verification (BRT-07), achievement (BRT-08), record (BRT-09) endpoints.
  * Logs never include request bodies or the Authorization header.
  */
 export function buildServer(options: ApiOptions): ApiServer {
@@ -147,7 +155,7 @@ export function buildServer(options: ApiOptions): ApiServer {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'bragging-rights-api',
-    phase: 'BRT-08',
+    phase: 'BRT-09',
   }));
 
   app.get('/ready', async (_request, reply) => {
@@ -207,6 +215,13 @@ export function buildServer(options: ApiOptions): ApiServer {
       ...(options.achievementOperatorDb === undefined
         ? {}
         : { rules: new AchievementRuleStore(options.achievementOperatorDb) }),
+    },
+    records: {
+      records: new RecordService(options.db),
+      publicReader: new RecordPublicReader(options.db),
+      ...(options.recordOperatorDb === undefined
+        ? {}
+        : { categories: new RecordCategoryStore(options.recordOperatorDb) }),
     },
   });
 

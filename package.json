@@ -2,7 +2,7 @@
   "name": "bragging-rights",
   "version": "0.0.0",
   "private": true,
-  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-08: verified achievements)",
+  "description": "Bragging Rights — verified sports achievement infrastructure (BRT-09: records & Record Hall of Fame)",
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "type": "module",
   "scripts": {
-    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs && node tooling/check-result-ledger-composition.mjs && node tooling/check-no-manual-verification.mjs && node tooling/check-no-manual-achievement.mjs",
+    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs && node tooling/check-result-ledger-composition.mjs && node tooling/check-no-manual-verification.mjs && node tooling/check-no-manual-achievement.mjs && node tooling/check-no-manual-record.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
@@ -18,7 +18,7 @@
     "test:integration": "vitest run --project integration",
     "test:all": "vitest run",
     "vectors:generate": "tsx packages/canonical/scripts/generate-vectors.ts",
-    "vectors:check": "tsx packages/canonical/scripts/generate-vectors.ts --check && python3 packages/canonical/reference/check_vectors.py packages/canonical/test-vectors/br-json-v1.vectors.json && tsx packages/evidence/scripts/generate-vectors.ts --check && python3 packages/evidence/reference/check_brt06_vectors.py packages/evidence/test-vectors/brt-06.vectors.json && tsx packages/verification/scripts/generate-vectors.ts --check && python3 packages/verification/reference/check_brt07_vectors.py packages/verification/test-vectors/brt-07.vectors.json && tsx packages/achievements/scripts/generate-vectors.ts --check && python3 packages/achievements/reference/check_brt08_vectors.py packages/achievements/test-vectors/brt-08.vectors.json",
+    "vectors:check": "tsx packages/canonical/scripts/generate-vectors.ts --check && python3 packages/canonical/reference/check_vectors.py packages/canonical/test-vectors/br-json-v1.vectors.json && tsx packages/evidence/scripts/generate-vectors.ts --check && python3 packages/evidence/reference/check_brt06_vectors.py packages/evidence/test-vectors/brt-06.vectors.json && tsx packages/verification/scripts/generate-vectors.ts --check && python3 packages/verification/reference/check_brt07_vectors.py packages/verification/test-vectors/brt-07.vectors.json && tsx packages/achievements/scripts/generate-vectors.ts --check && python3 packages/achievements/reference/check_brt08_vectors.py packages/achievements/test-vectors/brt-08.vectors.json && tsx packages/records/scripts/generate-vectors.ts --check && python3 packages/records/reference/check_brt09_vectors.py packages/records/test-vectors/brt-09.vectors.json",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "db:bootstrap": "tsx packages/persistence/src/cli/bootstrap.ts",
@@ -41,7 +41,10 @@
     "vectors:generate:brt07": "tsx packages/verification/scripts/generate-vectors.ts",
     "db:seed:achievements": "tsx packages/persistence/src/cli/seed-achievements.ts",
     "demo:achievements": "tsx apps/api/src/cli/demo-achievements.ts",
-    "vectors:generate:brt08": "tsx packages/achievements/scripts/generate-vectors.ts"
+    "vectors:generate:brt08": "tsx packages/achievements/scripts/generate-vectors.ts",
+    "db:seed:records": "tsx packages/persistence/src/cli/seed-records.ts",
+    "demo:records": "tsx apps/api/src/cli/demo-records.ts",
+    "vectors:generate:brt09": "tsx packages/records/scripts/generate-vectors.ts"
   },
   "devDependencies": {
     "@br/testkit": "workspace:*",
