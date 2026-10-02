@@ -150,4 +150,4 @@ Two snapshots with the same `snapshotHash` are the same canonical document, so t
 
 ## 9. Engine version policy
 
-Any change of derivation semantics requires `achievement-engine/2`. Stored Achievements keep their engine version and candidate document and are never re-rendered with newer code.
+Any change of derivation semantics requires a new engine version: `achievement-engine/2` added RECORD_SET (BRT-09), `achievement-engine/3` adds QUALIFIED (BRT-10, `QUALIFYING_POSITION`, a qualification snapshot shape and the qualifying source in the identity of QUALIFIED only) and changes nothing for any earlier criterion. Stored Achievements keep their engine version and candidate document and are never re-rendered with newer code.

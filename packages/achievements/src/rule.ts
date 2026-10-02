@@ -5,6 +5,7 @@ import {
   ACHIEVEMENT_TYPES,
   verificationLevelIndex,
   type AchievementType,
+  type QualificationBasisKind,
   type RequiredResultStatus,
   type ResultScopeType,
   type VerificationLevel,
@@ -28,9 +29,16 @@ export const ACHIEVEMENT_ENGINE_VERSION = 'achievement-engine/1';
  * still derived by /1 semantics and its candidates carry engineVersion achievement-engine/1.
  */
 export const ACHIEVEMENT_ENGINE_VERSION_2 = 'achievement-engine/2';
+/**
+ * BRT-10 (ADR-0050): achievement-engine/3 = achievement-engine/2 for EVERY /1 and /2 criterion
+ * (identical derivations, hashes and vectors) + the QUALIFYING_POSITION criterion of QUALIFIED. A /1
+ * or /2 rule is still derived by its own semantics and its candidates carry its own engineVersion.
+ */
+export const ACHIEVEMENT_ENGINE_VERSION_3 = 'achievement-engine/3';
 export const SUPPORTED_ACHIEVEMENT_ENGINES: readonly string[] = [
   ACHIEVEMENT_ENGINE_VERSION,
   ACHIEVEMENT_ENGINE_VERSION_2,
+  ACHIEVEMENT_ENGINE_VERSION_3,
 ];
 
 export type CriterionKind =
@@ -39,7 +47,8 @@ export type CriterionKind =
   | 'CONTEST_OUTCOME'
   | 'PERFORMANCE_THRESHOLD'
   | 'PERSONAL_BEST'
-  | 'RECORD_MARK_RATIFIED';
+  | 'RECORD_MARK_RATIFIED'
+  | 'QUALIFYING_POSITION';
 
 export type HolderStrategy = 'ENTRY_PARTICIPANT' | 'PERFORMER';
 
@@ -54,6 +63,27 @@ export interface RuleCriterion {
   readonly firstEligibleEstablishesBest?: boolean;
   /** AC-4: the recognition scope a TITLE / PLACEMENT name claims (requires V3+, never PLATFORM). */
   readonly recognitionClaim?: RecognitionClaim;
+  /** QUALIFYING_POSITION only (ADR-0050 §2): target, N and the exact pinned source. */
+  readonly qualification?: QualificationCriterion;
+}
+
+/**
+ * The QUALIFIED rule's declaration (ADR-0050 §2). The source is pinned exactly: one ranking system
+ * VERSION (never "the latest"), or one classification scope (event / competition) under one exact
+ * classification policy version. Every holder whose (shared) rank is ≤ `qualifyingRanks` qualifies
+ * (ADR-0049 §5) — no other tie rule exists in v1.
+ */
+export interface QualificationCriterion {
+  readonly targetCompetitionId: string;
+  readonly qualifyingRanks: number;
+  readonly source: {
+    readonly kind: QualificationBasisKind;
+    readonly rankingSystemId?: string;
+    readonly rankingSystemVersionId?: string;
+    readonly scopeType?: 'EVENT_CLASSIFICATION' | 'COMPETITION_CLASSIFICATION';
+    readonly scopeId?: string;
+    readonly policyVersionId?: string;
+  };
 }
 
 export type ClaimedRecognition = 'REGIONAL' | 'NATIONAL' | 'CONTINENTAL' | 'WORLD';
@@ -123,6 +153,13 @@ export const TYPE_SHAPE: Readonly<
   },
   PERSONAL_BEST: { kind: 'PERSONAL_BEST', holder: 'PERFORMER', scopes: ['CONTEST'] },
   RECORD_SET: { kind: 'RECORD_MARK_RATIFIED', holder: 'PERFORMER', scopes: ['CONTEST'] },
+  // resultScope = the scope of the ResultVersions the basis pins: the CONTEST results under a ranking
+  // snapshot's entries, or the classification itself (checked against the declared source).
+  QUALIFIED: {
+    kind: 'QUALIFYING_POSITION',
+    holder: 'ENTRY_PARTICIPANT',
+    scopes: ['CONTEST', 'EVENT_CLASSIFICATION', 'COMPETITION_CLASSIFICATION'],
+  },
 };
 
 /** Parameters each criterion kind takes (anything else is rejected). */
@@ -133,6 +170,7 @@ const KIND_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriterion)
   PERFORMANCE_THRESHOLD: ['metric', 'operator', 'threshold'],
   PERSONAL_BEST: ['metric', 'firstEligibleEstablishesBest'],
   RECORD_MARK_RATIFIED: [],
+  QUALIFYING_POSITION: ['qualification'],
 };
 const REQUIRED_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriterion)[]>> = {
   CLASSIFICATION_POSITION: ['rank'],
@@ -141,6 +179,7 @@ const REQUIRED_PARAMS: Readonly<Record<CriterionKind, readonly (keyof RuleCriter
   PERFORMANCE_THRESHOLD: ['metric', 'operator', 'threshold'],
   PERSONAL_BEST: ['metric', 'firstEligibleEstablishesBest'],
   RECORD_MARK_RATIFIED: [],
+  QUALIFYING_POSITION: ['qualification'],
 };
 
 /**
@@ -232,6 +271,9 @@ export function validateAchievementRuleSpec(
   // RECORD_SET exists only on achievement-engine/2; every other type keeps its /1 semantics.
   if (spec.achievementType === 'RECORD_SET' && spec.targetEngine !== ACHIEVEMENT_ENGINE_VERSION_2)
     issue('/targetEngine', 'RECORD_SET_REQUIRES_ACHIEVEMENT_ENGINE_2');
+  // QUALIFIED exists only on achievement-engine/3 (ADR-0050 §1).
+  if (spec.achievementType === 'QUALIFIED' && spec.targetEngine !== ACHIEVEMENT_ENGINE_VERSION_3)
+    issue('/targetEngine', 'QUALIFIED_REQUIRES_ACHIEVEMENT_ENGINE_3');
   // The word "record" is admissible ONLY for RECORD_SET, whose recognition is structurally backed by
   // a ratified RecordMark; recognition-level words stay refused (labels come from the RecordMark).
   const nameForClaims =
@@ -299,6 +341,28 @@ export function validateAchievementRuleSpec(
   }
   for (const p of REQUIRED_PARAMS[c.kind] ?? [])
     if (c[p] === undefined) issue(`/criterion/${p}`, 'PARAM_REQUIRED');
+  const q = c.qualification;
+  if (q !== undefined && c.kind === 'QUALIFYING_POSITION') {
+    const src = q.source;
+    const ranking = src.kind === 'RANKING_SNAPSHOT_POSITION';
+    const has = (k: keyof QualificationCriterion['source']) => src[k] !== undefined;
+    // Exactly the members of the declared source kind — never a partially pinned source.
+    for (const k of ['rankingSystemId', 'rankingSystemVersionId'] as const)
+      if (has(k) !== ranking)
+        issue(
+          `/criterion/qualification/source/${k}`,
+          ranking ? 'PARAM_REQUIRED' : 'PARAM_NOT_ALLOWED',
+        );
+    for (const k of ['scopeType', 'scopeId', 'policyVersionId'] as const)
+      if (has(k) === ranking)
+        issue(
+          `/criterion/qualification/source/${k}`,
+          ranking ? 'PARAM_NOT_ALLOWED' : 'PARAM_REQUIRED',
+        );
+    // resultScope names the basis ResultVersions: CONTEST under a snapshot, else the classification.
+    if (ranking ? c.resultScope !== 'CONTEST' : c.resultScope !== src.scopeType)
+      issue('/criterion/resultScope', 'RESULT_SCOPE_NOT_ALLOWED_FOR_TYPE');
+  }
   if (c.rank !== undefined) {
     if (c.rank.min > c.rank.max) issue('/criterion/rank', 'RANK_RANGE_INVALID');
     if (spec.achievementType === 'TITLE' && (c.rank.min !== 1 || c.rank.max !== 1))
@@ -404,6 +468,30 @@ export function referenceRecordSetRule(
     holder: 'PERFORMER',
     requirements: { minimumVerificationLevel: 'V2', minimumResultStatus: 'FINAL' },
     criterion: { kind: 'RECORD_MARK_RATIFIED', resultScope: 'CONTEST' },
+  };
+}
+
+/** The development QUALIFIED rule (FINAL · V3 floor; source pinned exactly). */
+export function referenceQualifiedRule(
+  disciplineVersionId: string,
+  qualification: QualificationCriterion,
+  displayName = 'Qualified',
+): AchievementRuleSpec {
+  return {
+    targetEngine: ACHIEVEMENT_ENGINE_VERSION_3,
+    achievementType: 'QUALIFIED',
+    displayName,
+    disciplineVersionId,
+    holder: 'ENTRY_PARTICIPANT',
+    requirements: { minimumVerificationLevel: 'V3', minimumResultStatus: 'FINAL' },
+    criterion: {
+      kind: 'QUALIFYING_POSITION',
+      resultScope:
+        qualification.source.kind === 'RANKING_SNAPSHOT_POSITION'
+          ? 'CONTEST'
+          : (qualification.source.scopeType ?? 'EVENT_CLASSIFICATION'),
+      qualification,
+    },
   };
 }
 

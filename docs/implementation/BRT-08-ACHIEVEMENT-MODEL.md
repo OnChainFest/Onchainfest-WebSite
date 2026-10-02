@@ -96,7 +96,7 @@ BRT-01 §8.1 lists `ATHLETE | TEAM | PARTICIPANT`. Every implemented type resolv
 | PERFORMANCE_THRESHOLD | metric + operator + threshold | performer | FINAL · V2 (bowling walkthrough §8) |
 | PERSONAL_BEST | metric + DisciplineVersion comparator + eligible prior set | athlete performer | OFFICIAL · V2 (matrix "PERSONAL best") |
 
-**Deferred** (rejected by validation): STREAK, SEASON_TITLE, RANKING_MILESTONE and QUALIFIED. RECORD_SET was added by BRT-09 (`achievement-engine/2`, criterion `RECORD_MARK_RATIFIED`, only after a valid RecordMark ratification — [ADR-0045](../adr/ADR-0045-record-set-via-append-only-recognition-linkage.md)). A personal best is athlete-local. It is **not** a record: there is no RecordCategory, RecordMark or WORLD / NATIONAL / VENUE vocabulary.
+**Deferred** (rejected by validation): STREAK, SEASON_TITLE and RANKING_MILESTONE. QUALIFIED was added by BRT-10 (`achievement-engine/3`, criterion `QUALIFYING_POSITION`, [ADR-0050](../adr/ADR-0050-qualification-is-a-qualified-achievement.md), [qualification](./BRT-10-QUALIFICATION.md)); it fails closed in production. RECORD_SET was added by BRT-09 (`achievement-engine/2`, criterion `RECORD_MARK_RATIFIED`, only after a valid RecordMark ratification — [ADR-0045](../adr/ADR-0045-record-set-via-append-only-recognition-linkage.md)). A personal best is athlete-local. It is **not** a record: there is no RecordCategory, RecordMark or WORLD / NATIONAL / VENUE vocabulary.
 
 ## 4. Three lanes — impossible to confuse
 

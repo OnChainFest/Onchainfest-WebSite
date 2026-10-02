@@ -7,6 +7,7 @@ import {
 } from '@br/domain';
 import {
   referencePersonalBestRule,
+  referenceQualifiedRule,
   referenceRecordSetRule,
   referenceThresholdRule,
   referenceTitleRule,
@@ -15,6 +16,9 @@ import {
 } from './rule';
 import type {
   AchievementDerivationSnapshot,
+  QualificationDerivationSnapshot,
+  SnapshotQualification,
+  SnapshotRankingBasisPin,
   SnapshotRecordMark,
   GoverningRecognitionScope,
   RecognitionLevelValue,
@@ -175,10 +179,14 @@ function base(o: FixtureOptions, dv0: string, metrics: readonly unknown[]) {
   return {
     provenance: 'REFERENCE_FIXTURE' as const,
     assembler: 'reference-fixture/1',
-    // RECORD_RATIFICATION (BRT-09) is declared only by RECORD_SET fixtures (recordSetFixture), so
-    // every BRT-08 reference snapshot — and its committed vector — is byte-identical.
+    // RECORD_RATIFICATION (BRT-09) is declared only by RECORD_SET fixtures (recordSetFixture) and
+    // TARGET_QUALIFICATION_AUTHORITY (BRT-10) only by QUALIFIED fixtures, so every BRT-08 reference
+    // snapshot — and its committed vector — is byte-identical.
     supportedFactKinds: ALL_DERIVATION_FACT_KINDS.filter(
-      (k) => k !== 'RECORD_RATIFICATION' && !(o.unsupported ?? []).includes(k),
+      (k) =>
+        k !== 'RECORD_RATIFICATION' &&
+        k !== 'TARGET_QUALIFICATION_AUTHORITY' &&
+        !(o.unsupported ?? []).includes(k),
     ),
     discipline: {
       disciplineVersionId: dv,
@@ -494,4 +502,292 @@ export function recordSetFixture(
     occurrence: { startedAt: fixtureTime(60) },
     ...(o.record === null ? {} : { record }),
   } as AchievementDerivationSnapshot;
+}
+
+// ───────────────────────────── BRT-10 QUALIFIED (achievement-engine/3) ─────────────────────────────
+
+/**
+ * BRT-10 QUALIFIED fixtures (ADR-0050). REFERENCE ENGINE FIXTURE — NOT PERSISTED SPORTING TRUTH: the
+ * FINAL / V3 / hold facts behind a published snapshot or a FINAL classification, and above all the
+ * TARGET_QUALIFICATION_AUTHORITY adoption, have NO canonical producer. Only fixtures declare that kind.
+ */
+export const QFX = {
+  target: fixtureId('qualified:target-competition'),
+  otherTarget: fixtureId('qualified:other-target-competition'),
+  system: fixtureId('qualified:ranking-system-5k'),
+  systemVersion: fixtureId('qualified:ranking-system-5k:v1'),
+  otherSystemVersion: fixtureId('qualified:ranking-system-5k:v2'),
+  run: fixtureId('qualified:ranking-run-1'),
+  snapshot: fixtureId('qualified:ranking-snapshot-1'),
+  correctingSnapshot: fixtureId('qualified:ranking-snapshot-2'),
+  classificationResult: fixtureId('qualified:classification-result'),
+  policy: fixtureId('qualified:classification-policy'),
+  policyVersion: fixtureId('qualified:classification-policy:v1'),
+  otherPolicyVersion: fixtureId('qualified:classification-policy:v2'),
+  adoption: fixtureId('qualified:target-adoption'),
+} as const;
+
+/** The k-th fixture qualifier (athlete + participant), deterministic. */
+export const qualifier = (k: number) => ({
+  athleteId: fixtureId(`qualified:athlete-${k}`),
+  participantId: fixtureId(`qualified:participant-${k}`),
+});
+
+export function qualifiedRankingRule(n = 3, systemVersionId: string = QFX.systemVersion) {
+  return referenceQualifiedRule(FX.runningDv, {
+    targetCompetitionId: QFX.target,
+    qualifyingRanks: n,
+    source: {
+      kind: 'RANKING_SNAPSHOT_POSITION',
+      rankingSystemId: QFX.system,
+      rankingSystemVersionId: systemVersionId,
+    },
+  });
+}
+
+export function qualifiedClassificationRule(
+  n = 3,
+  scope: { readonly scopeType?: 'EVENT_CLASSIFICATION' | 'COMPETITION_CLASSIFICATION' } = {},
+  policyVersionId: string = QFX.policyVersion,
+) {
+  const scopeType = scope.scopeType ?? 'EVENT_CLASSIFICATION';
+  return referenceQualifiedRule(FX.runningDv, {
+    targetCompetitionId: QFX.target,
+    qualifyingRanks: n,
+    source: {
+      kind: 'CLASSIFICATION_POSITION',
+      scopeType,
+      scopeId: scopeType === 'EVENT_CLASSIFICATION' ? FX.event : FX.competition,
+      policyVersionId,
+    },
+  });
+}
+
+export interface QualifiedFixtureOptions {
+  readonly ruleSpec?: AchievementRuleSpec;
+  readonly ruleLabel?: string;
+  readonly ruleVersion?: number;
+  readonly ruleIdentity?: FixtureRuleIdentity;
+  readonly disciplineVersionId?: string;
+  /** Omit kinds from supportedFactKinds (production-like). */
+  readonly unsupported?: readonly DerivationFactKind[];
+  /** Hold fact (absent when HOLD_STATE is unsupported). */
+  readonly hold?: boolean;
+  /** Target authority adoption override; null = absent. */
+  readonly targetAuthority?: Partial<NonNullable<SnapshotQualification['targetAuthority']>> | null;
+}
+
+/** One ranked holder: rank, tie and the pinned basis level(s). */
+export interface QualifiedRankingEntry {
+  readonly k: number;
+  readonly rank: number;
+  readonly tied?: boolean;
+  readonly levels?: readonly VerificationLevel[];
+}
+
+export function rankingBasisPin(
+  k: number,
+  i: number,
+  level: VerificationLevel,
+): SnapshotRankingBasisPin {
+  const label = `qualified:rv-${k}-${i}`;
+  return {
+    resultVersionId: fixtureId(label),
+    contentHash: fixtureHash(`content:${label}`),
+    participantId: qualifier(k).participantId,
+    verificationRunId: fixtureId(`run:${label}`),
+    verificationSnapshotHash: fixtureHash(`verification-snapshot:${label}`),
+    verificationOutcomeHash: fixtureHash(`verification-outcome:${label}`),
+    verificationLevel: level,
+    evidenceBundleHash: fixtureHash(`evidence-bundle:${label}`),
+    evidenceBundleAsOf: fixtureTime(90 + k),
+  };
+}
+
+function qualifiedBase(
+  o: QualifiedFixtureOptions,
+  defaultSpec: AchievementRuleSpec,
+  defaultLabel: string,
+  qualification: Omit<SnapshotQualification, 'hold' | 'targetAuthority'>,
+): QualificationDerivationSnapshot {
+  const rule = fixtureRule(
+    o.ruleSpec ?? defaultSpec,
+    o.ruleLabel ?? defaultLabel,
+    o.ruleVersion,
+    o.ruleIdentity,
+  );
+  const unsupported = o.unsupported ?? [];
+  return {
+    provenance: 'REFERENCE_FIXTURE',
+    assembler: 'reference-fixture/1',
+    supportedFactKinds: ALL_DERIVATION_FACT_KINDS.filter(
+      (k) => k !== 'RECORD_RATIFICATION' && k !== 'CREDITED_LINEUP' && !unsupported.includes(k),
+    ),
+    discipline: {
+      disciplineVersionId: o.disciplineVersionId ?? FX.runningDv,
+      sport: 'running',
+      discipline: 'running.5k',
+      metrics: RUNNING_METRICS,
+    },
+    qualification: {
+      ...qualification,
+      ...(unsupported.includes('HOLD_STATE') ? {} : { hold: { active: o.hold ?? false } }),
+      ...(o.targetAuthority === null
+        ? {}
+        : {
+            targetAuthority: {
+              targetCompetitionId: QFX.target,
+              ruleVersionId: rule.ruleVersionId,
+              ruleSpecHash: rule.specHash,
+              adoptionId: QFX.adoption,
+              adoptionHash: fixtureHash('qualified:target-adoption'),
+              status: 'ADOPTED',
+              ...(o.targetAuthority ?? {}),
+            },
+          }),
+    },
+    rule,
+  } as QualificationDerivationSnapshot;
+}
+
+/**
+ * QUALIFIED from a PUBLISHED platform 5k ranking snapshot: by default four holders ranked 1, 2, 3
+ * (shared by two) — every basis FINAL · V3, the snapshot CURRENT, hold known and absent, and the
+ * target authority's (fixture) adoption of this exact rule version. N = 3 by default.
+ */
+export function qualifiedRankingFixture(
+  o: QualifiedFixtureOptions & {
+    readonly entries?: readonly QualifiedRankingEntry[];
+    readonly systemVersionId?: string;
+    /** false = the run was never published. */
+    readonly published?:
+      Partial<NonNullable<NonNullable<SnapshotQualification['ranking']>['published']>> | false;
+    readonly correctedBy?: string;
+    readonly stale?: readonly ('BASIS_RESULT_NOT_CURRENT' | 'BASIS_VERIFICATION_NOT_CURRENT')[];
+    readonly n?: number;
+  } = {},
+): QualificationDerivationSnapshot {
+  const entries = o.entries ?? [
+    { k: 1, rank: 1 },
+    { k: 2, rank: 2 },
+    { k: 3, rank: 3, tied: true },
+    { k: 4, rank: 3, tied: true },
+    { k: 5, rank: 5 },
+  ];
+  return qualifiedBase(o, qualifiedRankingRule(o.n ?? 3), 'qualified-ranking', {
+    ranking: {
+      systemId: QFX.system,
+      systemVersionId: o.systemVersionId ?? QFX.systemVersion,
+      specHash: fixtureHash('qualified:ranking-system-5k:v1:spec'),
+      runId: QFX.run,
+      runOutcomeHash: fixtureHash('qualified:ranking-run-1:outcome'),
+      ...(o.published === false
+        ? {}
+        : {
+            published: {
+              snapshotId: QFX.snapshot,
+              snapshotHash: fixtureHash('qualified:ranking-snapshot-1'),
+              lineageKind: 'INITIAL',
+              ...(o.published ?? {}),
+            },
+          }),
+      ...(o.correctedBy === undefined ? {} : { correctedBySnapshotId: o.correctedBy }),
+      staleness:
+        o.stale === undefined || o.stale.length === 0
+          ? { state: 'CURRENT' }
+          : { state: 'STALE', reasons: o.stale },
+      entries: entries.map((e) => ({
+        holder: { holderType: 'ATHLETE', holderId: qualifier(e.k).athleteId },
+        rank: e.rank,
+        tied: e.tied ?? false,
+        basis: (e.levels ?? ['V3']).map((level, i) => rankingBasisPin(e.k, i + 1, level)),
+      })),
+    },
+  });
+}
+
+/**
+ * QUALIFIED from a FINAL `@2` EVENT classification (V3, CURRENT, hold absent, target adoption).
+ * Default entries: participants 1..5 ranked 1, 2, 3, 3 (shared), 5. N = 3 by default.
+ */
+export function qualifiedClassificationFixture(
+  o: QualifiedFixtureOptions & {
+    readonly entries?: readonly {
+      readonly k: number;
+      readonly rank?: number;
+      readonly tied?: boolean;
+    }[];
+    readonly status?: Exclude<ResultVersionStatus, 'DRAFT'>;
+    readonly level?: VerificationLevel;
+    readonly verificationState?: VerificationState;
+    readonly version?: string;
+    readonly policyVersionId?: string;
+    readonly classificationDv?: string;
+    readonly scopeType?: 'EVENT_CLASSIFICATION' | 'COMPETITION_CLASSIFICATION';
+    /** Persistence fixture lane: the real event / competition the classification scopes. */
+    readonly scopeTargetId?: string;
+    readonly stale?: readonly (
+      'PINNED_INPUT_NOT_CURRENT' | 'ADMISSIBLE_INPUT_SET_CHANGED' | 'ADMISSIBLE_INPUT_SET_UNKNOWN'
+    )[];
+    readonly supersedes?: string;
+    readonly supersededBy?: string;
+    readonly n?: number;
+  } = {},
+): QualificationDerivationSnapshot {
+  const entries = o.entries ?? [
+    { k: 1, rank: 1 },
+    { k: 2, rank: 2 },
+    { k: 3, rank: 3, tied: true },
+    { k: 4, rank: 3, tied: true },
+    { k: 5, rank: 5 },
+  ];
+  const version = o.version ?? 'c1';
+  const scopeType = o.scopeType ?? 'EVENT_CLASSIFICATION';
+  const run = `qualified:classification-${version}:run1`;
+  return qualifiedBase(o, qualifiedClassificationRule(o.n ?? 3), 'qualified-classification', {
+    classification: {
+      resultId: QFX.classificationResult,
+      resultVersionId: fixtureId(`qualified:classification-${version}`),
+      contentHash: fixtureHash(`content:qualified:classification-${version}`),
+      scopeType,
+      scopeTargetId:
+        o.scopeTargetId ?? (scopeType === 'EVENT_CLASSIFICATION' ? FX.event : FX.competition),
+      status: o.status ?? 'FINAL',
+      ...(o.supersedes === undefined
+        ? {}
+        : { supersedesVersionId: fixtureId(`qualified:classification-${o.supersedes}`) }),
+      ...(o.supersededBy === undefined
+        ? {}
+        : { supersededByVersionId: fixtureId(`qualified:classification-${o.supersededBy}`) }),
+      policyId: QFX.policy,
+      policyVersionId: o.policyVersionId ?? QFX.policyVersion,
+      policySpecHash: fixtureHash('qualified:classification-policy:v1:spec'),
+      disciplineVersionId: o.classificationDv ?? FX.runningDv,
+      inputsDigest: fixtureHash(`qualified:classification-${version}:inputs`),
+      staleness:
+        o.stale === undefined || o.stale.length === 0
+          ? { state: 'CURRENT' }
+          : { state: 'STALE', reasons: o.stale },
+      verification: {
+        state: o.verificationState ?? 'CURRENT',
+        runId: fixtureId(`run:${run}`),
+        policyVersionId: fixtureId('policy-v1'),
+        snapshotHash: fixtureHash(`verification-snapshot:${run}`),
+        outcomeHash: fixtureHash(`verification-outcome:${run}`),
+        level: o.level ?? 'V3',
+        evidenceBundleHash: fixtureHash(`evidence-bundle:${run}`),
+        evaluatedAsOf: fixtureTime(95),
+      },
+      entries: entries.map((e) => ({
+        participantId: qualifier(e.k).participantId,
+        ...(e.rank === undefined ? {} : { rank: e.rank }),
+        tied: e.tied ?? false,
+      })),
+      participants: entries.map((e) => ({
+        participantId: qualifier(e.k).participantId,
+        kind: 'INDIVIDUAL',
+        athleteId: qualifier(e.k).athleteId,
+      })),
+    },
+  });
 }
