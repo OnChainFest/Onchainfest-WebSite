@@ -336,6 +336,8 @@ describe('maintenance, probe, vault and owner', () => {
       'br_competition',
       // BRT-06: evidence attachment/bundle hierarchy and metadata-only card rebuilds (EXECUTE only).
       'br_evidence',
+      // BRT-10: ranking-run assembly resolves the exact hierarchy of a candidate (EXECUTE only).
+      'br_rankings',
       'br_rebuild',
       // BRT-09: record evaluation resolves the exact hierarchy of a performance (EXECUTE only).
       'br_records',

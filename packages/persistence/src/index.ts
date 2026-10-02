@@ -69,3 +69,30 @@ export {
   type ResultVersionRecordEvaluation,
   type RecordSupportSource,
 } from './record-store';
+export * from './ranking-definition-store';
+// NOTE: the lane entry points `persistRankingRun` / `publishRankingSnapshot` (claimed inputs, fixture
+// corrections) are deliberately NOT exported here; the test harness imports them from
+// `@br/persistence/ranking-lanes`. The canonical runtime is RankingService.
+export { RankingService, type RankingRunReport, type RankingSnapshotReport } from './ranking-store';
+export {
+  CLASSIFICATION_ASSEMBLER_VERSION,
+  applicableClassificationPolicies,
+  assembleClassificationInput,
+  assemblePinnedClassificationInput,
+} from './classification-loader';
+export {
+  ClassificationStalenessService,
+  type ClassificationImpact,
+  type ClassificationRead,
+  type ClassificationReadStaleness,
+} from './classification-staleness';
+export { RankingHistoryReader, type SnapshotHistoryItem } from './ranking-history';
+export { RANKING_ASSEMBLER_VERSION } from './ranking-loader';
+export { rebuildRankingReadModels, snapshotRankingReadModels } from './ranking-projection';
+export {
+  RankingReadModelReader,
+  snapshotHistory,
+  type SnapshotCardRow,
+  type SnapshotHistoryRow,
+  type SnapshotView,
+} from './ranking-read-model';

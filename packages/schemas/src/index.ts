@@ -3,11 +3,13 @@ import { ALL_SCHEMAS, BRT06_SCHEMAS } from './definitions';
 import { BRT07_SCHEMAS } from './verification';
 import { BRT08_SCHEMAS } from './achievements';
 import { BRT09_SCHEMAS } from './records';
+import { BRT10_SCHEMAS } from './rankings';
 
 export * from './definitions';
 export * from './verification';
 export * from './achievements';
 export * from './records';
+export * from './rankings';
 export { authorityScope, recognitionScope, mark } from './primitives';
 
 /** Schema ids as constants (id, version) so callers never hand-type them. */
@@ -72,6 +74,18 @@ export const SchemaRef = {
   recordSupportFacts: { id: 'br:record-support-facts', version: 1 },
   recordMarkFact: { id: 'br:record-mark-fact', version: 1 },
   recordMarkStatusFact: { id: 'br:record-mark-status-fact', version: 1 },
+  // BRT-10
+  resultVersionContentV2: { id: 'br:result-version-content', version: 2 },
+  classificationPolicy: { id: 'br:classification-policy', version: 1 },
+  rankingSystemVersion: { id: 'br:ranking-system-version', version: 1 },
+  rankingUniverse: { id: 'br:ranking-universe', version: 1 },
+  rankingRunInput: { id: 'br:ranking-run-input', version: 1 },
+  rankingRunOutcome: { id: 'br:ranking-run-outcome', version: 1 },
+  rankingSnapshot: { id: 'br:ranking-snapshot', version: 1 },
+  qualificationBasis: { id: 'br:qualification-basis', version: 1 },
+  classificationDerivationInput: { id: 'br:classification-derivation-input', version: 1 },
+  classificationDerivationOutcome: { id: 'br:classification-derivation-outcome', version: 1 },
+  classificationStaleness: { id: 'br:classification-staleness', version: 1 },
 } as const;
 
 /** Domain tags (BRT-02 §3.2 registry). */
@@ -116,6 +130,17 @@ export const DomainTag = {
   recordRatification: 'record-ratification',
   recordReplay: 'record-replay',
   recordSupport: 'record-support',
+  // BRT-10 (one tag per kind of ranking object; @2 classification content keeps result-version-content)
+  classificationPolicy: 'classification-policy',
+  rankingSystemVersion: 'ranking-system-version',
+  rankingUniverse: 'ranking-universe',
+  rankingRunInput: 'ranking-run-input',
+  rankingRunOutcome: 'ranking-run-outcome',
+  rankingSnapshot: 'ranking-snapshot',
+  qualificationBasis: 'qualification-basis',
+  classificationDerivationInput: 'classification-derivation-input',
+  classificationDerivationOutcome: 'classification-derivation-outcome',
+  classificationStaleness: 'classification-staleness',
 } as const;
 
 let shared: Canonicalizer | undefined;
@@ -128,6 +153,7 @@ export function platformCanonicalizer(): Canonicalizer {
     ...BRT07_SCHEMAS,
     ...BRT08_SCHEMAS,
     ...BRT09_SCHEMAS,
+    ...BRT10_SCHEMAS,
   ]);
   return shared;
 }

@@ -248,9 +248,11 @@ const INVENTORY = [
   {
     fn: 'results.resolve_result_version(uuid)',
     // BRT-08: br_achievements resolves exact basis versions (EXECUTE only). BRT-09: br_records too.
+    // BRT-10: br_rankings resolves exact ranking candidates (EXECUTE only).
     grantees: [
       'br_achievements',
       'br_evidence',
+      'br_rankings',
       'br_rebuild',
       'br_records',
       'br_verification',
@@ -265,6 +267,7 @@ const INVENTORY = [
       'br_authority',
       'br_competition',
       'br_evidence',
+      'br_rankings',
       'br_rebuild',
       'br_records',
       'br_results',

@@ -120,6 +120,22 @@ export const DomainEventType = {
   RecordMarkRestored: 'RecordMarkRestored',
   RecordMarkRescinded: 'RecordMarkRescinded',
   CurrentRecordChanged: 'CurrentRecordChanged',
+  // BRT-10 classification policies / rankings (ids, hashes, statuses only — never PII; a ranking is
+  // never a ResultVersion, a qualification, a prize or a trophy). A classification itself is a
+  // ResultVersion and emits the normal ResultSubmitted / ResultProvisional events.
+  ClassificationPolicyCreated: 'ClassificationPolicyCreated',
+  ClassificationPolicyVersionCreated: 'ClassificationPolicyVersionCreated',
+  ClassificationPolicyVersionPublished: 'ClassificationPolicyVersionPublished',
+  ClassificationPolicyVersionRetired: 'ClassificationPolicyVersionRetired',
+  RankingSystemCreated: 'RankingSystemCreated',
+  RankingSystemVersionCreated: 'RankingSystemVersionCreated',
+  RankingSystemVersionPublished: 'RankingSystemVersionPublished',
+  RankingSystemVersionRetired: 'RankingSystemVersionRetired',
+  RankingRunEvaluated: 'RankingRunEvaluated',
+  RankingSnapshotPublished: 'RankingSnapshotPublished',
+  // A classification ResultVersion's pins are no longer current, or its admissible input set changed
+  // (ADR-0047 §5). Computed, never stored; idempotent per (classification version, staleDigest).
+  ClassificationStale: 'ClassificationStale',
 } as const;
 export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
 
@@ -161,6 +177,12 @@ export const AggregateType = {
   RECORD_CATEGORY: 'RECORD_CATEGORY',
   RECORD_CATEGORY_VERSION: 'RECORD_CATEGORY_VERSION',
   RECORD_MARK: 'RECORD_MARK',
+  CLASSIFICATION_POLICY: 'CLASSIFICATION_POLICY',
+  CLASSIFICATION_POLICY_VERSION: 'CLASSIFICATION_POLICY_VERSION',
+  RANKING_SYSTEM: 'RANKING_SYSTEM',
+  RANKING_SYSTEM_VERSION: 'RANKING_SYSTEM_VERSION',
+  RANKING_RUN: 'RANKING_RUN',
+  RANKING_SNAPSHOT: 'RANKING_SNAPSHOT',
 } as const;
 export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
 

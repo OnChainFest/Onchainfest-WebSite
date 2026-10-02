@@ -51,6 +51,14 @@ export const ModuleRole = {
   records: 'br_records',
   /** BRT-09 RecordCategory writer (reachable only from br_record_operator_app). */
   recordRules: 'br_record_rules',
+  /**
+   * BRT-10 ranking runtime: reads exact result / verification facts read-only; writes only ranking
+   * runs, dependencies, snapshots and entries. Never a ResultVersion (classifications go through the
+   * ResultLedger under br_results).
+   */
+  rankings: 'br_rankings',
+  /** BRT-10 RankingSystem / ClassificationPolicy writer (reachable only from br_ranking_operator_app). */
+  rankingRules: 'br_ranking_rules',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 

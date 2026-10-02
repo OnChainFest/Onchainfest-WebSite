@@ -12,16 +12,22 @@ import {
   type ResultVersionStatus,
   type Uuid,
 } from '@br/domain';
+import { assessClassificationReplacement, deriveClassification } from '@br/rankings';
 import { DomainTag, platformCanonicalizer, SchemaRef } from '@br/schemas';
+import { sql } from 'kysely';
 import { authorizeIn } from './authority-store';
+import { assembleClassificationInput } from './classification-loader';
 import type { Db, LedgerEntryTable, ResultVersionTable } from './db';
 import { factHash } from './hashing';
 import { checkIdempotency, recordIdempotency, type IdempotencySpec } from './idempotency';
 import { openStream, StreamType } from './ledger';
 import { emitEvent } from './outbox';
+import { refreshClassificationCard } from './ranking-projection';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 export const RESULT_CONTENT_SCHEMA = `${SchemaRef.resultVersionContent.id}@${SchemaRef.resultVersionContent.version}`;
+/** BRT-10 classification content (ADR-0047): `@1` + the required `derivation` provenance member. */
+export const CLASSIFICATION_CONTENT_SCHEMA = `${SchemaRef.resultVersionContentV2.id}@${SchemaRef.resultVersionContentV2.version}`;
 
 export interface CanonicalContent {
   readonly normalized: ResultVersionContent;
@@ -43,6 +49,51 @@ export function hashResultContent(content: unknown): CanonicalContent {
     contentHash: r.contentHash,
   };
 }
+
+/**
+ * The content schema of a draft: `@2` iff it carries `derivation` (the `@1` schema is closed, so a
+ * `derivation` member can never be `@1` content). `@1` hashing is unchanged.
+ */
+export function hashSubmittedContent(
+  content: unknown,
+): CanonicalContent & { readonly contentSchema: string } {
+  if (typeof content !== 'object' || content === null || !Object.hasOwn(content, 'derivation'))
+    return { ...hashResultContent(content), contentSchema: RESULT_CONTENT_SCHEMA };
+  const r = platformCanonicalizer().hashCanonical(
+    DomainTag.resultVersionContent,
+    SchemaRef.resultVersionContentV2.id,
+    SchemaRef.resultVersionContentV2.version,
+    content,
+  );
+  return {
+    normalized: r.normalized as unknown as ResultVersionContent,
+    canonicalText: r.canonicalText,
+    contentHash: r.contentHash,
+    contentSchema: CLASSIFICATION_CONTENT_SCHEMA,
+  };
+}
+
+interface ClassificationDerivationPins {
+  readonly derivedFrom: readonly {
+    readonly resultVersionId: string;
+    readonly contentHash: string;
+    readonly status: string;
+  }[];
+  readonly policy: {
+    readonly policyId: string;
+    readonly policyVersionId: string;
+    readonly specHash: string;
+  };
+  readonly disciplineVersionId: string;
+  readonly engineVersion: string;
+  readonly inputsDigest: string;
+}
+
+const mismatch = (reason: string, message: string, details: Record<string, unknown> = {}) =>
+  new DomainError(DomainErrorCode.CLASSIFICATION_DERIVATION_MISMATCH, message, {
+    reason,
+    ...details,
+  });
 
 export interface SubmitOutcome {
   readonly resultVersionId: Uuid;
@@ -226,7 +277,7 @@ export class ResultLedger {
     disciplineVersionRef: string;
     content: unknown;
   }): Promise<{ draftId: Uuid }> {
-    hashResultContent(input.content);
+    hashSubmittedContent(input.content);
     return inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const draftId = newId();
       await ctx.trx
@@ -246,7 +297,7 @@ export class ResultLedger {
   }
 
   updateDraft(input: { draftId: Uuid; content: unknown }): Promise<void> {
-    hashResultContent(input.content);
+    hashSubmittedContent(input.content);
     return inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const draft = await ctx.trx
         .selectFrom('results.result_draft')
@@ -279,7 +330,7 @@ export class ResultLedger {
         .forUpdate()
         .executeTakeFirst();
       if (draft === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'draft not found');
-      const content = hashResultContent(draft.content);
+      const content = hashSubmittedContent(draft.content);
       const idem: IdempotencySpec = {
         scope: input.actorPrincipalId,
         key: input.idempotencyKey,
@@ -345,6 +396,12 @@ export class ResultLedger {
         return response;
       }
 
+      // BRT-10: a `@2` classification is accepted only as the canonical re-derivation (ADR-0047 §3).
+      const derivation =
+        content.contentSchema === CLASSIFICATION_CONTENT_SCHEMA
+          ? await this.verifyClassification(ctx, draft.result_id as Uuid, content)
+          : undefined;
+
       const resultState = await ctx.trx
         .selectFrom('results.result_state')
         .selectAll()
@@ -358,7 +415,7 @@ export class ResultLedger {
         result_id: draft.result_id,
         version_number: versionNumber,
         discipline_version_ref: draft.discipline_version_ref,
-        content_schema: RESULT_CONTENT_SCHEMA,
+        content_schema: content.contentSchema,
         content: JSON.stringify(content.normalized),
         content_hash: content.contentHash,
         submitted_by_principal_id: input.actorPrincipalId,
@@ -368,13 +425,15 @@ export class ResultLedger {
           resultId: draft.result_id,
           versionNumber,
           contentHash: content.contentHash,
-          contentSchema: RESULT_CONTENT_SCHEMA,
+          contentSchema: content.contentSchema,
           disciplineVersionRef: draft.discipline_version_ref,
           submittedByPrincipalId: input.actorPrincipalId,
         }),
         recorded_at: ctx.txTime,
       };
       await ctx.trx.insertInto('results.result_version').values(versionRow).execute();
+      if (derivation !== undefined)
+        await this.indexClassification(ctx, resultVersionId, derivation);
       await stream.append({
         eventType: 'RESULT_VERSION_SUBMITTED',
         factTable: 'results.result_version',
@@ -419,6 +478,8 @@ export class ResultLedger {
         .set({ submitted_version_id: resultVersionId, updated_at: ctx.txTime })
         .where('id', '=', draft.id)
         .execute();
+      // BRT-10 class B projection of a derived classification (no-op for any other version).
+      if (derivation !== undefined) await refreshClassificationCard(ctx, resultVersionId);
 
       await emitEvent(ctx, {
         eventType: 'ResultSubmitted',
@@ -431,6 +492,16 @@ export class ResultLedger {
           versionNumber,
           contentHash: content.contentHash,
           status: 'SUBMITTED',
+          ...(derivation === undefined
+            ? {}
+            : {
+                contentSchema: CLASSIFICATION_CONTENT_SCHEMA,
+                classification: {
+                  policyVersionId: derivation.policy.policyVersionId,
+                  inputsDigest: derivation.inputsDigest,
+                  inputCount: derivation.derivedFrom.length,
+                },
+              }),
         },
       });
       await stream.close();
@@ -555,6 +626,8 @@ export class ResultLedger {
           .where('result_id', '=', version.result_id)
           .execute();
       }
+      // BRT-10: a derived classification's card carries its latest status (no-op otherwise).
+      await refreshClassificationCard(ctx, version.id);
       await emitEvent(ctx, {
         eventType: input.toStatus === 'PROVISIONAL' ? 'ResultProvisional' : 'ResultRejected',
         aggregateType: 'RESULT_VERSION',
@@ -581,6 +654,112 @@ export class ResultLedger {
       await recordIdempotency(ctx, idem, lookup.requestHash, { ...response, ledgerEntries: [] });
       return response;
     });
+  }
+
+  /**
+   * BRT-10 classification proposal (read-only; ADR-0047 §3 step 1): the canonical derivation of a
+   * classification Result's `@2` content from its canonical inputs. Writes NOTHING — a proposal becomes
+   * a ResultVersion only when a SUBMIT_RESULT holder submits it as a draft (T2), where it is derived
+   * again and compared.
+   */
+  proposeClassification(resultId: Uuid) {
+    return inTransaction(this.db, ModuleRole.results, async (ctx) => {
+      const assembly = await assembleClassificationInput(ctx, resultId);
+      if (!assembly.ok) return { state: 'UNAVAILABLE' as const, reason: assembly.reason };
+      const derived = deriveClassification(assembly.input);
+      if (!derived.ok)
+        throw mismatch('CANONICAL_INPUT_INVALID', 'the canonical derivation input is invalid', {
+          issues: derived.issues.map((i) => i.code),
+        });
+      return {
+        state: derived.outcome.state,
+        inputsDigest: derived.inputsDigest,
+        outcome: derived.outcome,
+        outcomeHash: derived.outcomeHash,
+      };
+    });
+  }
+
+  /**
+   * ADR-0047 §3: re-assembles the classification's canonical inputs in THIS transaction, re-runs the
+   * pure engine and refuses any difference. The submitted content is never trusted: its ranks, ties,
+   * trace values, pins, policy and hash must be byte-equal to the canonical proposal.
+   */
+  private async verifyClassification(
+    ctx: TxContext,
+    resultId: Uuid,
+    content: CanonicalContent,
+  ): Promise<ClassificationDerivationPins> {
+    const assembly = await assembleClassificationInput(ctx, resultId);
+    if (!assembly.ok) {
+      if (assembly.reason === 'NOT_A_CLASSIFICATION_RESULT')
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'derived (@2) content belongs to a ROUND / EVENT / COMPETITION classification Result only',
+          { reason: assembly.reason },
+        );
+      throw mismatch(assembly.reason, 'no canonical classification derivation exists', {
+        ...(assembly.details ?? {}),
+      });
+    }
+    const derived = deriveClassification(assembly.input);
+    if (!derived.ok)
+      throw mismatch('CANONICAL_INPUT_INVALID', 'the canonical derivation input is invalid', {
+        issues: derived.issues.map((i) => i.code),
+      });
+    const proposal = derived.outcome.proposal;
+    if (derived.outcome.state !== 'PROPOSED' || proposal === undefined)
+      throw mismatch('DERIVATION_BLOCKED', 'the canonical classification derivation is blocked', {
+        blockers: derived.outcome.blockers,
+      });
+    if (proposal.contentHash !== content.contentHash)
+      throw mismatch(
+        'CONTENT_MISMATCH',
+        'submitted classification differs from the canonical derivation',
+        { canonicalContentHash: proposal.contentHash },
+      );
+    // A classification that already has a current version is replaced only by a T7 correction,
+    // which has no producer (ADR-0047 §6). The identical content was handled as a duplicate above.
+    const { rows } = await sql<{ id: string; content_hash: string }>`
+      SELECT v.id, v.content_hash FROM results.result_version v
+      JOIN results.result_version_state s ON s.result_version_id = v.id
+      WHERE v.result_id = ${resultId} AND s.current_status IN ('PROVISIONAL', 'OFFICIAL', 'FINAL')`.execute(
+      ctx.trx,
+    );
+    const current = rows[0];
+    const replacement = assessClassificationReplacement(
+      proposal.contentHash,
+      current === undefined
+        ? undefined
+        : { resultVersionId: current.id, contentHash: current.content_hash },
+    );
+    if (replacement.state === 'REPLACEMENT_BLOCKED')
+      throw new DomainError(
+        DomainErrorCode.CURRENT_VERSION_CONFLICT,
+        'a current classification can only be replaced by a correction (no producer)',
+        { reason: replacement.reasons[0], currentVersionId: replacement.replaces },
+      );
+    return proposal.content.derivation;
+  }
+
+  /** The derivation header + derivedFrom index, in the version's own transaction (BR163–BR168). */
+  private async indexClassification(
+    ctx: TxContext,
+    resultVersionId: Uuid,
+    d: ClassificationDerivationPins,
+  ): Promise<void> {
+    await sql`INSERT INTO results.classification_derivation (result_version_id, policy_id, policy_version_id,
+        policy_spec_hash, discipline_version_id, engine_version, inputs_digest, input_count, recorded_at)
+      VALUES (${resultVersionId}, ${d.policy.policyId}, ${d.policy.policyVersionId}, ${d.policy.specHash},
+        ${d.disciplineVersionId}, ${d.engineVersion}, ${d.inputsDigest}, ${d.derivedFrom.length}, ${ctx.txTime})`.execute(
+      ctx.trx,
+    );
+    for (const i of d.derivedFrom)
+      await sql`INSERT INTO results.classification_input (classification_version_id, input_result_version_id,
+          input_content_hash, input_status, recorded_at)
+        VALUES (${resultVersionId}, ${i.resultVersionId}, ${i.contentHash}, ${i.status}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
   }
 
   private async appendTransition(

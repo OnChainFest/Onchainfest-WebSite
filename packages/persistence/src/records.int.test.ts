@@ -250,12 +250,16 @@ describe('canonical production lane: honest ceiling = ZERO records', () => {
     expect(current?.status).toBe('NO_CURRENT_RECORD');
     const hof = await reader.hallOfFame({ category: cat.code });
     expect(hof.items).toEqual([]);
-    // No BRT-10+ side effects: no ranking / qualification / prize / trophy schema exists.
+    // No BRT-10+ side effects: no qualification / prize / trophy schema exists, and the `ranking`
+    // schema (BRT-10, 0023–0025) holds no published snapshot (the normal schema cannot hold one today).
     const { rows: schemas } = await sql<{ nspname: string }>`
-      SELECT nspname FROM pg_namespace WHERE nspname ~ '(ranking|qualification|prize|trophy|payout)'`.execute(
+      SELECT nspname FROM pg_namespace WHERE nspname ~ '(qualification|prize|trophy|payout)'`.execute(
       owner,
     );
     expect(schemas).toEqual([]);
+    const { rows: ranked } = await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM ranking.snapshot`.execute(owner);
+    expect(ranked[0]?.n).toBe(0);
   }, 120_000);
 
   it('the normal schema refuses fixture provenance and fabricated ratifications at the database', async () => {

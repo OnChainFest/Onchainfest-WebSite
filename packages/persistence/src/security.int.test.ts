@@ -101,6 +101,28 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_maintenance', role: 'br_rebuild', inherit: false, set: true, admin: false },
       // BRT-05R: catalog mutation has its own login; br_api can no longer reach br_catalog.
       { member: 'br_operator_app', role: 'br_catalog', inherit: false, set: true, admin: false },
+      // BRT-10: ranking definitions have their own login; the ranking worker consumes Verification read-only.
+      {
+        member: 'br_ranking_operator_app',
+        role: 'br_ranking_rules',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      {
+        member: 'br_ranking_worker_app',
+        role: 'br_rankings',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
+      {
+        member: 'br_ranking_worker_app',
+        role: 'br_verification_reader',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
       // BRT-09: category mutation has its own login; the record worker consumes Verification read-only.
       {
         member: 'br_record_operator_app',

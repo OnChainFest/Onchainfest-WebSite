@@ -9,3 +9,4 @@ export * from './evidence';
 export * from './verification';
 export * from './achievements';
 export * from './records';
+export * from './rankings';

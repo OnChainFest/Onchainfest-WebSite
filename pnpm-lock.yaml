@@ -236,6 +236,9 @@ importers:
       '@br/identity':
         specifier: workspace:*
         version: link:../identity
+      '@br/rankings':
+        specifier: workspace:*
+        version: link:../rankings
       '@br/records':
         specifier: workspace:*
         version: link:../records
@@ -258,6 +261,34 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+
+  packages/rankings:
+    dependencies:
+      '@br/achievements':
+        specifier: workspace:*
+        version: link:../achievements
+      '@br/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@br/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@br/competition':
+        specifier: workspace:*
+        version: link:../competition
+      '@br/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@br/records':
+        specifier: workspace:*
+        version: link:../records
+      '@br/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      '@br/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/records:
     dependencies:
