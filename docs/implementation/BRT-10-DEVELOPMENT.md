@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–9 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement). Commands, worker, API and web sections are filled in as the corresponding steps land.
+Status: Steps 1–10 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`). Commands, worker, API and web sections are filled in as the corresponding steps land.
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -14,10 +14,10 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 4 | BRT-10 vectors + independent Python checker (delivered with the engine, Step 3) |
 | 5 | Migrations 0023–0025 + roles (delivered as the "persistence foundation" step) |
 | 6 | Loader, store and validated writers (classification submission check, ranking runs/snapshots) + `0026_ranking_writers` grants — **implemented** |
-| 7 | Dependency index, staleness, `ClassificationStale` — **implemented** (no migration, no grant; worker wiring is Step 10) |
+| 7 | Dependency index, staleness, `ClassificationStale` — **implemented** (no migration, no grant; worker wiring in Step 10) |
 | 8 | Read-model projections + rebuild equality — **implemented** (`0028_ranking_read_models`; no CLI, no API, no worker) |
 | 9 | QUALIFIED (`achievement-engine/3`) + `0027_qualified_achievements` — **implemented** ([qualification](./BRT-10-QUALIFICATION.md); no worker wiring, no API) |
-| 10 | Worker consumer |
+| 10 | Worker reaction `rankings.react` (emits `ClassificationStale`, evaluates canonical runs) + `0029_ranking_worker_round_read` — **implemented** ([worker](#worker-step-10)) |
 | 11 | API routes |
 | 12 | Web surfaces |
 | 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) |
@@ -38,7 +38,7 @@ Implemented with the persistence foundation (`db/bootstrap/roles.sql`, `database
 | `br_ranking_operator_app` | `br_ranking_rules` (RankingSystem / ClassificationPolicy definitions only) | `BR_RANKING_OPERATOR_DATABASE_URL` |
 | `br_ranking_worker_app` | `br_rankings`, `br_verification_reader` | `BR_RANKING_WORKER_DATABASE_URL` |
 
-- `br_rankings` writes only `ranking.run`, `run_dependency`, `snapshot` and `snapshot_entry`, plus outbox events and audit rows (0026). It reads the exact result, verification and definition facts it binds to, and the competition path / participants / contest occurrence / DisciplineVersion a run re-assembly needs (0026, mirroring `br_records`). It has no command-idempotency grant: runs and snapshots are idempotent on their natural keys.
+- `br_rankings` writes only `ranking.run`, `run_dependency`, `snapshot` and `snapshot_entry`, plus outbox events and audit rows (0026). Since Step 10 it also computes classification staleness and emits `ClassificationStale` (an outbox row; nothing else) for the worker, which can never become `br_results`. It reads the exact result, verification and definition facts it binds to, and the competition path / participants / contest occurrence / DisciplineVersion a run re-assembly needs (0026, mirroring `br_records`). It has no command-idempotency grant: runs and snapshots are idempotent on their natural keys.
 - `br_ranking_rules` writes only the definition tables, plus outbox, command idempotency and audit (0026). It reads catalog facts, the trust-anchor scope, the anchor's validity window and REVOKED facts (an OFFICIAL owner must be currently anchored), and competition ids.
 - `br_results` (the ResultLedger) is the only writer of `results.classification_derivation` / `classification_input`. 0026 gives it column-level read access to the contest → round → event → competition ids and the DisciplineVersion (id, spec, spec hash), so it can re-derive a classification inside T2.
 - `br_api` reaches neither ranking role yet (API: a later step).
@@ -57,6 +57,8 @@ Implemented (persistence foundation):
 - `0028_ranking_read_models` (Step 8): schema `ranking_read`, **class B** projections only (see [Read models](#read-models-step-8)). No function, trigger or SECURITY DEFINER; no PUBLIC grant.
 
 Every table of 0023–0025 is class A (append-only); provenance is `CANONICAL_ASSEMBLY` only. 0023–0025 are applied (checksum-locked) and never edited. The gap is deliberate (by decision): fresh databases apply 0027 before 0028, while an existing database applies it after, so **0027 references no `ranking_read` object** (an integration test migrates a fresh database through 0027 without 0028, then applies 0028; the achievement guard scans 0027). The runner applies files in order and tolerates the gap.
+
+- `0029_ranking_worker_round_read` (Step 10): **grants only** — `SELECT (id, event_id) ON competition.round TO br_rankings`, the exact column grant `br_results` holds (0026), so the worker login can re-assemble a ROUND_CLASSIFICATION scope when computing its staleness. No table, function, trigger, SECURITY DEFINER, PUBLIC or write grant; independent of 0027 / 0028. 0001–0028 are untouched (the Step 9 migration-boundary test now bounds its 0027 ↔ 0028 check below 0029).
 
 - `0027_qualified_achievements` (Step 9): ALTER of the BRT-08 type CHECKs (`QUALIFIED`) + `achievement_qualified_shape`; the append-only link `achievement.qualification_basis` (rank ≤ N CHECK, kind coherence, BR183 binding to the candidate pin and to the stored snapshot entry, BR184 refusal of every canonical QUALIFIED — no target-authority producer —, BR185 completeness and one non-terminal QUALIFIED per rule / holder / target); SELECT-only qualification inputs for `br_achievements` and reference reads for `br_achievement_rules`. 0016–0026 untouched. See [qualification §7](./BRT-10-QUALIFICATION.md#7-persistence-migration-0027).
 
@@ -86,7 +88,7 @@ Implemented (Step 6), all through the transactional outbox (`emitEvent`):
 
 Audit rows (`platform.audit_event`) are written for every definition mutation (`ranking.*-created`, `*-published`, `*-retired`) and for every snapshot publication (`ranking.snapshot-published`). Run evaluations are not audited (they mutate no definition and publish nothing). There is no ledger stream for rankings.
 
-- `ClassificationStale` (Step 7): aggregate `RESULT_VERSION`, emitted by `ClassificationStalenessService.emitStale` under `br_results`, at most once per (classification version, staleDigest). Nothing calls it automatically until the Step 10 worker.
+- `ClassificationStale` (Step 7): aggregate `RESULT_VERSION`, emitted by `ClassificationStalenessService.emitStale`, at most once per (classification version, staleDigest). Called automatically by the Step 10 worker under `br_rankings` (the service still defaults to `br_results` for the API login).
 
 QUALIFIED reuses BRT-08 achievement events (`AchievementDerived`, `AchievementCurrentStateChanged`, the ACHIEVEMENT ledger stream) and audits `achievement.qualification-requested`. There are no prize, trophy, payout, entry or registration events.
 
@@ -112,6 +114,55 @@ QUALIFIED reuses BRT-08 achievement events (`AchievementDerived`, `AchievementCu
 - **Not stored:** staleness, any `is_current` / "current ranking" flag, basis topology (result / verification-run ids, evidence commitments, hold), owner principal / anchor ids, `requested_by` account ids. Staleness is composed at read time from the Step 7 readers (the API, Step 11). OFFICIAL systems carry `label = NULL`: recognition wording needs a published snapshot, which has no producer (ADR-0048 §7). `@1` classifications get no card (provenance unavailable).
 - **Rebuild:** `rebuildRankingReadModels(maintenanceDb)` (login `br_maintenance` → `br_rebuild`) truncates only `ranking_read.*` and re-runs the same refresh functions in canonical order. It writes no canonical row, event, audit row, classification, run, snapshot or index. `snapshotRankingReadModels` gives the deterministic comparison. Tests prove incremental == full rebuild == second rebuild, in both lanes. Concurrent rebuilds serialize on the TRUNCATE lock and converge. A hand-edited projection row is reverted by the next rebuild, and the canonical fact never changes.
 - **No CLI** (none is required by the step). **No public DTO schema and no vectors:** projection rows are not hashed documents, and integrity is proven by rebuild equality and by comparison with the canonical rows. Public DTOs, their schema tags and their vectors come with the API (Step 11).
+
+## Worker (Step 10)
+
+Consumer `rankings.react` in `apps/worker` → `RankingWorkerService` (`packages/persistence/src/ranking-worker.ts`), on the dedicated login `br_ranking_worker_app` (`br_rankings` + SELECT-only `br_verification_reader`). Without that login the consumer is skipped and logged, like `records.evaluate`. It orchestrates only: every decision stays in the pure engines and the existing validated services.
+
+| Input event | Identity (validated) | Effect |
+|---|---|---|
+| `ResultProvisional`, `ResultRejected` | aggregate `RESULT_VERSION` | `ClassificationStalenessService.affectedBy(rv)`: for a CONTEST version, every `@2` classification of its round / event / competition plus the derivedFrom dependents; for a classification version, itself. Only versions that are not superseded and whose latest status is SUBMITTED or live. Then `emitStale` on each. |
+| `ResultSubmitted`, `ResultProvisional`, `ResultRejected`, `CurrentVerificationChanged` | aggregate `RESULT_VERSION` (a `payload.resultVersionId`, if present, must equal it) | `RankingService.evaluate` (trigger `UPSTREAM_FACT_CHANGED`, cutoff `asOf` = the event's `occurredAt`) for each PUBLISHED system version whose universe can contain the version: CONTEST scope, same DisciplineVersion, a Performance with the universe Mark metric, `effective_from ≤ asOf`. |
+| `VerificationEvaluated` | aggregate `VERIFICATION_RUN`, `payload.resultVersionId` | same as above |
+
+- **Output:** only `ClassificationStale` outbox events, and canonical runs with their dependency rows, `run_card` / `run_candidate` refresh and `RankingRunEvaluated`, all written by the existing writers. Under the pinned policy, staleness is computed and never stored.
+- **Not consumed:** `ClassificationStale`, `Ranking*`, `ClassificationPolicy*`, `Achievement*`, `Record*` and every other event. A ranking handler never reacts to ranking events, so no loop exists.
+- **Deliberately not done:**
+  - no classification re-derivation, submission or replacement (ADR-0047 §3, §6);
+  - no snapshot publication;
+  - no QUALIFIED derivation or revocation (event-driven qualification stays unwired);
+  - no record, prize, trophy, entry, seeding or advancement write;
+  - no verification, hold, eligibility or authority fact.
+- **Idempotency:** delivery is at least once (`consumeOutbox`: the receipt and the handler's own transaction commit separately). Logical effects are exactly once through natural keys:
+  - one `ClassificationStale` per (version, staleDigest), under a per-version advisory lock;
+  - one run per (system version, input hash). The cutoff is the event's own `occurredAt` and is part of the hashed input, so a redelivered event reproduces the same input while the facts are unchanged.
+  - A later fact change is a new event and a new cutoff, and so produces a new honest run.
+- **Retry and failure:**
+  - A consumed event type with an invalid identity (wrong aggregate type, non-UUID, mismatched payload, invalid time) is acknowledged as `INVALID_EVENT_IDENTITY` and has no effect: retrying cannot fix it.
+  - Any other error propagates. The round rolls back its receipts, and the event is redelivered on the next polling round (every 1 s), exactly like the BRT-08 / BRT-09 consumers.
+  - A partial attempt is safe to repeat, because every effect is idempotent.
+- **Fail closed:** unknown ids resolve to nothing. An unknown admissible set reads STALE (`ADMISSIBLE_INPUT_SET_UNKNOWN`). In production every run is BLOCKED (no FINAL, V2+ or hold producer), and nothing becomes publishable.
+
+Run locally (after `pnpm db:up && pnpm db:bootstrap && pnpm db:migrate`):
+
+```sh
+pnpm dev:worker                              # polls every second; logs "[rankings.react] …" per reaction
+pnpm --filter @br/worker start -- --once     # one polling round, then exit
+```
+
+Production requires `BR_RANKING_WORKER_DATABASE_URL`; development falls back to the local `br_ranking_worker_app` login.
+
+Test: `pnpm vitest run --project integration packages/persistence/src/rankings-worker.int.test.ts`. It covers:
+
+- scope resolution, pinned-policy staleness and immutable history;
+- redelivery, concurrent consumers and retry after a failed receipt;
+- unrelated and malformed events;
+- the side-effect footprint;
+- canonical runs, re-assembly equality and no publication;
+- read-model rebuild equality;
+- least privilege and the 0029 grant.
+
+Demonstrate: submit and accept a contest result in a competition that already has a submitted `@2` competition classification, then run the worker once. The log shows `stale checked=1 emitted=1`, and the outbox holds one `ClassificationStale` for that classification version. A second `--once` emits nothing more. A seeded demo command is Step 14.
 
 ## Fixture lanes
 

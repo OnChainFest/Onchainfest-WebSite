@@ -24,8 +24,11 @@ import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 /**
  * BRT-10 Step 7 — classification staleness, correction impact and the as-corrected classification read
- * (ADR-0047 §5–6). Runs under br_results, the module that owns classification ResultVersions and their
- * derivedFrom index (`results.classification_input`, 0023). No grant is added.
+ * (ADR-0047 §5–6). Runs under br_results (the API login: the module that owns classification
+ * ResultVersions and their derivedFrom index, `results.classification_input`, 0023) or, for the Step 10
+ * worker, under br_rankings (br_ranking_worker_app, which can never become br_results). Both roles read
+ * the same canonical facts; the only write is the ClassificationStale outbox event (0026 / 0001 grants;
+ * 0029 adds the round → event link for br_rankings).
  *
  *   read(version)            the immutable version + its exact pins + staleness COMPUTED from the current
  *                            canonical state. Nothing is written: no flag, no correction, no replacement.
@@ -34,7 +37,9 @@ import { inTransaction, ModuleRole, type TxContext } from './tx';
  *   correctionImpact(rv)     for each dependent: the pins that are no longer current (unknown ⇒ affected).
  *   emitStale(version)       the ClassificationStale outbox event, at most once per (version,
  *                            staleDigest), in one transaction serialized per version. The Step 10 worker
- *                            decides WHEN to call it; nothing calls it automatically yet.
+ *                            (RankingWorkerService) decides WHEN to call it.
+ *   affectedBy(rv)           the classification versions whose staleness a status change of `rv` can
+ *                            change (Step 10 worker scope resolution; read-only).
  *
  * Staleness is never stored (R-1). A stale classification stays the current version of its Result;
  * replacing it requires a T7 correction, which has no producer (CLASSIFICATION_REPLACEMENT_REQUIRES_
@@ -44,6 +49,7 @@ import { inTransaction, ModuleRole, type TxContext } from './tx';
 const integrity = (reason: string, message: string, details: Record<string, unknown> = {}) =>
   new DomainError(DomainErrorCode.RANKING_INTEGRITY_FAILURE, message, { reason, ...details });
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LIVE_STATUSES: readonly string[] = ['PROVISIONAL', 'OFFICIAL', 'FINAL'];
 
 export type ClassificationReadStaleness =
@@ -231,11 +237,16 @@ async function readIn(ctx: TxContext, versionId: string): Promise<Classification
   };
 }
 
+/** The roles that may compute staleness and emit ClassificationStale (see the module comment). */
+export type ClassificationStalenessRole = typeof ModuleRole.results | typeof ModuleRole.rankings;
+
 export class ClassificationStalenessService {
   private readonly db: Db;
+  private readonly role: ClassificationStalenessRole;
 
-  constructor(db: Db) {
+  constructor(db: Db, options: { readonly role?: ClassificationStalenessRole } = {}) {
     this.db = db;
+    this.role = options.role ?? ModuleRole.results;
   }
 
   /**
@@ -243,20 +254,14 @@ export class ClassificationStalenessService {
    * now. One consistent snapshot (REPEATABLE READ); read-only.
    */
   read(classificationVersionId: string): Promise<ClassificationRead> {
-    return inTransaction(
-      this.db,
-      ModuleRole.results,
-      (ctx) => readIn(ctx, classificationVersionId),
-      4,
-      {
-        isolation: 'repeatable read',
-      },
-    );
+    return inTransaction(this.db, this.role, (ctx) => readIn(ctx, classificationVersionId), 4, {
+      isolation: 'repeatable read',
+    });
   }
 
   /** Classification versions whose derivedFrom pins `resultVersionId` (the index), sorted. */
   dependents(resultVersionId: string): Promise<readonly string[]> {
-    return inTransaction(this.db, ModuleRole.results, async (ctx) => {
+    return inTransaction(this.db, this.role, async (ctx) => {
       const { rows } = await sql<{ id: string }>`
         SELECT classification_version_id::text AS id FROM results.classification_input
         WHERE input_result_version_id = ${resultVersionId} ORDER BY classification_version_id`.execute(
@@ -274,7 +279,7 @@ export class ClassificationStalenessService {
   correctionImpact(changedResultVersionId: string): Promise<readonly ClassificationImpact[]> {
     return inTransaction(
       this.db,
-      ModuleRole.results,
+      this.role,
       async (ctx) => {
         const { rows } = await sql<{ id: string; result_id: string; content: unknown }>`
           SELECT v.id::text AS id, v.result_id, v.content FROM results.result_version v
@@ -305,6 +310,64 @@ export class ClassificationStalenessService {
   }
 
   /**
+   * Scope resolution for the Step 10 worker: the `@2` classification versions whose staleness a status
+   * change of ResultVersion `rv` can change, sorted. For a CONTEST version: every classification Result
+   * of the round / event / competition containing that contest (the scopes it can enter — staleness
+   * condition B) plus the derivedFrom index dependents (condition A). For a classification version:
+   * itself. Only versions that are not superseded and whose latest append-only status is live or
+   * SUBMITTED; REJECTED / REVOKED versions are never re-signalled. `@1` versions are skipped (provenance
+   * unavailable: never derived, never stale). Unknown or non-UUID input ⇒ empty. Read-only.
+   */
+  affectedBy(resultVersionId: string): Promise<readonly string[]> {
+    if (!UUID.test(resultVersionId)) return Promise.resolve([]);
+    return inTransaction(
+      this.db,
+      this.role,
+      async (ctx) => {
+        const { rows } = await sql<{ id: string }>`
+          WITH changed AS (
+            SELECT r.scope_type, r.scope_target_id, v.id AS version_id
+            FROM results.result_version v JOIN results.result r ON r.id = v.result_id
+            WHERE v.id = ${resultVersionId}
+          ), scopes AS (
+            SELECT 'ROUND_CLASSIFICATION'::text AS scope_type, c.round_id AS target
+            FROM changed ch JOIN competition.contest c ON c.id = ch.scope_target_id
+            WHERE ch.scope_type = 'CONTEST' AND c.round_id IS NOT NULL
+            UNION ALL
+            SELECT 'EVENT_CLASSIFICATION', c.event_id
+            FROM changed ch JOIN competition.contest c ON c.id = ch.scope_target_id
+            WHERE ch.scope_type = 'CONTEST'
+            UNION ALL
+            SELECT 'COMPETITION_CLASSIFICATION', e.competition_id
+            FROM changed ch JOIN competition.contest c ON c.id = ch.scope_target_id
+            JOIN competition.event e ON e.id = c.event_id
+            WHERE ch.scope_type = 'CONTEST'
+          ), candidates AS (
+            SELECT v.id FROM scopes s
+            JOIN results.result r ON r.scope_type = s.scope_type AND r.scope_target_id = s.target
+            JOIN results.result_version v ON v.result_id = r.id
+            UNION
+            SELECT i.classification_version_id FROM results.classification_input i
+            WHERE i.input_result_version_id = ${resultVersionId}
+            UNION
+            SELECT ch.version_id FROM changed ch
+            WHERE ch.scope_type IN ('ROUND_CLASSIFICATION', 'EVENT_CLASSIFICATION', 'COMPETITION_CLASSIFICATION')
+          )
+          SELECT v.id::text AS id FROM candidates c
+          JOIN results.result_version v ON v.id = c.id
+          WHERE v.content_schema = 'br:result-version-content@2'
+            AND NOT EXISTS (SELECT 1 FROM results.result_version s WHERE s.supersedes_version_id = v.id)
+            AND (SELECT x.to_status FROM results.result_status_transition x WHERE x.result_version_id = v.id
+                 ORDER BY x.recorded_at DESC, x.id DESC LIMIT 1) IN ('SUBMITTED', 'PROVISIONAL', 'OFFICIAL', 'FINAL')
+          ORDER BY 1`.execute(ctx.trx);
+        return rows.map((r) => r.id);
+      },
+      4,
+      { isolation: 'repeatable read' },
+    );
+  }
+
+  /**
    * Emits ClassificationStale through the transactional outbox iff the version is STALE now and no
    * event exists yet for (version, staleDigest). Serialized per version (advisory lock taken before any
    * read, READ COMMITTED), so concurrent or repeated calls in the same state emit exactly one event; a
@@ -316,7 +379,7 @@ export class ClassificationStalenessService {
     readonly emitted: boolean;
     readonly eventId?: string;
   }> {
-    return inTransaction(this.db, ModuleRole.results, async (ctx) => {
+    return inTransaction(this.db, this.role, async (ctx) => {
       await lockKeys(ctx, `classification-stale:${classificationVersionId.toLowerCase()}`);
       const read = await readIn(ctx, classificationVersionId);
       const s = read.staleness;
