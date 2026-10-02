@@ -34,6 +34,8 @@ export type LoginRole =
   | 'br_achievement_worker_app'
   | 'br_record_operator_app'
   | 'br_record_worker_app'
+  | 'br_ranking_operator_app'
+  | 'br_ranking_worker_app'
   | 'br_worker_app'
   | 'br_maintenance'
   | 'br_probe';
@@ -163,6 +165,35 @@ export function recordWorkerDatabaseUrl(database?: string): string | undefined {
   return devUrl('br_record_worker_app', 'br_record_worker_app_dev_only', db);
 }
 
+/**
+ * BRT-10 · Ranking-definition operator login (`br_ranking_operator_app` → `br_ranking_rules` only):
+ * INTERNAL RankingSystem / ClassificationPolicy creation, versioning, publication and retirement.
+ * Optional and never part of `databaseUrls()`; production uses only an explicitly configured
+ * BR_RANKING_OPERATOR_DATABASE_URL (no fallback to the normal API connection).
+ */
+export function rankingOperatorDatabaseUrl(database?: string): string | undefined {
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const value = process.env.BR_RANKING_OPERATOR_DATABASE_URL;
+  if (value !== undefined && value !== '')
+    return database === undefined ? value : withDatabase(value, db);
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devUrl('br_ranking_operator_app', 'br_ranking_operator_app_dev_only', db);
+}
+
+/**
+ * BRT-10 · Ranking worker login (`br_ranking_worker_app` → `br_rankings`, `br_verification_reader`):
+ * ranking runs / snapshots reacting to canonical events. Optional: without it ranking reactions are
+ * skipped.
+ */
+export function rankingWorkerDatabaseUrl(database?: string): string | undefined {
+  const db = database ?? process.env.BR_DATABASE_NAME ?? 'bragging_rights';
+  const value = process.env.BR_RANKING_WORKER_DATABASE_URL;
+  if (value !== undefined && value !== '')
+    return database === undefined ? value : withDatabase(value, db);
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devUrl('br_ranking_worker_app', 'br_ranking_worker_app_dev_only', db);
+}
+
 export function withDatabase(url: string, database: string): string {
   const u = new URL(url);
   u.pathname = `/${database}`;
@@ -187,6 +218,10 @@ export function devRolePasswords(): Record<LoginRole, string> {
     br_record_operator_app:
       process.env.BR_RECORD_OPERATOR_PASSWORD ?? 'br_record_operator_app_dev_only',
     br_record_worker_app: process.env.BR_RECORD_WORKER_PASSWORD ?? 'br_record_worker_app_dev_only',
+    br_ranking_operator_app:
+      process.env.BR_RANKING_OPERATOR_PASSWORD ?? 'br_ranking_operator_app_dev_only',
+    br_ranking_worker_app:
+      process.env.BR_RANKING_WORKER_PASSWORD ?? 'br_ranking_worker_app_dev_only',
     br_worker_app: process.env.BR_WORKER_PASSWORD ?? 'br_worker_app_dev_only',
     br_maintenance: process.env.BR_MAINTENANCE_PASSWORD ?? 'br_maintenance_dev_only',
     br_probe: process.env.BR_PROBE_PASSWORD ?? 'br_probe_dev_only',

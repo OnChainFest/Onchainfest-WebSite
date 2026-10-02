@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./achievements": "./src/achievements.ts",
-    "./records": "./src/records.ts"
+    "./records": "./src/records.ts",
+    "./rankings": "./src/rankings.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

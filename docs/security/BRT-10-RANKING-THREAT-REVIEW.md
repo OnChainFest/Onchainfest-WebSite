@@ -1,0 +1,25 @@
+# BRT-10 — Ranking & Qualification Threat Review
+
+Status: skeleton (Step 1), evidence filled through Step 8 (read models). The **Evidence** column is completed with concrete tests in Steps 3–15.
+
+| Threat | Control (planned) | Evidence |
+|---|---|---|
+| Manual ranking or position write | No write endpoint for positions; class-A tables with only a validated writer; `check-no-manual-ranking.mjs` | _Step 13/15_ |
+| Fabricated classification dressed up as a derivation | The ledger re-derives `@2` content from canonical inputs and refuses mismatch | Step 6: `rankings-writer.int.test.ts` tests 7–12 (tampered ranks / trace / pins / hashes, rank table, non-classification target, stale input); _Step 15_ |
+| Classification submitted without authority | Existing `SUBMIT_RESULT` / `ACCEPT_RESULT` checks, unchanged | Step 6: tests 15–16; _Step 15_ |
+| Hidden tie-break or sport-specific ordering | DisciplineVersion keys only; closed aggregation vocabulary; shared ties | _Step 3/4_ |
+| Below-floor or unverified data in a recognition ranking | FINAL + CURRENT run ≥ floor + known, absent hold; floors raise-only | _Step 3/15_ |
+| Platform masquerading as federation/national authority | PLATFORM naming computed; OFFICIAL owner must be anchored; publication fails closed | _Step 3/15_ |
+| Platform deciding another competition's qualification | `TARGET_QUALIFICATION_AUTHORITY` required, with no producer | _Step 9/15_ |
+| Manufactured eligibility / population | Typed fact kinds; absence fails closed | _Step 3/9_ |
+| History rewrite / silent re-ranking | Immutable snapshots; `corrects_snapshot_id`; as-published vs as-corrected; staleness computed, never stored | Step 5 foundation tests; Step 6 tests 34–41 (content / hash mismatch, lineage, immutability); Step 7: `rankings-staleness.int.test.ts` (reads write nothing, historical content unchanged, STALE classification not replaced, as-published / as-corrected are queries) and `staleness.test.ts`; _Step 15_ |
+| Fixture facts entering the canonical lane | Provenance CHECKs; overlays only in `br_rkfx_` databases | Step 5 foundation tests; Step 6: fixture run refused by the normal schema, forged "canonical" input refused (`CANONICAL_INPUT_MISMATCH`); _Step 15_ |
+| Duplicate or concurrent derivation | Natural-key uniqueness; per-system lock | Step 6: tests 13–14, 27–28, 39 (retry, concurrent submissions / runs / publications collapse to one); _Step 15_ |
+| Cross-scope reads / staff overreach | COMP_STAFF permission checks; NOT_FOUND on denial | _Step 11/15_ |
+| Privacy leakage on public ranking surfaces | Ids only in facts; Passport policy for names ("Private entrant") | _Step 11/15_ |
+| Invalid cursor treated as first page | BRT-10 readers reject undecodable cursors with 400 | _Step 11/15_ |
+| Stale classification presented as current, or silently re-derived | Staleness computed from exact pins (unknown ⇒ affected); replacement of a current version stays `CLASSIFICATION_REPLACEMENT_REQUIRES_CORRECTION`; `ClassificationStale` once per (version, staleDigest) | Step 7: `rankings-staleness.int.test.ts` (tests 1–24), `staleness.test.ts`, staleness vectors + independent checker; _Step 15_ |
+| Read model used as truth / alternate write path | `ranking_read.*` class B, refreshed only by the writer of the projected fact, rebuilt by `br_rebuild` from canonical facts; no role can write a canonical table through it; staleness / currentness never stored | Step 8: `rankings-read-models.int.test.ts` (incremental == full == second rebuild in both lanes; hand-edited rank reverted; canonical fingerprint unchanged; least privilege) |
+| Leaking excluded candidates / basis topology publicly | `run_card` / `run_candidate` staff only (no `br_public_read` grant); leaderboard rows carry no basis ids, evidence commitments or hold; no owner / account ids on cards | Step 8: `rankings-read-models.int.test.ts` (public read denied on run projections; no topology in leaderboard rows); _Step 11/15_ |
+| Worker event loops | Ranking events are never consumed by ranking handlers; idempotent natural keys | _Step 10/15_ |
+| Qualification treated as progression or prize trigger | No writes outside `achievement.*`; no prize, trophy or settlement events | _Step 9/13_ |

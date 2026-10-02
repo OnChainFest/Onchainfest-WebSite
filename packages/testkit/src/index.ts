@@ -504,17 +504,30 @@ export async function newContestResult(deps: {
    * sporting occurrence time exists.
    */
   timed?: { readonly winnerMs: string; readonly loserMs: string; readonly startAfter?: string };
+  /**
+   * BRT-10: add the new event to this EXISTING (already active) competition of `organizer` instead of
+   * creating one — a real second contest result in the same competition scope.
+   */
+  competitionId?: string;
 }) {
   const org = deps.organizer ?? (await newOrganizer(deps.identity, deps.orgs));
   const k = () => `fx-${newId()}`;
-  const { competitionId } = await deps.comps.createCompetition({
-    actorAccountId: org.ownerAccountId,
-    organizerOrganizationId: org.organizationId,
-    slug: uniqueSlug('evc'),
-    profile: { name: 'Fictional Evidence Open', timezone: 'UTC' },
-    idempotencyKey: k(),
-  });
-  await deps.comps.publishCompetition({ actorAccountId: org.ownerAccountId, competitionId });
+  const existing = deps.competitionId;
+  if (existing !== undefined && deps.organizer === undefined)
+    throw new Error('an existing competition needs its organizer');
+  const competitionId =
+    existing ??
+    (
+      await deps.comps.createCompetition({
+        actorAccountId: org.ownerAccountId,
+        organizerOrganizationId: org.organizationId,
+        slug: uniqueSlug('evc'),
+        profile: { name: 'Fictional Evidence Open', timezone: 'UTC' },
+        idempotencyKey: k(),
+      })
+    ).competitionId;
+  if (existing === undefined)
+    await deps.comps.publishCompetition({ actorAccountId: org.ownerAccountId, competitionId });
   const { eventId } = await deps.comps.createEvent({
     actorAccountId: org.ownerAccountId,
     competitionId,
@@ -573,7 +586,8 @@ export async function newContestResult(deps: {
   });
 
   if (deps.timed !== undefined) {
-    await deps.comps.activateCompetition({ actorAccountId: org.ownerAccountId, competitionId });
+    if (existing === undefined)
+      await deps.comps.activateCompetition({ actorAccountId: org.ownerAccountId, competitionId });
     await deps.comps.startEvent({ actorAccountId: org.ownerAccountId, eventId });
     await deps.structure.scheduleContest({
       actorAccountId: org.ownerAccountId,

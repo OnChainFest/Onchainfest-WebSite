@@ -823,3 +823,12 @@ export const BRT09_SCHEMAS: readonly BrRootSchema[] = [
   recordMarkFactV1,
   recordMarkStatusFactV1,
 ];
+
+/** Fragments shared with BRT-10 rankings (the same vocabulary, never a copy). */
+export {
+  holder as recordHolderSchema,
+  population as recordPopulationSchema,
+  governingRecognition as governingRecognitionSchema,
+  verificationSummary as verificationSummarySchema,
+  recognition as recordRecognitionSchema,
+};

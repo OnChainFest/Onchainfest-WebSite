@@ -120,6 +120,10 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   ACHIEVEMENT_INTEGRITY_FAILURE: 500,
   // BRT-09: a system condition (category / value / subject-hash mismatch), never a sporting outcome.
   RECORD_INTEGRITY_FAILURE: 500,
+  // BRT-10: a submitted classification that is not the canonical derivation (client-side content).
+  CLASSIFICATION_DERIVATION_MISMATCH: 422,
+  // BRT-10: a system condition (run / outcome / snapshot mismatch), never a sporting outcome.
+  RANKING_INTEGRITY_FAILURE: 500,
 };
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */

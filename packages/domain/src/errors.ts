@@ -62,6 +62,19 @@ export const DomainErrorCode = {
    * canonical basis (category hash, value, metric, holder, scope, subject hash). Nothing is persisted.
    */
   RECORD_INTEGRITY_FAILURE: 'RECORD_INTEGRITY_FAILURE',
+  // BRT-10 classifications / rankings
+  /**
+   * A submitted classification (`@2`) differs from the canonical re-derivation the ResultLedger runs
+   * over the canonical inputs (content, hash, policy, inputs) — or no canonical derivation exists
+   * (blocked, ambiguous / unavailable policy). The submission is refused; nothing is persisted.
+   */
+  CLASSIFICATION_DERIVATION_MISMATCH: 'CLASSIFICATION_DERIVATION_MISMATCH',
+  /**
+   * A ranking run, outcome or snapshot contradicts its canonical re-assembly / re-evaluation (input
+   * digest, outcome hash, entries, lineage). A system condition, never a sporting outcome; nothing is
+   * persisted.
+   */
+  RANKING_INTEGRITY_FAILURE: 'RANKING_INTEGRITY_FAILURE',
 } as const;
 export type DomainErrorCode = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
 
