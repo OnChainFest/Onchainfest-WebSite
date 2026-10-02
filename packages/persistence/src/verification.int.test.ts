@@ -771,6 +771,19 @@ describe('policy fail-closed, determinism, concurrency, integrity, time consiste
   });
 
   it('verification never changes Result lifecycle, never advances brackets, never emits consequence events', async () => {
+    // The integration database is shared by every test file (reset once per run). Consequence-like
+    // events emitted EARLIER by other files' own operations (e.g. BRT-10 ranking definitions / runs)
+    // are not effects of this test: the assertion is scoped to events created from here on, by id
+    // (never by timestamp — the database clock may step back on CI hosts).
+    const CONSEQUENCE =
+      '(AchievementDerived|AchievementCurrentStateChanged|Record|Ranking|Prize|Trophy)';
+    const prior = (
+      await sql<{
+        id: string;
+      }>`SELECT id::text AS id FROM platform.outbox_event WHERE event_type ~ ${CONSEQUENCE}`.execute(
+        owner,
+      )
+    ).rows.map((r) => r.id);
     const w = await world();
     await w.B.attest(w.resultVersionId, AFFIRM);
     const count = async () =>
@@ -788,9 +801,8 @@ describe('policy fail-closed, determinism, concurrency, integrity, time consiste
     const { rows } = await sql<{
       event_type: string;
       // BRT-08: AchievementRule administration events are not consequences; verification derives none.
-    }>`SELECT DISTINCT event_type FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|Record|Ranking|Prize|Trophy)'`.execute(
-      owner,
-    );
+    }>`SELECT DISTINCT event_type FROM platform.outbox_event
+       WHERE event_type ~ ${CONSEQUENCE} AND NOT (id = ANY(${prior}::uuid[]))`.execute(owner);
     expect(rows).toEqual([]);
   });
 
