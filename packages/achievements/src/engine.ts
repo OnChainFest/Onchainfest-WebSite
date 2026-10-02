@@ -22,8 +22,10 @@ import {
   validateAchievementRuleSpec,
   type AchievementRuleSpec,
 } from './rule';
+import { deriveQualified, type QualificationPin } from './qualified';
 import {
   creditedLineupHash,
+  isQualificationSnapshot,
   sealDerivationSnapshot,
   type AchievementDerivationSnapshot,
   type GoverningRecognition,
@@ -44,7 +46,8 @@ import {
  * qualify on the facts?") so a trace can say "the facts match the rule but the verification floor is
  * unmet" — and no candidate is ever produced unless every gate passes.
  *
- * Changing ANY derivation semantics requires a new engine version (achievement-engine/2).
+ * Changing ANY derivation semantics requires a new engine version (achievement-engine/2 added
+ * RECORD_SET; achievement-engine/3 adds QUALIFIED — `./qualified.ts` — and changes nothing else).
  */
 export type GateName =
   | 'RULE_APPLICABILITY'
@@ -53,7 +56,9 @@ export type GateName =
   | 'HOLD_STATE'
   | 'OCCURRENCE'
   | 'GOVERNING_RECOGNITION'
-  | 'RECORD_MARK';
+  | 'RECORD_MARK'
+  | 'QUALIFYING_SOURCE'
+  | 'TARGET_AUTHORITY';
 
 export interface Gate {
   readonly gate: GateName;
@@ -127,6 +132,8 @@ export interface AchievementCandidate {
   readonly governingAuthority?: GoverningRecognition;
   /** RECORD_SET only (ADR-0045): the exact ratified RecordMark this Achievement recognizes. */
   readonly record?: RecordPin;
+  /** QUALIFIED only (ADR-0050 §6): the exact qualifying position, basis hash and target adoption. */
+  readonly qualification?: QualificationPin;
 }
 
 export type RecordPin = Omit<
@@ -147,7 +154,14 @@ export interface DerivationOutcome {
   readonly snapshotHash: string;
   readonly provenance: DerivationProvenance;
   readonly ruleVersionId: string;
-  readonly resultVersionId: string;
+  /** The derived ResultVersion (absent for a QUALIFIED derivation from a ranking source). */
+  readonly resultVersionId?: string;
+  /** QUALIFIED only: the qualifying source (ranking snapshot / run, or classification version). */
+  readonly source?: {
+    readonly kind: QualificationPin['kind'];
+    readonly sourceId: string;
+    readonly sourceHash: string;
+  };
   readonly state: DerivationState;
   readonly gates: readonly Gate[];
   readonly subjects?: readonly SubjectEvaluation[];
@@ -162,6 +176,16 @@ export interface Derivation {
 
 const integrity = (reason: string, message: string) =>
   new DomainError(DomainErrorCode.ACHIEVEMENT_INTEGRITY_FAILURE, message, { reason });
+export const integrityFailure = integrity;
+
+/** Canonical hash of an engine document; a non-canonical document is an integrity failure. */
+export function hashAchievementDocument(
+  tag: string,
+  schema: { id: string; version: number },
+  doc: unknown,
+) {
+  return hashDoc(tag, schema, doc);
+}
 
 function hashDoc(tag: string, schema: { id: string; version: number }, doc: unknown) {
   try {
@@ -178,12 +202,29 @@ export function hashCandidate(candidate: unknown): ContentHash {
     .contentHash;
 }
 
-/** AC-2: (achievementType, ruleVersion, holder, scope, basis set) → one logical Achievement. */
+/**
+ * AC-2: (achievementType, ruleVersion, holder, scope, basis set) → one logical Achievement. A QUALIFIED
+ * candidate's identity also names its qualifying source (ADR-0050 §6: "the pins are part of the
+ * candidate hash and therefore of its identity"): the same underlying basis under another snapshot or
+ * classification version is another qualification fact. Absent for every other type (hashes unchanged).
+ */
 export function identityOf(candidate: AchievementCandidate): {
   readonly identityHash: ContentHash;
   readonly identity: unknown;
 } {
+  const q = candidate.qualification;
+  const source =
+    q?.ranking !== undefined
+      ? { kind: q.kind, sourceId: q.ranking.snapshotId, sourceHash: q.ranking.snapshotHash }
+      : q?.classification !== undefined
+        ? {
+            kind: q.kind,
+            sourceId: q.classification.resultVersionId,
+            sourceHash: q.classification.contentHash,
+          }
+        : undefined;
   const identity = {
+    ...(source === undefined ? {} : { qualificationSource: source }),
     achievementType: candidate.achievementType,
     ruleVersionId: candidate.rule.ruleVersionId,
     holder: candidate.holder,
@@ -261,14 +302,19 @@ interface Resolved {
 
 /** Derives the candidates (and the full explanation) for one snapshot. Pure and deterministic. */
 export function deriveAchievements(input: unknown): Derivation {
-  const { snapshot: s, snapshotHash } = sealDerivationSnapshot(input);
+  const { snapshot, snapshotHash } = sealDerivationSnapshot(input);
   // The embedded rule must be exactly the spec its hash names (tamper evidence) and target us.
-  const v = validateAchievementRuleSpec(s.rule.spec);
-  if (!v.ok || v.specHash !== s.rule.specHash)
+  const v = validateAchievementRuleSpec(snapshot.rule.spec);
+  if (!v.ok || v.specHash !== snapshot.rule.specHash)
     throw integrity('RULE_HASH_MISMATCH', 'rule spec does not match its hash or is invalid');
   if (!SUPPORTED_ACHIEVEMENT_ENGINES.includes(v.spec.targetEngine))
     throw integrity('ENGINE_VERSION_UNSUPPORTED', 'rule targets another engine version');
   const spec: AchievementRuleSpec = v.spec;
+  // BRT-10: a QUALIFIED rule is derived ONLY from a qualification snapshot, and vice versa.
+  if (isQualificationSnapshot(snapshot)) return deriveQualified(snapshot, snapshotHash, spec);
+  if (spec.criterion.kind === 'QUALIFYING_POSITION')
+    throw integrity('SNAPSHOT_RULE_MISMATCH', 'a QUALIFIED rule needs a qualification snapshot');
+  const s: AchievementDerivationSnapshot = snapshot;
   const engineVersion = spec.targetEngine;
   const supported = new Set(s.supportedFactKinds);
   const baseReq = effectiveRequirements(spec);
@@ -548,6 +594,8 @@ export function deriveAchievements(input: unknown): Derivation {
     case 'RECORD_MARK_RATIFIED':
       evaluateRecordMark();
       break;
+    case 'QUALIFYING_POSITION':
+      break; // unreachable: dispatched to deriveQualified above
   }
 
   function evaluateRecordMark() {

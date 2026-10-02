@@ -47,7 +47,16 @@ describe('rule validation (bounded, declarative, floors never lowered)', () => {
         'CRITERION_KIND_NOT_ALLOWED_FOR_TYPE',
       ]),
     );
-    expect(codes({ ...title, achievementType: 'QUALIFIED' })).toContain('BRJ_ENUM');
+    // BRT-10 (ADR-0050): QUALIFIED exists, but only on achievement-engine/3 with QUALIFYING_POSITION.
+    expect(codes({ ...title, achievementType: 'QUALIFIED' })).toEqual(
+      expect.arrayContaining([
+        'QUALIFIED_REQUIRES_ACHIEVEMENT_ENGINE_3',
+        'CRITERION_KIND_NOT_ALLOWED_FOR_TYPE',
+      ]),
+    );
+    // The remaining BRT-01 deferred types stay outside the closed vocabulary.
+    for (const deferred of ['STREAK', 'SEASON_TITLE', 'RANKING_MILESTONE'])
+      expect(codes({ ...title, achievementType: deferred })).toContain('BRJ_ENUM');
     expect(codes({ ...title, achievementType: 'WORLD_RECORD' })).toContain('BRJ_ENUM');
     expect(codes({ ...title, criterion: { ...title.criterion, kind: 'JAVASCRIPT' } })).toContain(
       'BRJ_ENUM',

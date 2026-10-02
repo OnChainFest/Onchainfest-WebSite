@@ -57,6 +57,16 @@ Two pieces are missing:
 - Production derives **zero** QUALIFIED Achievements today. There is no FINAL, V3 or hold state, and no target authority. Each candidate shows its exact blockers.
 - The full path (ranking or classification → QUALIFIED → correction → supersede/revoke) is exercised in throwaway fixture databases only.
 
+## Step 9 addendum (implementation decisions, 2026-10-02)
+
+These narrow the decision above; none changes it.
+
+1. **Vocabulary.** Four blockers are added to the existing ones: `QUALIFYING_SOURCE_MISMATCH`, `RANKING_SNAPSHOT_CORRECTED`, `TARGET_QUALIFICATION_AUTHORITY_INVALID`, `TARGET_QUALIFICATION_AUTHORITY_OUT_OF_SCOPE`, with the gates `QUALIFYING_SOURCE` and `TARGET_AUTHORITY`. Everything else reuses BRT-07/08/09/10 codes.
+2. **Exact source.** The rule pins its source exactly: a ranking system **version**, or one classification scope under one classification **policy version**. The rule binding applies as for every rule (no retroactivity), at the snapshot's publication or the classification's submission.
+3. **Identity.** As §6 states, the pins are part of the identity: a QUALIFIED identity adds the qualifying source (kind, id, hash). The member is absent for every other type, so no existing identity changes.
+4. **One per (rule, holder, target).** At most one non-terminal QUALIFIED exists per rule, holder and target. A later snapshot that only FOLLOWS creates nothing. Only a correction of the pinned source supersedes it (§7). The database enforces this at commit.
+5. **Fixture lane.** QUALIFIED fixtures are persisted only in throwaway `br_rkfx_` databases carrying both the ranking and the achievement overlays. Every canonical QUALIFIED row is refused by the database (BR184).
+
 ## Alternatives considered
 
 - **Separate QualificationDecision entity.** Rejected: not in BRT-01, and it would be a parallel truth.

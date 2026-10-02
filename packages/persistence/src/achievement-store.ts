@@ -9,13 +9,17 @@ import {
   effectiveRequirements,
   hashCandidate,
   identityOf,
+  isQualificationSnapshot,
   PUBLIC_ACHIEVEMENT_NOTICE,
+  qualificationBasisHash,
   publicBlocker,
   publicReason,
   sealDerivationSnapshot,
   type AchievementCandidate,
+  type AchievementDerivationSnapshot,
   type CandidateEntry,
   type Derivation,
+  type QualificationDerivationSnapshot,
   type SealedDerivationSnapshot,
   type SupportAssessment,
   type SupportFacts,
@@ -48,6 +52,12 @@ import {
   type VersionFacts,
 } from './achievement-loader';
 import { refreshAchievementCard } from './achievement-projection';
+import {
+  assembleCanonicalQualificationSnapshot,
+  loadQualifyingSource,
+  qualificationRules,
+  type QualifyingSourceRef,
+} from './qualification-loader';
 import type { Db } from './db';
 import {
   competitionPermissionSet,
@@ -110,11 +120,11 @@ export function validateCandidate(
   derivation: Derivation,
   entry: CandidateEntry,
 ): void {
-  const s = sealed.snapshot;
+  const snapshot = sealed.snapshot;
   const c = entry.candidate;
   if (derivation.snapshotHash !== sealed.snapshotHash)
     throw integrity('SNAPSHOT_HASH_MISMATCH', 'derivation does not belong to this snapshot');
-  const again = deriveAchievements(s);
+  const again = deriveAchievements(snapshot);
   if (again.outcomeHash !== derivation.outcomeHash)
     throw integrity('OUTCOME_NOT_REPRODUCIBLE', 'derivation outcome does not reproduce');
   if (!(again.outcome.candidates ?? []).some((x) => x.identityHash === entry.identityHash))
@@ -123,8 +133,24 @@ export function validateCandidate(
     throw integrity('CANDIDATE_HASH_MISMATCH', 'candidate hash does not recompute');
   if (identityOf(c).identityHash !== entry.identityHash)
     throw integrity('IDENTITY_HASH_MISMATCH', 'identity hash does not recompute');
-  if (c.provenance !== s.provenance || c.engineVersion !== s.rule.spec.targetEngine)
+  if (c.provenance !== snapshot.provenance || c.engineVersion !== snapshot.rule.spec.targetEngine)
     throw integrity('CANDIDATE_PROVENANCE_MISMATCH', 'candidate provenance / engine mismatch');
+  if (
+    c.rule.ruleId !== snapshot.rule.ruleId ||
+    c.rule.ruleVersionId !== snapshot.rule.ruleVersionId ||
+    c.rule.specHash !== snapshot.rule.specHash
+  )
+    throw integrity('RULE_MISMATCH', 'candidate rule is not the snapshot rule');
+  if (evidenceCommitmentOf(c.basis) !== c.evidenceCommitment)
+    throw integrity('EVIDENCE_COMMITMENT_MISMATCH', 'evidenceCommitment does not recompute');
+  // BRT-10 QUALIFIED: every pin must be exactly the qualification snapshot's facts.
+  if (isQualificationSnapshot(snapshot)) {
+    validateQualifiedCandidate(snapshot, c);
+    return;
+  }
+  if (c.achievementType === 'QUALIFIED' || c.qualification !== undefined)
+    throw integrity('QUALIFICATION_PIN_MISMATCH', 'only a qualification snapshot yields QUALIFIED');
+  const s: AchievementDerivationSnapshot = snapshot;
   // BRT-09 RECORD_SET: the record pin must be exactly the snapshot's RecordMark facts.
   if (c.achievementType === 'RECORD_SET') {
     const r = s.record;
@@ -147,15 +173,7 @@ export function validateCandidate(
       throw integrity('RECORD_PIN_MISMATCH', 'RECORD_SET pin does not match the RecordMark facts');
   } else if (c.record !== undefined)
     throw integrity('RECORD_PIN_MISMATCH', 'only a RECORD_SET carries a record pin');
-  if (
-    c.rule.ruleId !== s.rule.ruleId ||
-    c.rule.ruleVersionId !== s.rule.ruleVersionId ||
-    c.rule.specHash !== s.rule.specHash
-  )
-    throw integrity('RULE_MISMATCH', 'candidate rule is not the snapshot rule');
   const v = s.verification;
-  if (evidenceCommitmentOf(c.basis) !== c.evidenceCommitment)
-    throw integrity('EVIDENCE_COMMITMENT_MISMATCH', 'evidenceCommitment does not recompute');
   if (
     JSON.stringify(c.governingAuthority ?? null) !== JSON.stringify(v.governingRecognition ?? null)
   )
@@ -219,6 +237,134 @@ export function validateCandidate(
       if (!ok) throw integrity('HOLDER_MISMATCH', 'athlete holder is not supported by the basis');
     }
   }
+}
+
+const sameJson = (a: unknown, b: unknown) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * BRT-10 QUALIFIED (ADR-0050 §6): the candidate's target, N, position (snapshot id + hash or
+ * classification version + hash + policy version), rank / tie, basis items, basis hash and target
+ * adoption must equal the qualification snapshot's facts and the rule's pinned source — never a
+ * caller-chosen holder, rank, threshold, source, level or authority.
+ */
+function validateQualifiedCandidate(
+  s: QualificationDerivationSnapshot,
+  c: AchievementCandidate,
+): void {
+  const fail = (message: string) => integrity('QUALIFICATION_PIN_MISMATCH', message);
+  const pin = c.qualification;
+  const rule = s.rule.spec.criterion.qualification;
+  const ta = s.qualification.targetAuthority;
+  if (c.achievementType !== 'QUALIFIED' || pin === undefined || rule === undefined)
+    throw fail('a qualification snapshot yields only QUALIFIED candidates with their pin');
+  if (
+    c.record !== undefined ||
+    c.qualifyingValue !== undefined ||
+    c.comparisonSetHash !== undefined ||
+    c.memberCredits !== undefined ||
+    c.memberCreditBasis !== 'NOT_APPLICABLE'
+  )
+    throw fail('a QUALIFIED carries no record, value, comparison set or member credits');
+  if (
+    pin.kind !== rule.source.kind ||
+    pin.targetCompetitionId !== rule.targetCompetitionId ||
+    pin.qualifyingRanks !== rule.qualifyingRanks ||
+    c.scope.scopeType !== 'COMPETITION' ||
+    c.scope.scopeId !== rule.targetCompetitionId ||
+    c.context.competitionId !== rule.targetCompetitionId ||
+    c.context.disciplineVersionId !== s.discipline.disciplineVersionId
+  )
+    throw fail('target / threshold / source kind is not the rule declaration');
+  if (
+    ta === undefined ||
+    ta.status !== 'ADOPTED' ||
+    ta.targetCompetitionId !== rule.targetCompetitionId ||
+    pin.targetAuthority.adoptionId !== ta.adoptionId ||
+    pin.targetAuthority.adoptionHash !== ta.adoptionHash
+  )
+    throw fail('the target authority pin is not the snapshot adoption');
+  const position = pin.ranking ?? pin.classification;
+  if (position === undefined || position.rank > pin.qualifyingRanks)
+    throw fail('the position is missing or outside the qualifying ranks');
+  const r = s.qualification.ranking;
+  const cl = s.qualification.classification;
+  let expectedBasis: unknown;
+  if (pin.ranking !== undefined) {
+    const e = r?.entries.find(
+      (x) => x.holder.holderType === c.holder.holderType && x.holder.holderId === c.holder.holderId,
+    );
+    if (
+      r?.published === undefined ||
+      pin.classification !== undefined ||
+      e === undefined ||
+      pin.ranking.systemId !== r.systemId ||
+      pin.ranking.systemVersionId !== r.systemVersionId ||
+      pin.ranking.snapshotId !== r.published.snapshotId ||
+      pin.ranking.snapshotHash !== r.published.snapshotHash ||
+      pin.ranking.rank !== e.rank ||
+      pin.ranking.tied !== e.tied ||
+      c.governingAuthority !== undefined
+    )
+      throw fail('the ranking position is not the snapshot entry of this holder');
+    expectedBasis = [
+      ...new Map(e.basis.map((b) => [`${b.resultVersionId}/${b.participantId}`, b])).values(),
+    ]
+      .map((b) => ({ ...b, resultStatus: 'FINAL' }))
+      .sort((a, b) =>
+        `${a.resultVersionId}/${a.participantId}` < `${b.resultVersionId}/${b.participantId}`
+          ? -1
+          : 1,
+      );
+  } else {
+    const p = pin.classification;
+    const e = cl?.entries.find((x) => x.participantId === p?.participantId);
+    const part = cl?.participants.find((x) => x.participantId === p?.participantId);
+    const holderId = part?.kind === 'INDIVIDUAL' ? part.athleteId : part?.teamId;
+    const vs = cl?.verification;
+    if (
+      cl === undefined ||
+      p === undefined ||
+      e === undefined ||
+      vs === undefined ||
+      p.resultId !== cl.resultId ||
+      p.resultVersionId !== cl.resultVersionId ||
+      p.contentHash !== cl.contentHash ||
+      p.scopeType !== cl.scopeType ||
+      p.policyVersionId !== cl.policyVersionId ||
+      p.rank !== e.rank ||
+      p.tied !== e.tied ||
+      holderId !== c.holder.holderId ||
+      c.holder.holderType !== (part?.kind === 'INDIVIDUAL' ? 'ATHLETE' : 'TEAM') ||
+      !sameJson(c.governingAuthority, vs.governingRecognition)
+    )
+      throw fail('the classification position is not the classification entry of this holder');
+    expectedBasis = [
+      {
+        resultVersionId: cl.resultVersionId,
+        contentHash: cl.contentHash,
+        participantId: p.participantId,
+        verificationRunId: vs.runId,
+        verificationSnapshotHash: vs.snapshotHash,
+        verificationOutcomeHash: vs.outcomeHash,
+        verificationLevel: vs.level,
+        evidenceBundleHash: vs.evidenceBundleHash,
+        evidenceBundleAsOf: vs.evaluatedAsOf,
+        resultStatus: cl.status,
+      },
+    ];
+  }
+  const norm = (xs: unknown) =>
+    JSON.stringify(
+      (xs as Record<string, unknown>[]).map((b) =>
+        Object.fromEntries(Object.entries(b).sort(([a], [z]) => (a < z ? -1 : 1))),
+      ),
+    );
+  if (norm(c.basis) !== norm(expectedBasis))
+    throw fail('the basis items are not the pinned qualifying basis');
+  const { basisHash: _h, targetAuthority: _t, ...positionPin } = pin;
+  if (qualificationBasisHash(c, positionPin) !== pin.basisHash)
+    throw fail('the qualification basis hash does not recompute');
 }
 
 // ───────────────────────────── status history ─────────────────────────────
@@ -296,53 +442,21 @@ async function appendStatus(
 
 // ───────────────────────────── the only Achievement writer ─────────────────────────────
 
-async function insertDerived(
+type View = (achievementId: string, created: boolean, supersedes: string[]) => PersistedAchievement;
+
+/**
+ * Writes the immutable rows of one validated candidate: the Achievement, its basis items, member
+ * credits, the RECORD_SET / QUALIFIED link and the ledger fact — never anything else. Callers hold
+ * the identity lock and have already proven the candidate (validateCandidate).
+ */
+async function writeAchievementRows(
   ctx: TxContext,
   sealed: SealedDerivationSnapshot,
   derivation: Derivation,
   entry: CandidateEntry,
   actorAccountId: string | undefined,
-): Promise<PersistedAchievement> {
-  validateCandidate(sealed, derivation, entry);
+): Promise<string> {
   const c = entry.candidate;
-  const s = sealed.snapshot;
-  const credits = (c.memberCredits ?? []).map((m) => m.athleteId);
-  const view = (achievementId: string, created: boolean, supersedes: string[]) => ({
-    achievementId,
-    created,
-    identityHash: entry.identityHash,
-    candidateHash: entry.candidateHash,
-    achievementType: c.achievementType,
-    holder: c.holder,
-    memberCredits: credits,
-    supersedes,
-  });
-  await lockKeys(
-    ctx,
-    `achievement:${entry.identityHash}`,
-    ...(c.record === undefined ? [] : [`record-set:${c.record.recordMarkId}`]),
-  );
-  if (c.record !== undefined) {
-    // One RECORD_SET per RecordMark, whatever run / rule version re-derives it (idempotent).
-    const { rows: linked } = await sql<{ achievement_id: string }>`
-      SELECT achievement_id FROM achievement.record_basis WHERE record_mark_id = ${c.record.recordMarkId}`.execute(
-      ctx.trx,
-    );
-    if (linked[0] !== undefined) return view(linked[0].achievement_id, false, []);
-  }
-  const { rows: existing } = await sql<{ id: string; candidate_hash: string }>`
-    SELECT id, candidate_hash FROM achievement.achievement WHERE identity_hash = ${entry.identityHash}`.execute(
-    ctx.trx,
-  );
-  const found = existing[0];
-  if (found !== undefined) {
-    if (found.candidate_hash !== entry.candidateHash)
-      throw integrity(
-        'IDENTITY_CONTENT_CONFLICT',
-        'same logical achievement with different content',
-      );
-    return view(found.id, false, []);
-  }
   const id = newId();
   await sql`INSERT INTO achievement.achievement
       (id, identity_hash, candidate_hash, candidate, achievement_type, rule_id, rule_version_id, engine_version, holder_type,
@@ -377,6 +491,23 @@ async function insertDerived(
       VALUES (${id}, ${c.record.recordMarkId}, ${c.record.markHash}, ${c.record.categoryId},
               ${c.record.categoryVersionId}, ${c.record.categoryVersionHash}, ${c.record.ratificationEntryId},
               ${c.record.ratificationHash}, ${c.record.standing}, ${ctx.txTime})`.execute(ctx.trx);
+  // BRT-10 (ADR-0050 §6): the append-only QUALIFIED → qualifying-position link. The snapshot /
+  // classification it names is never mutated (no back-pointer, no qualified flag anywhere).
+  const q = c.qualification;
+  if (q !== undefined) {
+    const pos = q.ranking ?? q.classification;
+    await sql`INSERT INTO achievement.qualification_basis
+        (achievement_id, rule_id, holder_type, holder_id, target_competition_id, basis_kind, qualifying_ranks, rank,
+         tied, ranking_system_id, ranking_system_version_id, snapshot_id, snapshot_hash, classification_version_id,
+         classification_content_hash, classification_policy_version_id, basis_hash, target_adoption_id,
+         target_adoption_hash, provenance, recorded_at)
+      VALUES (${id}, ${c.rule.ruleId}, ${c.holder.holderType}, ${c.holder.holderId}, ${q.targetCompetitionId}, ${q.kind},
+              ${q.qualifyingRanks}, ${pos?.rank ?? null}, ${pos?.tied ?? null}, ${q.ranking?.systemId ?? null},
+              ${q.ranking?.systemVersionId ?? null}, ${q.ranking?.snapshotId ?? null}, ${q.ranking?.snapshotHash ?? null},
+              ${q.classification?.resultVersionId ?? null}, ${q.classification?.contentHash ?? null},
+              ${q.classification?.policyVersionId ?? null}, ${q.basisHash}, ${q.targetAuthority.adoptionId},
+              ${q.targetAuthority.adoptionHash}, ${c.provenance}, ${ctx.txTime})`.execute(ctx.trx);
+  }
 
   const stream = await openStream(ctx, id as Uuid, StreamType.ACHIEVEMENT);
   await stream.append({
@@ -393,25 +524,11 @@ async function insertDerived(
     }),
   });
   await stream.close();
-  const required = effectiveRequirements(s.rule.spec).level;
-  await appendStatus(
-    ctx,
-    id,
-    assessSupport({
-      provenance: s.provenance,
-      achievementId: id,
-      requiredLevel: required,
-      basis: c.basis.map((b) => ({
-        resultVersionId: b.resultVersionId,
-        pinnedRunId: b.verificationRunId,
-        status: s.resultVersion.status,
-        verification: s.verification,
-      })),
-      holdSupported: s.supportedFactKinds.includes('HOLD_STATE'),
-      ...(s.hold === undefined ? {} : { holdActive: s.hold.active }),
-      ...(s.record === undefined ? {} : { recordMarkStatus: s.record.currentStatus }),
-    }),
-  );
+  return id;
+}
+
+async function emitDerived(ctx: TxContext, id: string, entry: CandidateEntry) {
+  const c = entry.candidate;
   await emitEvent(ctx, {
     eventType: 'AchievementDerived',
     aggregateType: 'ACHIEVEMENT',
@@ -433,7 +550,79 @@ async function insertDerived(
       })),
     },
   });
+}
 
+async function insertDerived(
+  ctx: TxContext,
+  sealed: SealedDerivationSnapshot,
+  derivation: Derivation,
+  entry: CandidateEntry,
+  actorAccountId: string | undefined,
+): Promise<PersistedAchievement> {
+  validateCandidate(sealed, derivation, entry);
+  const c = entry.candidate;
+  const snapshot = sealed.snapshot;
+  const credits = (c.memberCredits ?? []).map((m) => m.athleteId);
+  const view: View = (achievementId, created, supersedes) => ({
+    achievementId,
+    created,
+    identityHash: entry.identityHash,
+    candidateHash: entry.candidateHash,
+    achievementType: c.achievementType,
+    holder: c.holder,
+    memberCredits: credits,
+    supersedes,
+  });
+  if (isQualificationSnapshot(snapshot))
+    return insertQualified(ctx, { ...sealed, snapshot }, derivation, entry, actorAccountId, view);
+  const s: AchievementDerivationSnapshot = snapshot;
+  await lockKeys(
+    ctx,
+    `achievement:${entry.identityHash}`,
+    ...(c.record === undefined ? [] : [`record-set:${c.record.recordMarkId}`]),
+  );
+  if (c.record !== undefined) {
+    // One RECORD_SET per RecordMark, whatever run / rule version re-derives it (idempotent).
+    const { rows: linked } = await sql<{ achievement_id: string }>`
+      SELECT achievement_id FROM achievement.record_basis WHERE record_mark_id = ${c.record.recordMarkId}`.execute(
+      ctx.trx,
+    );
+    if (linked[0] !== undefined) return view(linked[0].achievement_id, false, []);
+  }
+  const { rows: existing } = await sql<{ id: string; candidate_hash: string }>`
+    SELECT id, candidate_hash FROM achievement.achievement WHERE identity_hash = ${entry.identityHash}`.execute(
+    ctx.trx,
+  );
+  const found = existing[0];
+  if (found !== undefined) {
+    if (found.candidate_hash !== entry.candidateHash)
+      throw integrity(
+        'IDENTITY_CONTENT_CONFLICT',
+        'same logical achievement with different content',
+      );
+    return view(found.id, false, []);
+  }
+  const id = await writeAchievementRows(ctx, sealed, derivation, entry, actorAccountId);
+  const required = effectiveRequirements(s.rule.spec).level;
+  await appendStatus(
+    ctx,
+    id,
+    assessSupport({
+      provenance: s.provenance,
+      achievementId: id,
+      requiredLevel: required,
+      basis: c.basis.map((b) => ({
+        resultVersionId: b.resultVersionId,
+        pinnedRunId: b.verificationRunId,
+        status: s.resultVersion.status,
+        verification: s.verification,
+      })),
+      holdSupported: s.supportedFactKinds.includes('HOLD_STATE'),
+      ...(s.hold === undefined ? {} : { holdActive: s.hold.active }),
+      ...(s.record === undefined ? {} : { recordMarkStatus: s.record.currentStatus }),
+    }),
+  );
+  await emitDerived(ctx, id, entry);
   // Supersession: an ACTIVE / SUSPENDED Achievement of the same type / rule / holder / scope whose
   // basis is the version this one corrects (or an older run of the same version) is replaced — the
   // old fact is never modified; it gains a link and a SUPERSEDED status entry.
@@ -480,6 +669,127 @@ async function insertDerived(
       }),
     );
     supersedes.push(p.id);
+  }
+  await refreshAchievementCard(ctx, id);
+  return view(id, true, supersedes);
+}
+
+/**
+ * BRT-10 QUALIFIED (decision, Step 9): at most ONE non-terminal QUALIFIED per (rule, holder, target).
+ * The first qualifying source issues it; a later snapshot / classification that merely FOLLOWS creates
+ * nothing (the earlier Achievement and its pins are never touched). Only a CORRECTION of the pinned
+ * source (a snapshot that CORRECTS it, a classification version that supersedes it) issues a new
+ * Achievement and SUPERSEDES the old one (disputes §5.1, ADR-0050 §7). The database re-checks the
+ * single-non-terminal invariant at commit.
+ */
+async function insertQualified(
+  ctx: TxContext,
+  sealed: SealedDerivationSnapshot<QualificationDerivationSnapshot>,
+  derivation: Derivation,
+  entry: CandidateEntry,
+  actorAccountId: string | undefined,
+  view: View,
+): Promise<PersistedAchievement> {
+  const c = entry.candidate;
+  const s = sealed.snapshot;
+  const q = c.qualification;
+  if (q === undefined) throw integrity('QUALIFICATION_PIN_MISMATCH', 'QUALIFIED without its pin');
+  await lockKeys(
+    ctx,
+    `achievement:${entry.identityHash}`,
+    `qualified:${c.rule.ruleId}:${c.holder.holderType}:${c.holder.holderId}:${q.targetCompetitionId}`,
+  );
+  const { rows: existing } = await sql<{ id: string; candidate_hash: string }>`
+    SELECT id, candidate_hash FROM achievement.achievement WHERE identity_hash = ${entry.identityHash}`.execute(
+    ctx.trx,
+  );
+  const found = existing[0];
+  if (found !== undefined) {
+    if (found.candidate_hash !== entry.candidateHash)
+      throw integrity(
+        'IDENTITY_CONTENT_CONFLICT',
+        'same logical achievement with different content',
+      );
+    return view(found.id, false, []);
+  }
+  const { rows: current } = await sql<{
+    achievement_id: string;
+    snapshot_id: string | null;
+    classification_version_id: string | null;
+  }>`
+    SELECT q.achievement_id, q.snapshot_id::text AS snapshot_id,
+           q.classification_version_id::text AS classification_version_id
+    FROM achievement.qualification_basis q
+    JOIN achievement.v_achievement_status st ON st.achievement_id = q.achievement_id
+    WHERE q.rule_id = ${c.rule.ruleId} AND q.holder_type = ${c.holder.holderType}
+      AND q.holder_id = ${c.holder.holderId} AND q.target_competition_id = ${q.targetCompetitionId}
+      AND q.provenance = ${c.provenance} AND st.status IN ('ACTIVE', 'SUSPENDED')
+    ORDER BY q.achievement_id`.execute(ctx.trx);
+  const prior = current[0];
+  const published = s.qualification.ranking?.published;
+  const cl = s.qualification.classification;
+  const corrects =
+    prior !== undefined &&
+    ((published?.lineageKind === 'CORRECTS' &&
+      published.priorSnapshotId !== undefined &&
+      published.priorSnapshotId === prior.snapshot_id) ||
+      (cl?.supersedesVersionId !== undefined &&
+        cl.supersedesVersionId === prior.classification_version_id));
+  if (prior !== undefined && !corrects) return view(prior.achievement_id, false, []);
+
+  const id = await writeAchievementRows(ctx, sealed, derivation, entry, actorAccountId);
+  const required = effectiveRequirements(s.rule.spec).level;
+  await appendStatus(
+    ctx,
+    id,
+    assessSupport({
+      provenance: s.provenance,
+      achievementId: id,
+      requiredLevel: required,
+      // Every pinned run is CURRENT at derivation: the snapshot read CURRENT (Step 7 staleness) or
+      // the classification's own run passed the VERIFICATION gate.
+      basis: c.basis.map((b) => ({
+        resultVersionId: b.resultVersionId,
+        pinnedRunId: b.verificationRunId,
+        status: b.resultStatus as SupportFacts['basis'][number]['status'],
+        verification:
+          cl !== undefined
+            ? cl.verification
+            : { state: 'CURRENT' as const, runId: b.verificationRunId, level: b.verificationLevel },
+      })),
+      holdSupported: s.supportedFactKinds.includes('HOLD_STATE'),
+      ...(s.qualification.hold === undefined ? {} : { holdActive: s.qualification.hold.active }),
+    }),
+  );
+  await emitDerived(ctx, id, entry);
+  const supersedes: string[] = [];
+  if (prior !== undefined) {
+    await sql`INSERT INTO achievement.supersession (superseded_id, superseding_id, recorded_at)
+      VALUES (${prior.achievement_id}, ${id}, ${ctx.txTime})`.execute(ctx.trx);
+    const { rows: items } = await sql<{
+      result_version_id: string;
+      verification_run_id: string;
+      result_status: string;
+    }>`
+      SELECT result_version_id, verification_run_id, result_status FROM achievement.basis_item
+      WHERE achievement_id = ${prior.achievement_id}`.execute(ctx.trx);
+    await appendStatus(
+      ctx,
+      prior.achievement_id,
+      assessSupport({
+        provenance: c.provenance,
+        achievementId: prior.achievement_id,
+        requiredLevel: required,
+        basis: items.map((i) => ({
+          resultVersionId: i.result_version_id,
+          pinnedRunId: i.verification_run_id,
+          status: i.result_status as SupportFacts['basis'][number]['status'],
+        })),
+        ...(published?.lineageKind === 'CORRECTS' ? { qualifyingSnapshotCorrected: true } : {}),
+        replacementAchievementId: id,
+      }),
+    );
+    supersedes.push(prior.achievement_id);
   }
   await refreshAchievementCard(ctx, id);
   return view(id, true, supersedes);
@@ -543,11 +853,49 @@ async function recordSetRulesAt(
   ).filter((r) => r.spec.achievementType === 'RECORD_SET');
 }
 
+/** The qualifying source a qualification snapshot names (never chosen by a caller). */
+function qualifyingSourceOf(s: QualificationDerivationSnapshot): QualifyingSourceRef | undefined {
+  const r = s.qualification.ranking;
+  if (r !== undefined)
+    return r.published === undefined
+      ? { kind: 'RANKING_RUN', runId: r.runId }
+      : { kind: 'RANKING_SNAPSHOT', snapshotId: r.published.snapshotId };
+  const cl = s.qualification.classification;
+  return cl === undefined
+    ? undefined
+    : { kind: 'CLASSIFICATION', resultVersionId: cl.resultVersionId };
+}
+
+/** BRT-10: re-assembles the canonical QUALIFIED snapshot of the claimed source and rule version. */
+async function reassembleCanonicalQualification(
+  ctx: TxContext,
+  claimed: SealedDerivationSnapshot<QualificationDerivationSnapshot>,
+): Promise<SealedDerivationSnapshot> {
+  const ref = qualifyingSourceOf(claimed.snapshot);
+  const facts = ref === undefined ? undefined : await loadQualifyingSource(ctx, ref);
+  const rule =
+    facts === undefined
+      ? undefined
+      : (await qualificationRules(ctx, facts)).find(
+          (r) => r.ruleVersionId === claimed.snapshot.rule.ruleVersionId,
+        );
+  if (facts === undefined || rule === undefined)
+    throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'qualifying source / rule is not applicable');
+  const sealed = await assembleCanonicalQualificationSnapshot(ctx, facts, rule);
+  if (sealed.snapshotHash !== claimed.snapshotHash)
+    throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'snapshot is not the canonical assembly');
+  return sealed;
+}
+
 /** Re-assembles the canonical snapshot a CANONICAL_ASSEMBLY claim names, from live facts. */
 async function reassembleCanonical(
   ctx: TxContext,
-  claimed: SealedDerivationSnapshot,
+  claimedAny: SealedDerivationSnapshot,
 ): Promise<SealedDerivationSnapshot> {
+  const snapshot = claimedAny.snapshot;
+  if (isQualificationSnapshot(snapshot))
+    return reassembleCanonicalQualification(ctx, { ...claimedAny, snapshot });
+  const claimed = { ...claimedAny, snapshot };
   const facts = await loadVersionFacts(ctx, claimed.snapshot.resultVersion.resultVersionId);
   if (facts === undefined)
     throw integrity('CANONICAL_SNAPSHOT_MISMATCH', 'result version not found');
@@ -695,6 +1043,7 @@ async function canonicalSupportFacts(
 ): Promise<SupportFacts | undefined> {
   const a = await achievementCore(ctx, achievementId);
   if (a === undefined || a.provenance !== 'CANONICAL_ASSEMBLY') return undefined;
+  if (a.spec.achievementType === 'QUALIFIED') return canonicalQualifiedSupportFacts(ctx, a);
   const basis = [];
   for (const i of a.items)
     basis.push(
@@ -761,6 +1110,81 @@ async function canonicalSupportFacts(
     ...(rec[0]?.status === undefined || rec[0].status === null
       ? {}
       : { recordMarkStatus: rec[0].status }),
+  };
+}
+
+/**
+ * BRT-10 QUALIFIED current support (ADR-0050 §7, disputes §5.1 against the as-corrected view): live
+ * status / supersession / BRT-07 freshness of every pinned basis; whether a correcting snapshot
+ * replaces the pinned one; and, when the source was corrected or superseded, whether the holder still
+ * qualifies under the correcting source (canonically always BLOCKED today: no target authority).
+ */
+async function canonicalQualifiedSupportFacts(
+  ctx: TxContext,
+  a: NonNullable<Awaited<ReturnType<typeof achievementCore>>>,
+): Promise<SupportFacts> {
+  const basis = [];
+  for (const i of a.items)
+    basis.push(
+      await canonicalBasisFact(ctx, {
+        resultVersionId: i.result_version_id,
+        pinnedRunId: i.verification_run_id,
+      }),
+    );
+  const { rows: link } = await sql<{
+    snapshot_id: string | null;
+    classification_version_id: string | null;
+  }>`
+    SELECT snapshot_id::text AS snapshot_id, classification_version_id::text AS classification_version_id
+    FROM achievement.qualification_basis WHERE achievement_id = ${a.id}`.execute(ctx.trx);
+  const l = link[0];
+  let correcting: QualifyingSourceRef | undefined;
+  if (l?.snapshot_id !== null && l?.snapshot_id !== undefined) {
+    const { rows } = await sql<{ id: string }>`
+      SELECT id::text AS id FROM ranking.snapshot WHERE corrects_snapshot_id = ${l.snapshot_id}`.execute(
+      ctx.trx,
+    );
+    if (rows[0] !== undefined) correcting = { kind: 'RANKING_SNAPSHOT', snapshotId: rows[0].id };
+  }
+  const supersededBy = basis.find(
+    (b) => b.supersededByVersionId !== undefined,
+  )?.supersededByVersionId;
+  if (
+    correcting === undefined &&
+    supersededBy !== undefined &&
+    l?.classification_version_id !== null
+  )
+    correcting = { kind: 'CLASSIFICATION', resultVersionId: supersededBy };
+  let successorDerivation: SupportFacts['successorDerivation'];
+  if (correcting !== undefined) {
+    successorDerivation = 'BLOCKED';
+    const facts = await loadQualifyingSource(ctx, correcting);
+    const rule =
+      facts === undefined
+        ? undefined
+        : (await qualificationRules(ctx, facts)).find((r) => r.ruleId === a.rule_id);
+    if (facts !== undefined && rule !== undefined) {
+      const d = deriveAchievements(
+        (await assembleCanonicalQualificationSnapshot(ctx, facts, rule)).snapshot,
+      );
+      if (d.outcome.state !== 'BLOCKED')
+        successorDerivation = (d.outcome.candidates ?? []).some(
+          (x) =>
+            x.candidate.holder.holderType === a.holder_type &&
+            x.candidate.holder.holderId === a.holder_id,
+        )
+          ? 'HOLDER_QUALIFIES'
+          : 'HOLDER_DOES_NOT_QUALIFY';
+    }
+  }
+  return {
+    provenance: 'CANONICAL_ASSEMBLY',
+    achievementId: a.id,
+    requiredLevel: effectiveRequirements(a.spec).level,
+    basis,
+    holdSupported: false,
+    ...(correcting?.kind === 'RANKING_SNAPSHOT' ? { qualifyingSnapshotCorrected: true } : {}),
+    ...(successorDerivation === undefined ? {} : { successorDerivation }),
   };
 }
 
@@ -851,6 +1275,13 @@ export interface ResultVersionDerivation {
     status: AchievementStatus;
     changed: boolean;
   }[];
+}
+
+export interface QualificationDerivation {
+  readonly source: QualifyingSourceRef;
+  readonly provenance: 'CANONICAL_ASSEMBLY';
+  readonly rules: readonly DerivationReport[];
+  readonly noApplicableRule: boolean;
 }
 
 const DERIVATION_EVENTS = new Set([
@@ -959,6 +1390,80 @@ export class AchievementService {
     return unwrap(r);
   }
 
+  /**
+   * BRT-10 Step 9: canonical QUALIFIED derivation for one exact qualifying source — a published
+   * ranking snapshot (or a run, which reports RANKING_SNAPSHOT_NOT_PUBLISHED) or a classification
+   * ResultVersion — under every QUALIFIED rule that pins it. The request names a source only: never a
+   * holder, rank, threshold, level or authority. Production yields ZERO QUALIFIED Achievements (no
+   * FINAL / V3 / hold / target-authority producer); every blocker is reported. Ranking sources are
+   * INTERNAL-only (no competition owns a cross-competition ranking); a classification needs staff
+   * rights on its competition. Event-driven invocation is the Step 10 worker (not wired here).
+   */
+  async deriveQualification(input: {
+    readonly actor: EvidenceActor;
+    readonly source: QualifyingSourceRef;
+  }): Promise<QualificationDerivation> {
+    const r = await achievementTx(
+      this.db,
+      async (ctx): Promise<Committed<QualificationDerivation>> => {
+        const actorAccountId = 'accountId' in input.actor ? input.actor.accountId : undefined;
+        const facts = await loadQualifyingSource(ctx, input.source);
+        const allowed =
+          facts !== undefined &&
+          ('internal' in input.actor ||
+            (input.source.kind === 'CLASSIFICATION' &&
+              (await this.staffAllowed(ctx, input.actor, facts.competitionId))));
+        if (facts === undefined || !allowed) {
+          await recordAudit(ctx, {
+            actorAccountId,
+            action: 'achievement.qualification-requested',
+            targetType:
+              input.source.kind === 'CLASSIFICATION' ? 'RESULT_VERSION' : 'RANKING_SNAPSHOT',
+            outcome: 'DENIED',
+          });
+          return {
+            error: new DomainError(DomainErrorCode.NOT_FOUND, 'qualifying source not found'),
+          };
+        }
+        const rules = await qualificationRules(ctx, facts);
+        const reports: DerivationReport[] = [];
+        for (const rule of rules) {
+          const sealed = await assembleCanonicalQualificationSnapshot(ctx, facts, rule);
+          const report = await persistSealed(
+            ctx,
+            sealed,
+            { code: rule.code, version: rule.version },
+            actorAccountId,
+          );
+          reports.push(report);
+          await recordAudit(ctx, {
+            actorAccountId,
+            action: 'achievement.qualification-requested',
+            targetType:
+              input.source.kind === 'CLASSIFICATION' ? 'RESULT_VERSION' : 'RANKING_SNAPSHOT',
+            outcome: 'SUCCEEDED',
+            details: {
+              ruleCode: rule.code,
+              ruleVersion: rule.version,
+              state: report.state,
+              blockedBy: [...report.blockedBy],
+              persisted: report.achievements.filter((x) => x.created).length,
+            },
+          });
+        }
+        return {
+          ok: {
+            source: input.source,
+            provenance: 'CANONICAL_ASSEMBLY',
+            rules: reports,
+            noApplicableRule: rules.length === 0,
+          },
+        };
+      },
+    );
+    return unwrap(r);
+  }
+
   private async deriveInTx(
     ctx: TxContext,
     resultVersionId: string,
@@ -973,7 +1478,9 @@ export class AchievementService {
         eventId: facts.path.eventId,
         submittedAt: facts.submittedAt,
       })
-    ).filter((r) => r.spec.achievementType !== 'RECORD_SET');
+    ).filter(
+      (r) => r.spec.achievementType !== 'RECORD_SET' && r.spec.achievementType !== 'QUALIFIED',
+    );
     const verification =
       rules.length === 0 ? undefined : await verificationSummary(ctx, resultVersionId);
     const reports: DerivationReport[] = [];
@@ -1218,6 +1725,44 @@ export async function dependencyIndex(
     verificationRunId: r.verification_run_id,
     participantId: r.participant_id,
     ...(r.performance_ordinal === null ? {} : { performanceOrdinal: r.performance_ordinal }),
+    status: r.status,
+  }));
+}
+
+/**
+ * BRT-10 dependency index (HISTORY-AND-CORRECTIONS §5): which QUALIFIED Achievements rest on ranking
+ * snapshot S or classification version C (`achievement.qualification_basis`, append-only).
+ */
+export async function qualificationIndex(
+  ctx: TxContext,
+  q: { readonly snapshotId?: string; readonly classificationVersionId?: string },
+) {
+  const { rows } = await sql<{
+    achievement_id: string;
+    basis_kind: string;
+    snapshot_id: string | null;
+    classification_version_id: string | null;
+    rank: number;
+    tied: boolean;
+    status: string;
+  }>`
+    SELECT q.achievement_id::text AS achievement_id, q.basis_kind, q.snapshot_id::text AS snapshot_id,
+           q.classification_version_id::text AS classification_version_id, q.rank, q.tied, st.status
+    FROM achievement.qualification_basis q
+    JOIN achievement.v_achievement_status st ON st.achievement_id = q.achievement_id
+    WHERE (${q.snapshotId ?? null}::uuid IS NULL OR q.snapshot_id = ${q.snapshotId ?? null}::uuid)
+      AND (${q.classificationVersionId ?? null}::uuid IS NULL
+           OR q.classification_version_id = ${q.classificationVersionId ?? null}::uuid)
+    ORDER BY q.achievement_id`.execute(ctx.trx);
+  return rows.map((r) => ({
+    achievementId: r.achievement_id,
+    basisKind: r.basis_kind,
+    ...(r.snapshot_id === null ? {} : { snapshotId: r.snapshot_id }),
+    ...(r.classification_version_id === null
+      ? {}
+      : { classificationVersionId: r.classification_version_id }),
+    rank: r.rank,
+    tied: r.tied,
     status: r.status,
   }));
 }

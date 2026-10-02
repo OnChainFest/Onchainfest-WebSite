@@ -6,6 +6,9 @@ import {
   DerivationProvenance,
   HolderType,
   MemberCreditRole,
+  QualificationBasisKind,
+  RANKING_SNAPSHOT_STALE_REASONS,
+  CLASSIFICATION_STALE_REASONS,
   ResultOutcome,
   ResultScopeType,
   ResultVersionStatus,
@@ -115,6 +118,8 @@ export const achievementRuleV1 = root('br:achievement-rule', 1, {
           'PERSONAL_BEST',
           // BRT-09 RECORD_SET: the Performance basis of a validly RATIFIED / CANONICAL RecordMark.
           'RECORD_MARK_RATIFIED',
+          // BRT-10 QUALIFIED (achievement-engine/3): a position ≤ N in the rule's pinned source.
+          'QUALIFYING_POSITION',
         ]),
         resultScope: enumOf(Object.values(ResultScopeType)),
         rank: obj(
@@ -140,6 +145,29 @@ export const achievementRuleV1 = root('br:achievement-rule', 1, {
             region: bounded(setOf(code('^[A-Z]{2}(?:-[A-Z0-9]{1,3})?$', 6), { minItems: 1 }), 64),
           },
           ['level'],
+        ),
+        /**
+         * QUALIFYING_POSITION only (ADR-0050 §2): the target competition, the qualifying ranks N and
+         * the exact pinned source — a ranking system version (RANKING_SNAPSHOT_POSITION) or one
+         * classification scope under one classification policy version (CLASSIFICATION_POSITION).
+         */
+        qualification: obj(
+          {
+            targetCompetitionId: uuid,
+            qualifyingRanks: { type: 'integer', minimum: 1, maximum: 10_000 },
+            source: obj(
+              {
+                kind: enumOf(Object.values(QualificationBasisKind)),
+                rankingSystemId: uuid,
+                rankingSystemVersionId: uuid,
+                scopeType: enumOf(['EVENT_CLASSIFICATION', 'COMPETITION_CLASSIFICATION']),
+                scopeId: uuid,
+                policyVersionId: uuid,
+              },
+              ['kind'],
+            ),
+          },
+          ['targetCompetitionId', 'qualifyingRanks', 'source'],
         ),
       },
       ['kind', 'resultScope'],
@@ -250,6 +278,185 @@ const performanceFact = {
   valid: { type: 'boolean' },
 } as const;
 
+// ───────────────────────────── qualification (BRT-10) ─────────────────────────────
+
+/** The pinned verified basis of one ranked holder, copied from the snapshot entry (ADR-0048 §4.2). */
+const rankingBasisPin = obj(
+  {
+    resultVersionId: uuid,
+    contentHash: hashRef,
+    participantId: uuid,
+    verificationRunId: uuid,
+    verificationSnapshotHash: hashRef,
+    verificationOutcomeHash: hashRef,
+    verificationLevel: level,
+    evidenceBundleHash: hashRef,
+    evidenceBundleAsOf: timestamp,
+  },
+  [
+    'resultVersionId',
+    'contentHash',
+    'participantId',
+    'verificationRunId',
+    'verificationSnapshotHash',
+    'verificationOutcomeHash',
+    'verificationLevel',
+    'evidenceBundleHash',
+    'evidenceBundleAsOf',
+  ],
+);
+const qualificationHolder = obj({ holderType, holderId: uuid }, ['holderType', 'holderId']);
+const sourceStaleness = (codes: readonly string[]) =>
+  obj(
+    {
+      state: enumOf(['CURRENT', 'STALE']),
+      reasons: bounded(setOf(enumOf(codes)), 8),
+    },
+    ['state'],
+  );
+
+/**
+ * BRT-10 QUALIFIED facts (ADR-0050). EITHER `ranking` (a ranking run of one system version — with its
+ * PUBLISHED snapshot when one exists, its lineage, whether a correction replaces it and its read-time
+ * staleness) OR `classification` (one `@2` classification ResultVersion with its derivation header,
+ * status, BRT-07 verification and read-time staleness). `targetAuthority` is the target competition's
+ * adoption of the rule — a kind with NO producer: only REFERENCE_FIXTURE snapshots carry it.
+ */
+const qualificationFacts = obj({
+  ranking: obj(
+    {
+      systemId: uuid,
+      systemVersionId: uuid,
+      specHash: hashRef,
+      runId: uuid,
+      runOutcomeHash: hashRef,
+      /** Absent ⇒ the run was never published (RANKING_SNAPSHOT_NOT_PUBLISHED). */
+      published: obj(
+        {
+          snapshotId: uuid,
+          snapshotHash: hashRef,
+          lineageKind: enumOf(['INITIAL', 'FOLLOWS', 'CORRECTS']),
+          priorSnapshotId: uuid,
+          priorSnapshotHash: hashRef,
+        },
+        ['snapshotId', 'snapshotHash', 'lineageKind'],
+      ),
+      /** The snapshot that corrects this one, if any (RANKING_SNAPSHOT_CORRECTED). */
+      correctedBySnapshotId: uuid,
+      staleness: sourceStaleness(RANKING_SNAPSHOT_STALE_REASONS),
+      entries: bounded(
+        setOf(
+          obj(
+            {
+              holder: qualificationHolder,
+              rank: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+              tied: { type: 'boolean' },
+              basis: bounded(
+                setOf(rankingBasisPin, {
+                  minItems: 1,
+                  sortBy: ['/resultVersionId', '/participantId'],
+                  keyUnique: true,
+                }),
+                64,
+              ),
+            },
+            ['holder', 'rank', 'tied', 'basis'],
+          ),
+          { sortBy: ['/holder/holderType', '/holder/holderId'], keyUnique: true },
+        ),
+        10_000,
+      ),
+    },
+    ['systemId', 'systemVersionId', 'specHash', 'runId', 'runOutcomeHash', 'staleness', 'entries'],
+  ),
+  classification: obj(
+    {
+      resultId: uuid,
+      resultVersionId: uuid,
+      contentHash: hashRef,
+      scopeType: enumOf(['EVENT_CLASSIFICATION', 'COMPETITION_CLASSIFICATION']),
+      scopeTargetId: uuid,
+      status: statusNoDraft,
+      supersedesVersionId: uuid,
+      supersededByVersionId: uuid,
+      policyId: uuid,
+      policyVersionId: uuid,
+      policySpecHash: hashRef,
+      disciplineVersionId: uuid,
+      inputsDigest: hashRef,
+      staleness: sourceStaleness(CLASSIFICATION_STALE_REASONS),
+      verification: verificationSummary,
+      entries: bounded(
+        setOf(
+          obj(
+            {
+              participantId: uuid,
+              rank: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+              tied: { type: 'boolean' },
+            },
+            ['participantId', 'tied'],
+          ),
+          { sortBy: ['/participantId'], keyUnique: true },
+        ),
+        10_000,
+      ),
+      participants: bounded(
+        setOf(
+          obj(
+            {
+              participantId: uuid,
+              kind: enumOf(['INDIVIDUAL', 'TEAM']),
+              athleteId: uuid,
+              teamId: uuid,
+            },
+            ['participantId', 'kind'],
+          ),
+          { sortBy: ['/participantId'], keyUnique: true },
+        ),
+        10_000,
+      ),
+    },
+    [
+      'resultId',
+      'resultVersionId',
+      'contentHash',
+      'scopeType',
+      'scopeTargetId',
+      'status',
+      'policyId',
+      'policyVersionId',
+      'policySpecHash',
+      'disciplineVersionId',
+      'inputsDigest',
+      'staleness',
+      'verification',
+      'entries',
+      'participants',
+    ],
+  ),
+  /** Present only when HOLD_STATE is a supported kind: an admitted hold on any qualifying basis. */
+  hold: obj({ active: { type: 'boolean' } }, ['active']),
+  /** TARGET_QUALIFICATION_AUTHORITY (no producer): the target authority's adoption of this rule. */
+  targetAuthority: obj(
+    {
+      targetCompetitionId: uuid,
+      ruleVersionId: uuid,
+      ruleSpecHash: hashRef,
+      adoptionId: uuid,
+      adoptionHash: hashRef,
+      status: enumOf(['ADOPTED', 'WITHDRAWN']),
+    },
+    [
+      'targetCompetitionId',
+      'ruleVersionId',
+      'ruleSpecHash',
+      'adoptionId',
+      'adoptionHash',
+      'status',
+    ],
+  ),
+});
+
 /**
  * The deterministic Achievement-engine input: ONE exact ResultVersion under ONE rule version, as
  * known at a cutoff. The cutoff is metadata, never a member (identical facts ⇒ one hash). Ids, codes,
@@ -258,18 +465,11 @@ const performanceFact = {
 export const achievementDerivationSnapshotV1 = root('br:achievement-derivation-snapshot', 1, {
   type: 'object',
   additionalProperties: false,
-  required: [
-    'provenance',
-    'assembler',
-    'rule',
-    'supportedFactKinds',
-    'discipline',
-    'hierarchy',
-    'resultVersion',
-    'verification',
-    'entries',
-    'participants',
-  ],
+  // hierarchy / resultVersion / verification / entries / participants are required for every
+  // ResultVersion derivation and ABSENT from a QUALIFYING_POSITION derivation (BRT-10), whose facts
+  // are all in `qualification` — exactly one of the two shapes (enforced by sealDerivationSnapshot).
+  // Relaxing `required` changes no existing document or hash.
+  required: ['provenance', 'assembler', 'rule', 'supportedFactKinds', 'discipline'],
   properties: {
     provenance,
     assembler: code('^[a-z0-9-]+/[1-9][0-9]{0,3}$', 48),
@@ -424,6 +624,8 @@ export const achievementDerivationSnapshotV1 = root('br:achievement-derivation-s
         'value',
       ],
     ),
+    /** QUALIFIED only (BRT-10, ADR-0050): the qualifying source and the qualification gate facts. */
+    qualification: qualificationFacts,
     /** PB only: the athlete's eligible-or-not comparison performances known at the cutoff. */
     comparisons: bounded(
       setOf(
@@ -567,10 +769,65 @@ export const achievementCandidateV1 = root('br:achievement-candidate', 1, {
     governingAuthority: governingRecognition,
     /** RECORD_SET only: the exact ratified RecordMark this Achievement recognizes (ADR-0045). */
     record: obj(recordPin, recordPinRequired),
+    /**
+     * QUALIFIED only (ADR-0050 §6): the target, N, the exact qualifying position (snapshot id + hash,
+     * or classification version + content hash + policy version), the hash of the
+     * br:qualification-basis@1 document (position + underlying FINAL basis + runs) and the target
+     * authority's adoption it rests on.
+     */
+    qualification: obj(
+      {
+        kind: enumOf(Object.values(QualificationBasisKind)),
+        targetCompetitionId: uuid,
+        qualifyingRanks: { type: 'integer', minimum: 1, maximum: 10_000 },
+        ranking: obj(
+          {
+            systemId: uuid,
+            systemVersionId: uuid,
+            snapshotId: uuid,
+            snapshotHash: hashRef,
+            rank: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+            tied: { type: 'boolean' },
+          },
+          ['systemId', 'systemVersionId', 'snapshotId', 'snapshotHash', 'rank', 'tied'],
+        ),
+        classification: obj(
+          {
+            resultId: uuid,
+            resultVersionId: uuid,
+            contentHash: hashRef,
+            scopeType: enumOf(['EVENT_CLASSIFICATION', 'COMPETITION_CLASSIFICATION']),
+            policyVersionId: uuid,
+            participantId: uuid,
+            rank: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+            tied: { type: 'boolean' },
+          },
+          [
+            'resultId',
+            'resultVersionId',
+            'contentHash',
+            'scopeType',
+            'policyVersionId',
+            'participantId',
+            'rank',
+            'tied',
+          ],
+        ),
+        basisHash: hashRef,
+        targetAuthority: obj({ adoptionId: uuid, adoptionHash: hashRef }, [
+          'adoptionId',
+          'adoptionHash',
+        ]),
+      },
+      ['kind', 'targetCompetitionId', 'qualifyingRanks', 'basisHash', 'targetAuthority'],
+    ),
   },
 });
 
-/** AC-2 natural key: (achievementType, ruleVersion, holder, scope, basis set). */
+/**
+ * AC-2 natural key: (achievementType, ruleVersion, holder, scope, basis set) — plus, for QUALIFIED
+ * only, the exact qualifying source (ADR-0050 §6). Absent members change no existing hash.
+ */
 export const achievementIdentityV1 = root('br:achievement-identity', 1, {
   type: 'object',
   additionalProperties: false,
@@ -580,6 +837,14 @@ export const achievementIdentityV1 = root('br:achievement-identity', 1, {
     ruleVersionId: uuid,
     holder,
     scope,
+    qualificationSource: obj(
+      {
+        kind: enumOf(Object.values(QualificationBasisKind)),
+        sourceId: uuid,
+        sourceHash: hashRef,
+      },
+      ['kind', 'sourceId', 'sourceHash'],
+    ),
     basis: bounded(
       setOf(
         obj(
@@ -620,13 +885,24 @@ const candidateEntry = obj(
 export const achievementDerivationOutcomeV1 = root('br:achievement-derivation-outcome', 1, {
   type: 'object',
   additionalProperties: false,
-  required: ['engineVersion', 'snapshotHash', 'ruleVersionId', 'resultVersionId', 'state', 'gates'],
+  // resultVersionId names the derived ResultVersion; a QUALIFYING_POSITION derivation from a ranking
+  // run has none and names its `source` instead (exactly one of the two, enforced by the engine).
+  required: ['engineVersion', 'snapshotHash', 'ruleVersionId', 'state', 'gates'],
   properties: {
     engineVersion: code('^achievement-engine/[1-9][0-9]{0,3}$', 32),
     snapshotHash: hashRef,
     provenance,
     ruleVersionId: uuid,
     resultVersionId: uuid,
+    /** QUALIFIED only: the qualifying source (ranking run, or classification ResultVersion). */
+    source: obj(
+      {
+        kind: enumOf(Object.values(QualificationBasisKind)),
+        sourceId: uuid,
+        sourceHash: hashRef,
+      },
+      ['kind', 'sourceId', 'sourceHash'],
+    ),
     /** ISSUABLE: ≥ 1 candidate · BLOCKED: some gate failed · NO_QUALIFYING_FACTS: gates pass, nobody qualifies. */
     state: enumOf(['ISSUABLE', 'BLOCKED', 'NO_QUALIFYING_FACTS']),
     gates: bounded(
@@ -700,6 +976,8 @@ export const achievementSupportFactsV1 = root('br:achievement-support-facts', 1,
       'SUPERSEDED',
       'RESCINDED',
     ]),
+    /** QUALIFIED via a ranking snapshot only: a correcting snapshot replaces the pinned one. */
+    qualifyingSnapshotCorrected: { type: 'boolean' },
   },
 });
 

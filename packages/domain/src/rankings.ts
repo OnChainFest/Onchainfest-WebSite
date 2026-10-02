@@ -294,12 +294,24 @@ export const QUALIFICATION_PLATFORM_FLOOR: RankingConsequenceFloor = {
   holdBlocks: true,
 };
 
-/** Qualification-specific blockers (ADR-0050 §4–5); the target authority fact has NO producer. */
+/**
+ * Qualification-specific blockers (ADR-0050 §4–5); the target authority fact has NO producer.
+ * Step 9 additions (by decision):
+ *   QUALIFYING_SOURCE_MISMATCH                  the snapshot / classification is not the rule's pinned
+ *                                               source (system version, scope, policy version)
+ *   RANKING_SNAPSHOT_CORRECTED                  a correcting snapshot replaces the pinned one
+ *   TARGET_QUALIFICATION_AUTHORITY_INVALID      the adoption is withdrawn or adopts another rule version
+ *   TARGET_QUALIFICATION_AUTHORITY_OUT_OF_SCOPE the adoption is for another target competition
+ */
 export const QUALIFICATION_BLOCKERS = [
   'TARGET_QUALIFICATION_AUTHORITY_UNAVAILABLE',
+  'TARGET_QUALIFICATION_AUTHORITY_INVALID',
+  'TARGET_QUALIFICATION_AUTHORITY_OUT_OF_SCOPE',
   'ELIGIBILITY_UNKNOWN',
+  'QUALIFYING_SOURCE_MISMATCH',
   'RANKING_SNAPSHOT_NOT_PUBLISHED',
   'RANKING_SNAPSHOT_STALE',
+  'RANKING_SNAPSHOT_CORRECTED',
   'POSITION_OUTSIDE_QUALIFYING_RANKS',
 ] as const;
 export type QualificationBlocker = (typeof QUALIFICATION_BLOCKERS)[number];

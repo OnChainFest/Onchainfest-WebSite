@@ -144,6 +144,20 @@ async function observe(
   return { result, verification };
 }
 
+/**
+ * Read-time STALE of one snapshot's content, inside the caller's transaction (Step 7 semantics,
+ * unchanged). Used by `read` and by the QUALIFIED assembler (Step 9), which must consume the same
+ * staleness rather than re-implement it. Reads only; the caller's role needs SELECT on the results
+ * tables (br_verification_reader is used for run currency).
+ */
+export async function snapshotStalenessIn(
+  ctx: TxContext,
+  snapshot: Parameters<typeof rankingSnapshotDependencies>[0],
+): Promise<RankingSnapshotStaleness> {
+  const observed = await observe(ctx, rankingSnapshotDependencies(snapshot));
+  return rankingSnapshotStaleness(snapshot, observed);
+}
+
 export class RankingHistoryReader {
   private readonly db: Db;
 
@@ -213,8 +227,7 @@ export class RankingHistoryReader {
           'SNAPSHOT_HASH_MISMATCH',
           'stored snapshot content does not match its hash',
         );
-      const observed = await observe(ctx, rankingSnapshotDependencies(v.value));
-      return { snapshot: item(row), staleness: rankingSnapshotStaleness(v.value, observed) };
+      return { snapshot: item(row), staleness: await snapshotStalenessIn(ctx, v.value) };
     });
   }
 

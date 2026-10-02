@@ -33,6 +33,73 @@ async function disciplineContext(
   };
 }
 
+/**
+ * BRT-10 QUALIFIED (ADR-0050 §2): the rule's references must name real canonical rows — the target
+ * competition, and either the exact ranking system version (of the declared system, for the rule's
+ * DisciplineVersion) or the classification scope (event / competition) and the exact classification
+ * policy version (of that scope type, for the rule's DisciplineVersion). Checked before a version row
+ * exists and again at publication. Nothing is created or inferred.
+ */
+async function qualificationReferenceIssues(
+  ctx: TxContext,
+  spec: AchievementRuleSpec,
+): Promise<{ path: string; code: string }[]> {
+  const q = spec.criterion.qualification;
+  if (spec.achievementType !== 'QUALIFIED' || q === undefined) return [];
+  const issues: { path: string; code: string }[] = [];
+  const source = '/criterion/qualification/source';
+  const { rows: target } = await sql<{ id: string }>`
+    SELECT id FROM competition.competition WHERE id = ${q.targetCompetitionId}`.execute(ctx.trx);
+  if (target[0] === undefined)
+    issues.push({
+      path: '/criterion/qualification/targetCompetitionId',
+      code: 'COMPETITION_UNKNOWN',
+    });
+  const src = q.source;
+  if (src.kind === 'RANKING_SNAPSHOT_POSITION') {
+    const { rows } = await sql<{ system_id: string; discipline_version_id: string }>`
+      SELECT system_id::text AS system_id, discipline_version_id::text AS discipline_version_id
+      FROM ranking.system_version WHERE id = ${src.rankingSystemVersionId ?? null}::uuid`.execute(
+      ctx.trx,
+    );
+    const v = rows[0];
+    if (
+      v === undefined ||
+      v.system_id !== src.rankingSystemId ||
+      v.discipline_version_id !== spec.disciplineVersionId
+    )
+      issues.push({ path: source, code: 'QUALIFYING_SOURCE_MISMATCH' });
+  } else {
+    const { rows: policy } = await sql<{ scope_type: string; discipline_version_id: string }>`
+      SELECT scope_type, discipline_version_id::text AS discipline_version_id
+      FROM ranking.classification_policy_version WHERE id = ${src.policyVersionId ?? null}::uuid`.execute(
+      ctx.trx,
+    );
+    const p = policy[0];
+    if (
+      p === undefined ||
+      p.scope_type !== src.scopeType ||
+      p.discipline_version_id !== spec.disciplineVersionId
+    )
+      issues.push({ path: source, code: 'QUALIFYING_SOURCE_MISMATCH' });
+    if (src.scopeType === 'EVENT_CLASSIFICATION') {
+      const { rows: ev } = await sql<{ discipline_version_id: string }>`
+        SELECT discipline_version_id::text AS discipline_version_id FROM competition.event
+        WHERE id = ${src.scopeId ?? null}::uuid`.execute(ctx.trx);
+      if (ev[0]?.discipline_version_id !== spec.disciplineVersionId)
+        issues.push({ path: `${source}/scopeId`, code: 'QUALIFYING_SOURCE_MISMATCH' });
+    } else {
+      const { rows: comp } = await sql<{ id: string }>`
+        SELECT id FROM competition.competition WHERE id = ${src.scopeId ?? null}::uuid`.execute(
+        ctx.trx,
+      );
+      if (comp[0] === undefined)
+        issues.push({ path: `${source}/scopeId`, code: 'COMPETITION_UNKNOWN' });
+    }
+  }
+  return issues;
+}
+
 const rejected = (issues: readonly { path: string; code: string }[]) =>
   new DomainError(DomainErrorCode.INVALID_INPUT, 'achievement rule spec rejected', { issues });
 
@@ -124,6 +191,8 @@ export class AchievementRuleStore {
         throw rejected([{ path: '/disciplineVersionId', code: 'DISCIPLINE_VERSION_UNKNOWN' }]);
       const v = validateAchievementRuleSpec(input.spec, dv);
       if (!v.ok) throw rejected(v.issues);
+      const refs = await qualificationReferenceIssues(ctx, v.spec);
+      if (refs.length > 0) throw rejected(refs);
       const idem = await identityIdempotency<{
         ruleVersionId: string;
         version: number;
@@ -213,6 +282,8 @@ export class AchievementRuleStore {
               ? [{ path: '/disciplineVersionId', code: 'DISCIPLINE_VERSION_UNKNOWN' }]
               : v.issues,
           );
+        const refs = await qualificationReferenceIssues(ctx, v.spec);
+        if (refs.length > 0) throw rejected(refs);
         if (v.specHash !== cur.spec_hash)
           throw new DomainError(
             DomainErrorCode.ACHIEVEMENT_INTEGRITY_FAILURE,

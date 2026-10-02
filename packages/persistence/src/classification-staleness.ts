@@ -189,6 +189,18 @@ async function admissibleUnderPinnedPolicy(
   };
 }
 
+/**
+ * The as-corrected classification read inside the caller's transaction (Step 7 semantics, unchanged):
+ * the immutable version, its pins and its COMPUTED staleness. Also consumed by the QUALIFIED
+ * assembler (Step 9), which never re-implements staleness.
+ */
+export async function readClassificationIn(
+  ctx: TxContext,
+  versionId: string,
+): Promise<ClassificationRead> {
+  return readIn(ctx, versionId);
+}
+
 async function readIn(ctx: TxContext, versionId: string): Promise<ClassificationRead> {
   const v = await loadVersion(ctx, versionId);
   const base = {
