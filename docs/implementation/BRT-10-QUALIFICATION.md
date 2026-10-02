@@ -79,7 +79,7 @@ Re-assessment follows disputes §5.1 against the as-corrected view (ADR-0050 §7
 
 `TARGET_QUALIFICATION_AUTHORITY` is a `DerivationFactKind` with no producer. Its fixture representation (`qualification.targetAuthority {targetCompetitionId, ruleVersionId, ruleSpecHash, adoptionId, adoptionHash, status}`) is accepted only in REFERENCE_FIXTURE snapshots: a CANONICAL_ASSEMBLY snapshot cannot declare the kind (the engine filters canonical kinds to the production-supported set), the canonical re-assembly never carries it, the provenance CHECK refuses fixture rows in the normal schema, and the binding trigger refuses every canonical QUALIFIED (BR184) — whatever a caller writes.
 
-Ranking sources are INTERNAL-only (no competition owns a cross-competition ranking); a classification source needs staff rights on its competition. The event-driven invocation (snapshot published, classification submitted) is the Step 10 worker and is not wired.
+Ranking sources are INTERNAL-only (no competition owns a cross-competition ranking); a classification source needs staff rights on its competition. The event-driven invocation (snapshot published, classification submitted) is **deferred** and not wired. By decision, the Step 10 worker (`rankings.react`) produces no QUALIFIED side effect, and canonical derivation would be BLOCKED today anyway (`TARGET_QUALIFICATION_AUTHORITY_UNAVAILABLE`, `HOLD_STATE_UNAVAILABLE`).
 
 ## 7. Persistence (migration 0027)
 

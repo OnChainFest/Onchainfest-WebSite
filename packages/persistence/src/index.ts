@@ -88,7 +88,14 @@ export {
   type ClassificationImpact,
   type ClassificationRead,
   type ClassificationReadStaleness,
+  type ClassificationStalenessRole,
 } from './classification-staleness';
+export {
+  RANKING_WORKER_CONSUMER,
+  RankingWorkerService,
+  rankingWorkerTarget,
+  type RankingWorkerReaction,
+} from './ranking-worker';
 export { RankingHistoryReader, type SnapshotHistoryItem } from './ranking-history';
 export { RANKING_ASSEMBLER_VERSION } from './ranking-loader';
 export { rebuildRankingReadModels, snapshotRankingReadModels } from './ranking-projection';

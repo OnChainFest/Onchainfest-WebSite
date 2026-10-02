@@ -1,6 +1,6 @@
 # BRT-10 — Classifications (derived ResultVersions)
 
-Status: engine implemented (Step 3); ledger submission implemented (Step 6); computed staleness, correction impact and `ClassificationStale` implemented (Step 7); the worker that calls the emitter is Step 10. Decision record: [ADR-0047](../adr/ADR-0047-classifications-are-derived-result-versions-submitted-through-the-ledger.md); ordering: [ADR-0049](../adr/ADR-0049-explicit-comparator-aggregation-and-shared-ties.md).
+Status: engine implemented (Step 3); ledger submission implemented (Step 6); computed staleness, correction impact and `ClassificationStale` implemented (Step 7); the worker that calls the emitter (`rankings.react`) implemented (Step 10). Decision record: [ADR-0047](../adr/ADR-0047-classifications-are-derived-result-versions-submitted-through-the-ledger.md); ordering: [ADR-0049](../adr/ADR-0049-explicit-comparator-aggregation-and-shared-ties.md).
 
 ## 1. What a classification is
 
