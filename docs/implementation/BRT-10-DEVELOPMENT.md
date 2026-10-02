@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–8 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models). Commands, worker, API and web sections are filled in as the corresponding steps land.
+Status: Steps 1–9 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement). Commands, worker, API and web sections are filled in as the corresponding steps land.
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -16,7 +16,7 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 6 | Loader, store and validated writers (classification submission check, ranking runs/snapshots) + `0026_ranking_writers` grants — **implemented** |
 | 7 | Dependency index, staleness, `ClassificationStale` — **implemented** (no migration, no grant; worker wiring is Step 10) |
 | 8 | Read-model projections + rebuild equality — **implemented** (`0028_ranking_read_models`; no CLI, no API, no worker) |
-| 9 | QUALIFIED (`achievement-engine/3`) |
+| 9 | QUALIFIED (`achievement-engine/3`) + `0027_qualified_achievements` — **implemented** ([qualification](./BRT-10-QUALIFICATION.md); no worker wiring, no API) |
 | 10 | Worker consumer |
 | 11 | API routes |
 | 12 | Web surfaces |
@@ -56,7 +56,9 @@ Implemented (persistence foundation):
 
 - `0028_ranking_read_models` (Step 8): schema `ranking_read`, **class B** projections only (see [Read models](#read-models-step-8)). No function, trigger or SECURITY DEFINER; no PUBLIC grant.
 
-Every table of 0023–0025 is class A (append-only); provenance is `CANONICAL_ASSEMBLY` only. 0023–0025 are applied (checksum-locked) and never edited. `0027_qualified_achievements` (ALTER of BRT-08 CHECKs + link table; 0016–0022 untouched) is still **reserved** for Step 9. The gap is deliberate (by decision): fresh databases apply 0027 before 0028, while an existing database applies it after, so **0027 must not reference any `ranking_read` object**. The runner applies files in order and tolerates the gap.
+Every table of 0023–0025 is class A (append-only); provenance is `CANONICAL_ASSEMBLY` only. 0023–0025 are applied (checksum-locked) and never edited. The gap is deliberate (by decision): fresh databases apply 0027 before 0028, while an existing database applies it after, so **0027 references no `ranking_read` object** (an integration test migrates a fresh database through 0027 without 0028, then applies 0028; the achievement guard scans 0027). The runner applies files in order and tolerates the gap.
+
+- `0027_qualified_achievements` (Step 9): ALTER of the BRT-08 type CHECKs (`QUALIFIED`) + `achievement_qualified_shape`; the append-only link `achievement.qualification_basis` (rank ≤ N CHECK, kind coherence, BR183 binding to the candidate pin and to the stored snapshot entry, BR184 refusal of every canonical QUALIFIED — no target-authority producer —, BR185 completeness and one non-terminal QUALIFIED per rule / holder / target); SELECT-only qualification inputs for `br_achievements` and reference reads for `br_achievement_rules`. 0016–0026 untouched. See [qualification §7](./BRT-10-QUALIFICATION.md#7-persistence-migration-0027).
 
 Because the normal schema has no FINAL producer, it can hold zero ranking snapshots today (the honest ceiling). The throwaway `br_rkfx_<12hex>` overlay (`packages/testkit/sql/ranking-fixture-overlay.sql`) relaxes only the run / snapshot provenance CHECKs, so that tests can exercise snapshot persistence mechanics.
 
@@ -86,7 +88,7 @@ Audit rows (`platform.audit_event`) are written for every definition mutation (`
 
 - `ClassificationStale` (Step 7): aggregate `RESULT_VERSION`, emitted by `ClassificationStalenessService.emitStale` under `br_results`, at most once per (classification version, staleDigest). Nothing calls it automatically until the Step 10 worker.
 
-QUALIFIED reuses BRT-08 achievement events. There are no prize, trophy or payout events.
+QUALIFIED reuses BRT-08 achievement events (`AchievementDerived`, `AchievementCurrentStateChanged`, the ACHIEVEMENT ledger stream) and audits `achievement.qualification-requested`. There are no prize, trophy, payout, entry or registration events.
 
 ## Read models (Step 8)
 
@@ -121,9 +123,11 @@ The validated writer is the same code in both lanes. The lane entry points (`per
 
 Tests: `packages/persistence/src/rankings-writer.int.test.ts` (canonical lane on the normal schema + the `br_rkfx_` lane) and `packages/persistence/src/rankings-staleness.int.test.ts` (Step 7: staleness, indexes, `ClassificationStale`, as-published / as-corrected).
 
+**QUALIFIED lane (Step 9).** `createQualifiedFixtureDatabase` (`@br/testkit/rankings`) creates a `br_rkfx_` database with the ranking overlay AND the achievement overlay (whose name guard now also admits `br_rkfx_`; it relaxes the provenance CHECK of `achievement.qualification_basis` too). Fixture QUALIFIED snapshots are built from real stored fixture snapshots (`storedSnapshot`, `qualificationFixtureSnapshot`) with labelled synthetic staleness CURRENT, hold and target adoption. Tests: `packages/persistence/src/qualified.int.test.ts` (migration boundary, canonical fail-closed, privileges, fixture-lane mechanics) and `packages/achievements/src/qualified.test.ts` (engine).
+
 ## Limitations
 
-In production there is no FINAL, V2, V3, V4, hold, eligibility, population, target-authority or owner-publication producer. As a result:
+In production there is no FINAL, V2, V3, V4, hold, eligibility, population, target-authority, owner-publication or correction producer. As a result:
 
 - only operational standings are reachable;
 - recognition rankings and QUALIFIED are reported with exact blockers.

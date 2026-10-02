@@ -352,13 +352,11 @@ async function loadComparisons(
  * Assembles the canonical AchievementDerivationSnapshot for one (version, rule). Everything the
  * snapshot says is a fact loaded here; kinds without a producer are simply not declared.
  */
-export async function assembleCanonicalSnapshot(
+/** The snapshot `discipline` member of an exact DisciplineVersion (catalog facts, re-read). */
+export async function disciplineFacts(
   ctx: TxContext,
-  facts: VersionFacts,
-  rule: ApplicableRule,
-  verification: VerificationSummary,
-  record?: SnapshotRecordMark,
-): Promise<SealedDerivationSnapshot> {
+  disciplineVersionId: string,
+): Promise<AchievementDerivationSnapshot['discipline']> {
   const { rows: dv } = await sql<{
     spec: DisciplineVersionSpec;
     sport: string;
@@ -366,11 +364,35 @@ export async function assembleCanonicalSnapshot(
   }>`
     SELECT dv.spec, s.code AS sport, d.code AS discipline FROM sports.discipline_version dv
     JOIN sports.discipline d ON d.id = dv.discipline_id JOIN sports.sport s ON s.id = d.sport_id
-    WHERE dv.id = ${facts.disciplineVersionId}`.execute(ctx.trx);
+    WHERE dv.id = ${disciplineVersionId}`.execute(ctx.trx);
   const d = dv[0];
   if (d === undefined)
     throw integrity('DISCIPLINE_VERSION_MISSING', 'event discipline version missing');
   const orders = metricOrders(d.spec);
+  return {
+    disciplineVersionId,
+    sport: d.sport,
+    discipline: d.discipline,
+    metrics: d.spec.metrics.map((m) => {
+      const order = orders.get(m.key);
+      return {
+        key: m.key,
+        valueType: m.valueType,
+        unit: m.unit,
+        ...(order === undefined ? {} : { order }),
+      };
+    }),
+  };
+}
+
+export async function assembleCanonicalSnapshot(
+  ctx: TxContext,
+  facts: VersionFacts,
+  rule: ApplicableRule,
+  verification: VerificationSummary,
+  record?: SnapshotRecordMark,
+): Promise<SealedDerivationSnapshot> {
+  const discipline = await disciplineFacts(ctx, facts.disciplineVersionId);
   const participantIds = [
     ...new Set([
       ...facts.content.entries.map((e) => e.participantId),
@@ -411,20 +433,7 @@ export async function assembleCanonicalSnapshot(
       bindingId: rule.bindingId,
     },
     supportedFactKinds: PRODUCTION_SUPPORTED_DERIVATION_FACT_KINDS,
-    discipline: {
-      disciplineVersionId: facts.disciplineVersionId,
-      sport: d.sport,
-      discipline: d.discipline,
-      metrics: d.spec.metrics.map((m) => {
-        const order = orders.get(m.key);
-        return {
-          key: m.key,
-          valueType: m.valueType,
-          unit: m.unit,
-          ...(order === undefined ? {} : { order }),
-        };
-      }),
-    },
+    discipline,
     hierarchy: {
       competitionId: facts.path.competitionId as string,
       ...(facts.path.eventId === undefined ? {} : { eventId: facts.path.eventId }),

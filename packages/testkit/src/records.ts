@@ -291,7 +291,10 @@ export async function recordSetSnapshotFor(
     provenance: 'REFERENCE_FIXTURE',
     assembler: 'reference-fixture/1',
     rule: fixtureRule(input.ruleSpec, 'record-set', input.ruleIdentity.version, input.ruleIdentity),
-    supportedFactKinds: ALL_DERIVATION_FACT_KINDS,
+    // TARGET_QUALIFICATION_AUTHORITY (BRT-10) belongs to QUALIFIED fixtures only.
+    supportedFactKinds: ALL_DERIVATION_FACT_KINDS.filter(
+      (k) => k !== 'TARGET_QUALIFICATION_AUTHORITY',
+    ),
     discipline: {
       disciplineVersionId: s.discipline.disciplineVersionId,
       ...(s.discipline.sport === undefined ? {} : { sport: s.discipline.sport }),

@@ -20,6 +20,9 @@ import type { VerificationSummary } from './snapshot';
  *   basis superseded; the successor was derived with every gate
  *     passing and this holder no longer qualifies                → REVOKED    HOLDER_NO_LONGER_QUALIFIES
  *   basis superseded; successor not (yet) issuable                → SUSPENDED  BASIS_RESULT_SUPERSEDED
+ *   QUALIFIED (BRT-10): the pinned ranking snapshot was CORRECTED → as for a superseded basis, with
+ *     RANKING_SNAPSHOT_CORRECTED: holder no longer qualifies under the correction → REVOKED; not
+ *     (yet) re-derived → SUSPENDED (a still-qualifying holder is SUPERSEDED by its new Achievement)
  *   pinned VerificationRun no longer the CURRENT one, or the
  *     current level is below the rule's level                     → SUSPENDED  VERIFICATION_…
  *   otherwise                                                     → ACTIVE
@@ -55,6 +58,12 @@ export interface SupportFacts {
    */
   readonly recordMarkStatus?:
     'PENDING_RATIFICATION' | 'RATIFIED' | 'CANONICAL' | 'SUPERSEDED' | 'RESCINDED';
+  /**
+   * QUALIFIED via a ranking snapshot only (ADR-0050 §7): a correcting snapshot replaces the pinned
+   * one. Re-assessment then follows disputes §5.1 against the as-corrected view (`successorDerivation`
+   * is the derivation under the correcting snapshot).
+   */
+  readonly qualifyingSnapshotCorrected?: boolean;
 }
 
 export interface SupportAssessment {
@@ -95,10 +104,15 @@ export function assessSupport(input: SupportFacts): SupportAssessment {
   const superseded = f.basis.some(
     (b) => b.status === 'SUPERSEDED' || b.supersededByVersionId !== undefined,
   );
-  if (superseded)
+  if (superseded || f.qualifyingSnapshotCorrected === true) {
+    const why = [
+      ...(superseded ? ['BASIS_RESULT_SUPERSEDED'] : []),
+      ...(f.qualifyingSnapshotCorrected === true ? ['RANKING_SNAPSHOT_CORRECTED'] : []),
+    ];
     return f.successorDerivation === 'HOLDER_DOES_NOT_QUALIFY'
-      ? done('REVOKED', ['BASIS_RESULT_SUPERSEDED', 'HOLDER_NO_LONGER_QUALIFIES'])
-      : done('SUSPENDED', ['BASIS_RESULT_SUPERSEDED', 'AWAITING_REDERIVATION', ...marker]);
+      ? done('REVOKED', [...why, 'HOLDER_NO_LONGER_QUALIFIES'])
+      : done('SUSPENDED', [...why, 'AWAITING_REDERIVATION', ...marker]);
+  }
   const reasons: string[] = [];
   for (const b of f.basis) {
     const v = b.verification;

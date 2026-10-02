@@ -1,5 +1,7 @@
 import {
   ACHIEVEMENT_TYPE_LABEL,
+  QUALIFICATION_LABEL_PREFIX,
+  QUALIFICATION_LABEL_SUFFIX,
   VERIFICATION_LEVEL_LABEL,
   type AchievementStatus,
   type AchievementType,
@@ -39,6 +41,8 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   BASIS_RESULT_SUPERSEDED: 'The basis result was superseded by a corrected version.',
   AWAITING_REDERIVATION: 'The corrected version has not (yet) produced a replacement recognition.',
   HOLDER_NO_LONGER_QUALIFIES: 'Under the corrected result this holder no longer qualifies.',
+  RANKING_SNAPSHOT_CORRECTED:
+    'The ranking snapshot this qualification was derived from was corrected by a newer snapshot.',
   VERIFICATION_STALE: 'The verification the recognition relied on is no longer current.',
   VERIFICATION_NOT_EVALUATED: 'The basis result has no current verification.',
   VERIFICATION_POLICY_UNAVAILABLE: 'No verification policy currently applies to the basis result.',
@@ -78,6 +82,21 @@ const BLOCKER_TEXT: Readonly<Record<string, string>> = {
   RECORD_MARK_UNAVAILABLE: 'No ratified record mark exists for this performance.',
   RECORD_MARK_NOT_RATIFIED: 'The record mark is pending ratification — not a record.',
   RECORD_MARK_RESCINDED: 'The record mark was rescinded.',
+  TARGET_QUALIFICATION_AUTHORITY_UNAVAILABLE:
+    "The target competition authority's adoption of this qualification rule is not produced on the platform; the platform never decides another competition's qualification.",
+  TARGET_QUALIFICATION_AUTHORITY_INVALID:
+    "The target competition authority's adoption is withdrawn or does not adopt this exact rule version.",
+  TARGET_QUALIFICATION_AUTHORITY_OUT_OF_SCOPE:
+    "The adoption belongs to another target competition's authority.",
+  QUALIFYING_SOURCE_MISMATCH:
+    'The ranking or classification is not the exact source the qualification rule pins.',
+  RANKING_SNAPSHOT_NOT_PUBLISHED: 'The ranking was not published as a snapshot.',
+  RANKING_SNAPSHOT_STALE: 'The ranking snapshot rests on a basis that is no longer current.',
+  RANKING_SNAPSHOT_CORRECTED: 'The ranking snapshot was corrected by a newer snapshot.',
+  POSITION_OUTSIDE_QUALIFYING_RANKS: 'The position is outside the qualifying ranks.',
+  CLASSIFICATION_PROVENANCE_UNAVAILABLE:
+    'The classification has no derivation provenance, so it cannot qualify anyone.',
+  RANK_MISSING: 'No rank is recorded for this holder.',
 };
 
 export function publicBlocker(reason: string): string {
@@ -86,4 +105,12 @@ export function publicBlocker(reason: string): string {
 
 export function achievementLabel(type: AchievementType, displayName: string): string {
   return `${displayName} (${ACHIEVEMENT_TYPE_LABEL[type]})`;
+}
+
+/**
+ * ADR-0050 §8 / ADR-0008: "Qualified for ⟨target⟩ (cross-competition)" — never in-competition
+ * advancement, never an entry or a registration. The target name is a public competition name.
+ */
+export function qualificationLabel(targetCompetitionName: string): string {
+  return `${QUALIFICATION_LABEL_PREFIX} ${targetCompetitionName} ${QUALIFICATION_LABEL_SUFFIX}`;
 }

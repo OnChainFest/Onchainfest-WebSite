@@ -28,6 +28,18 @@ It checks equal / distinct groups and that no vector carries a float, null or sc
                          version / content / inputsDigest binding. It carries no input status. Every
                          fresh case recomputes to no reason at all (CURRENT: no document exists).
 
+  QUALIFIED              (Step 9, achievement-engine/3) the outcome's snapshotHash binds its snapshot
+  achievements           vector; a BLOCKED outcome carries no candidate and a CANONICAL_ASSEMBLY one is
+                         always BLOCKED with TARGET_AUTHORITY failing (no producer); every embedded
+                         candidate equals and hashes to its candidate vector; the identity (with the
+                         qualifying source), the evidence commitment and the br:qualification-basis@1
+                         document are RECOMPUTED from the candidate; the qualification semantics are
+                         RECOMPUTED from the snapshot (exact pinned source, rank = the snapshot /
+                         classification entry, rank <= N, FINAL, V3 floor, target adoption of this
+                         exact rule version) and, for an ISSUABLE outcome, the set of qualifying holders
+                         is recomputed; finally rank, threshold, source identity, policy version,
+                         verification level, authority and basis-hash MUTATIONS must each be detected.
+
 LIMITATION: it does not re-run gate admissibility or policy validation (the TypeScript engine does);
 it proves the hashes, the bindings, the selection, the aggregation and the ranking of the committed
 documents.
@@ -255,6 +267,229 @@ def check_staleness(name, doc, case, content_vec, failures):
         failures.append(f"{name}: a staleness document must not carry input statuses")
 
 
+LEVELS = ["V0", "V1", "V2", "V3", "V4"]
+
+
+def lvl(x):
+    return LEVELS.index(x)
+
+
+def hash_doc(tag, schema_id, doc):
+    return content_hash(tag, schema_id, 1, jcs(doc))
+
+
+def q_identity(c):
+    q = c.get("qualification")
+    keys = ("resultVersionId", "contentHash", "verificationRunId", "participantId", "performanceOrdinal", "creditedLineupHash")
+    ident = {
+        "achievementType": c["achievementType"],
+        "ruleVersionId": c["rule"]["ruleVersionId"],
+        "holder": c["holder"],
+        "scope": c["scope"],
+        "basis": sorted(({k: b[k] for k in keys if k in b} for b in c["basis"]),
+                        key=lambda b: (b["resultVersionId"], b["participantId"])),
+    }
+    if q is not None:
+        if "ranking" in q:
+            src = {"kind": q["kind"], "sourceId": q["ranking"]["snapshotId"], "sourceHash": q["ranking"]["snapshotHash"]}
+        else:
+            src = {"kind": q["kind"], "sourceId": q["classification"]["resultVersionId"],
+                   "sourceHash": q["classification"]["contentHash"]}
+        ident["qualificationSource"] = src
+    return ident
+
+
+def q_basis_doc(c):
+    q = c["qualification"]
+    keys = ("resultVersionId", "contentHash", "resultStatus", "verificationRunId", "verificationOutcomeHash", "verificationLevel")
+    d = {
+        "kind": q["kind"],
+        "targetCompetitionId": q["targetCompetitionId"],
+        "qualifyingRanks": q["qualifyingRanks"],
+        "holder": c["holder"],
+        "underlying": sorted(({k: b[k] for k in keys} for b in c["basis"]), key=lambda b: b["resultVersionId"]),
+    }
+    if "ranking" in q:
+        d["ranking"] = q["ranking"]
+    if "classification" in q:
+        cl = q["classification"]
+        d["classification"] = {k: cl[k] for k in ("resultId", "resultVersionId", "contentHash", "scopeType", "participantId", "rank", "tied")}
+        d["classification"]["status"] = "FINAL"
+    return d
+
+
+def q_commitment(c):
+    keys = ("resultVersionId", "contentHash", "verificationRunId", "evidenceBundleHash", "evidenceBundleAsOf")
+    return {"basis": sorted(({k: b[k] for k in keys} for b in c["basis"]),
+                            key=lambda b: (b["resultVersionId"], b["verificationRunId"]))}
+
+
+def q_holder_of(cl, participant_id):
+    p = next((p for p in cl["participants"] if p["participantId"] == participant_id), None)
+    if p is None:
+        return None
+    hid = p.get("athleteId") if p["kind"] == "INDIVIDUAL" else p.get("teamId")
+    return None if hid is None else {"holderType": "ATHLETE" if p["kind"] == "INDIVIDUAL" else "TEAM", "holderId": hid}
+
+
+def q_issues(c, snap):
+    """Independent QUALIFIED semantics of one candidate against its snapshot ([] = consistent)."""
+    issues = []
+    rule = snap["rule"]["spec"]
+    rq = rule["criterion"]["qualification"]
+    q = c.get("qualification")
+    if q is None:
+        return ["no qualification pin"]
+    floor = max(lvl("V3"), lvl(rule["requirements"]["minimumVerificationLevel"]))
+    if c["achievementType"] != "QUALIFIED" or c["engineVersion"] != "achievement-engine/3":
+        issues.append("type / engine")
+    target = rq["targetCompetitionId"]
+    if q["targetCompetitionId"] != target or c["scope"] != {"scopeType": "COMPETITION", "scopeId": target} \
+            or c["context"]["competitionId"] != target:
+        issues.append("target")
+    if q["qualifyingRanks"] != rq["qualifyingRanks"]:
+        issues.append("threshold")
+    if q["kind"] != rq["source"]["kind"]:
+        issues.append("kind")
+    ta = snap["qualification"].get("targetAuthority")
+    if ta is None or ta["status"] != "ADOPTED" or ta["targetCompetitionId"] != target \
+            or ta["ruleVersionId"] != snap["rule"]["ruleVersionId"] or ta["ruleSpecHash"] != snap["rule"]["specHash"] \
+            or q["targetAuthority"] != {"adoptionId": ta["adoptionId"], "adoptionHash": ta["adoptionHash"]}:
+        issues.append("authority")
+    if any(lvl(b["verificationLevel"]) < floor or b["resultStatus"] != "FINAL" for b in c["basis"]):
+        issues.append("verification floor / FINAL")
+    pins = {(b["resultVersionId"], b["participantId"], b["verificationRunId"], b["verificationLevel"]) for b in c["basis"]}
+    if "ranking" in q:
+        r = snap["qualification"].get("ranking")
+        pos = q["ranking"]
+        pub = (r or {}).get("published")
+        if r is None or pub is None or "correctedBySnapshotId" in r or r["staleness"]["state"] != "CURRENT" \
+                or pos["snapshotId"] != pub["snapshotId"] or pos["snapshotHash"] != pub["snapshotHash"] \
+                or pos["systemId"] != rq["source"]["rankingSystemId"] or r["systemId"] != pos["systemId"] \
+                or pos["systemVersionId"] != rq["source"]["rankingSystemVersionId"] or r["systemVersionId"] != pos["systemVersionId"]:
+            issues.append("source")
+        e = next((e for e in (r or {}).get("entries", []) if e["holder"] == c["holder"]), None)
+        if e is None or e["rank"] != pos["rank"] or e["tied"] != pos["tied"]:
+            issues.append("rank")
+        elif pins != {(b["resultVersionId"], b["participantId"], b["verificationRunId"], b["verificationLevel"]) for b in e["basis"]}:
+            issues.append("basis")
+        if pos["rank"] > q["qualifyingRanks"]:
+            issues.append("rank > N")
+    else:
+        cl = snap["qualification"].get("classification")
+        pos = q.get("classification")
+        if cl is None or pos is None or cl["staleness"]["state"] != "CURRENT" or cl["status"] != "FINAL" \
+                or pos["resultVersionId"] != cl["resultVersionId"] or pos["contentHash"] != cl["contentHash"] \
+                or pos["scopeType"] != cl["scopeType"] or cl["scopeTargetId"] != rq["source"]["scopeId"]:
+            issues.append("source")
+        if cl is None or pos is None or pos["policyVersionId"] != cl["policyVersionId"] \
+                or pos["policyVersionId"] != rq["source"]["policyVersionId"]:
+            issues.append("policy version")
+        e = None if cl is None or pos is None else next((e for e in cl["entries"] if e["participantId"] == pos["participantId"]), None)
+        if e is None or e.get("rank") != pos["rank"] or e["tied"] != pos["tied"] \
+                or q_holder_of(cl, pos["participantId"]) != c["holder"]:
+            issues.append("rank")
+        if pos is not None and pos["rank"] > q["qualifyingRanks"]:
+            issues.append("rank > N")
+        if cl is not None and pins != {(cl["resultVersionId"], pos["participantId"], cl["verification"].get("runId"), cl["verification"].get("level"))}:
+            issues.append("basis")
+    return issues
+
+
+def q_all_issues(c, snap):
+    issues = q_issues(c, snap)
+    if hash_doc("qualification-basis", "br:qualification-basis", q_basis_doc(c)) != c["qualification"]["basisHash"]:
+        issues.append("basis hash")
+    if hash_doc("achievement-evidence-commitment", "br:achievement-evidence-commitment", q_commitment(c)) != c["evidenceCommitment"]:
+        issues.append("evidence commitment")
+    return issues
+
+
+def q_expected_holders(snap):
+    rule = snap["rule"]["spec"]
+    rq = rule["criterion"]["qualification"]
+    floor = max(lvl("V3"), lvl(rule["requirements"]["minimumVerificationLevel"]))
+    n = rq["qualifyingRanks"]
+    if rq["source"]["kind"] == "RANKING_SNAPSHOT_POSITION":
+        r = snap["qualification"]["ranking"]
+        return sorted(e["holder"]["holderId"] for e in r["entries"]
+                      if e["rank"] <= n and all(lvl(b["verificationLevel"]) >= floor for b in e["basis"]))
+    cl = snap["qualification"]["classification"]
+    out = []
+    for e in cl["entries"]:
+        h = q_holder_of(cl, e["participantId"])
+        if "rank" in e and e["rank"] <= n and h is not None:
+            out.append(h["holderId"])
+    return sorted(out)
+
+
+MUTATIONS = {
+    "rank": lambda q, c: q[q_pos_key(q)].__setitem__("rank", q[q_pos_key(q)]["rank"] + 1),
+    "threshold": lambda q, c: q.__setitem__("qualifyingRanks", q["qualifyingRanks"] + 1),
+    "source identity": lambda q, c: q[q_pos_key(q)].__setitem__(
+        "snapshotHash" if "ranking" in q else "contentHash", "sha256:" + "0" * 64),
+    "policy version": lambda q, c: q["classification"].__setitem__("policyVersionId", "00000000-0000-8000-a000-000000000000"),
+    "verification level": lambda q, c: c["basis"][0].__setitem__("verificationLevel", "V2"),
+    "authority": lambda q, c: q["targetAuthority"].__setitem__("adoptionHash", "sha256:" + "1" * 64),
+    "basis hash": lambda q, c: q.__setitem__("basisHash", "sha256:" + "2" * 64),
+}
+
+
+def q_pos_key(q):
+    return "ranking" if "ranking" in q else "classification"
+
+
+checked = []
+
+
+def check_qualified(name, v, outcome, by_name, failures):
+    sv, snap = by_name[v["snapshotVector"]]
+    if outcome["snapshotHash"] != sv["hash"]:
+        failures.append(f"{name}: snapshotHash does not bind its snapshot vector")
+    if outcome["state"] != v["expectState"]:
+        failures.append(f"{name}: state differs from expectState")
+    cands = outcome.get("candidates", [])
+    if outcome["state"] != "ISSUABLE" and cands:
+        failures.append(f"{name}: a {outcome['state']} outcome carries candidates")
+    if snap["provenance"] == "CANONICAL_ASSEMBLY":
+        gate = {g["gate"]: g for g in outcome["gates"]}.get("TARGET_AUTHORITY")
+        if outcome["state"] != "BLOCKED" or gate is None or gate["status"] != "FAIL":
+            failures.append(f"{name}: a canonical QUALIFIED derivation must fail closed on TARGET_AUTHORITY")
+    if len(cands) != len(v["candidateVectors"]):
+        failures.append(f"{name}: candidate count differs")
+        return
+    if outcome["state"] == "ISSUABLE":
+        got = sorted(e["candidate"]["holder"]["holderId"] for e in cands)
+        if got != q_expected_holders(snap):
+            failures.append(f"{name}: qualifying holders are not the recomputed top-N at the floor")
+    by_hash = {by_name[n][0]["hash"]: n for n in v["candidateVectors"]}
+    ids = {by_name[n][0]["hash"]: by_name[n] for n in v["identityVectors"]}
+    bases = {by_name[n][0]["hash"] for n in v["basisVectors"]}
+    for e in cands:
+        c = e["candidate"]
+        cname = by_hash.get(e["candidateHash"])
+        if cname is None or jcs(c) != by_name[cname][0]["canonicalText"]:
+            failures.append(f"{name}: candidate does not bind its candidate vector")
+            continue
+        iv = ids.get(e["identityHash"])
+        if iv is None or jcs(q_identity(c)) != iv[0]["canonicalText"]:
+            failures.append(f"{name}: identity (with qualifying source) does not recompute")
+        if hash_doc("qualification-basis", "br:qualification-basis", q_basis_doc(c)) not in bases:
+            failures.append(f"{name}: qualification-basis document does not bind a basis vector")
+        issues = q_all_issues(c, snap)
+        if issues:
+            failures.append(f"{name}: candidate inconsistent with its snapshot: {issues}")
+        base_hash = hash_doc("achievement-candidate", "br:achievement-candidate", c)
+        for label, mutate in MUTATIONS.items():
+            if label == "policy version" and "classification" not in c["qualification"]:
+                continue  # a ranking position has no classification policy
+            m = json.loads(json.dumps(c))
+            mutate(m["qualification"], m)
+            checked.append(label)
+            if not q_all_issues(m, snap) or hash_doc("achievement-candidate", "br:achievement-candidate", m) == base_hash:
+                failures.append(f"{name}: {label} mutation is not detected")
+
+
 def main(path):
     doc = json.load(open(path, encoding="utf-8"))
     by_name = {}
@@ -294,15 +529,20 @@ def main(path):
         elif v["kind"] == "staleness":
             case = v["stalenessCase"]
             check_staleness(v["name"], parsed, case, by_name.get(case["contentVector"]), failures)
+        elif v["kind"] == "qualifiedOutcome":
+            check_qualified(v["name"], v, parsed, by_name, failures)
     for case in doc.get("freshCases", []):
         cv = by_name.get(case["contentVector"])
         if cv is None or staleness_of(cv[1], case)[0]:
             failures.append(f"fresh case over {case['contentVector']} does not recompute as CURRENT")
+    if sorted(set(checked)) != sorted(MUTATIONS):
+        failures.append(f"QUALIFIED mutation classes not all exercised: {sorted(set(checked))}")
     if failures:
         for f in failures:
             print("FAIL", f)
         sys.exit(1)
-    print(f"OK: {len(doc['vectors'])} BRT-10 vectors — JCS, hashes, equal/distinct groups, input/outcome/content bindings, holder-best selection, aggregation, shared ranks and classification staleness independently verified.")
+    print(f"OK: {len(checked)} QUALIFIED mutations ({len(MUTATIONS)} classes) detected.")
+    print(f"OK: {len(doc['vectors'])} BRT-10 vectors — JCS, hashes, equal/distinct groups, input/outcome/content bindings, holder-best selection, aggregation, shared ranks, classification staleness and QUALIFIED semantics + mutations independently verified.")
 
 
 if __name__ == "__main__":

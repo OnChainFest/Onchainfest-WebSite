@@ -1,4 +1,10 @@
 import { fileURLToPath } from 'node:url';
+import { deriveAchievements, identityOf, qualificationBasisDocument } from '@br/achievements';
+import {
+  QFX,
+  qualifiedClassificationFixture,
+  qualifiedRankingFixture,
+} from '@br/achievements/fixtures';
 import { DomainTag, platformCanonicalizer, SchemaRef } from '@br/schemas';
 import { classificationDependencies, deriveClassification } from '../src/classification-engine';
 import { evaluateRankingRun } from '../src/ranking-engine';
@@ -33,6 +39,13 @@ import {
  * `br:classification-staleness@1` document — whose hash is the ClassificationStale idempotency digest —
  * with the observation it was computed from; the checker recomputes the document from the content
  * vector's pins and that observation.
+ *
+ * Step 9 — QUALIFIED (achievement-engine/3, ADR-0050): the qualification derivation snapshot, its
+ * outcome, every candidate, its identity and its `br:qualification-basis@1` document. The checker
+ * re-derives the qualification semantics from the snapshot (position ≤ N, FINAL, V3 floor, pinned
+ * source, target adoption), recomputes the identity, the evidence commitment and the basis hash
+ * independently, and proves that mutating rank, threshold, source identity, policy version,
+ * verification level, authority or basis hash is detected.
  */
 export const VECTORS_FILE = fileURLToPath(
   new URL('../test-vectors/brt-10.vectors.json', import.meta.url),
@@ -46,7 +59,12 @@ type Kind =
   | 'derivationInput'
   | 'derivationOutcome'
   | 'content'
-  | 'staleness';
+  | 'staleness'
+  | 'qualifiedSnapshot'
+  | 'qualifiedOutcome'
+  | 'qualifiedCandidate'
+  | 'qualifiedIdentity'
+  | 'qualificationBasis';
 interface Vector {
   readonly name: string;
   readonly kind: Kind;
@@ -59,6 +77,10 @@ interface Vector {
   readonly contentVector?: string;
   readonly expectState?: string;
   readonly stalenessCase?: StalenessCase;
+  readonly snapshotVector?: string;
+  readonly candidateVectors?: readonly string[];
+  readonly identityVectors?: readonly string[];
+  readonly basisVectors?: readonly string[];
 }
 
 /** The observation a staleness document was computed from (`admissible: null` ⇒ unknown). */
@@ -84,6 +106,17 @@ const REF = {
   ],
   content: [DomainTag.resultVersionContent, SchemaRef.resultVersionContentV2],
   staleness: [DomainTag.classificationStaleness, SchemaRef.classificationStaleness],
+  qualifiedSnapshot: [
+    DomainTag.achievementDerivationSnapshot,
+    SchemaRef.achievementDerivationSnapshot,
+  ],
+  qualifiedOutcome: [
+    DomainTag.achievementDerivationOutcome,
+    SchemaRef.achievementDerivationOutcome,
+  ],
+  qualifiedCandidate: [DomainTag.achievementCandidate, SchemaRef.achievementCandidate],
+  qualifiedIdentity: [DomainTag.achievementIdentity, SchemaRef.achievementIdentity],
+  qualificationBasis: [DomainTag.qualificationBasis, SchemaRef.qualificationBasis],
 } as const;
 
 function vector(name: string, kind: Kind, doc: unknown, extra: Partial<Vector> = {}): Vector {
@@ -137,6 +170,45 @@ function ranked(name: string, input: unknown): Vector[] {
       inputVector: `run-input/${name}`,
       expectState: r.outcome.publication.state,
     }),
+  ];
+}
+
+/** A QUALIFIED derivation: snapshot, outcome and, per candidate, candidate / identity / basis doc. */
+function qualified(name: string, snapshot: unknown): Vector[] {
+  const d = deriveAchievements(snapshot);
+  const cs = d.outcome.candidates ?? [];
+  const candidates = cs.map((c, i) =>
+    vector(`qualified-candidate/${name}/${i}`, 'qualifiedCandidate', c.candidate),
+  );
+  const identities = cs.map((c, i) =>
+    vector(
+      `qualified-identity/${name}/${i}`,
+      'qualifiedIdentity',
+      identityOf(c.candidate).identity,
+    ),
+  );
+  const bases = cs.map((c, i) => {
+    const q = c.candidate.qualification;
+    if (q === undefined) throw new Error(`vector ${name}: a QUALIFIED candidate needs its pin`);
+    const { basisHash: _h, targetAuthority: _t, ...position } = q;
+    return vector(
+      `qualification-basis/${name}/${i}`,
+      'qualificationBasis',
+      qualificationBasisDocument(c.candidate, position),
+    );
+  });
+  return [
+    vector(`qualified-snapshot/${name}`, 'qualifiedSnapshot', snapshot),
+    vector(`qualified-outcome/${name}`, 'qualifiedOutcome', d.outcome, {
+      snapshotVector: `qualified-snapshot/${name}`,
+      candidateVectors: candidates.map((v) => v.name),
+      identityVectors: identities.map((v) => v.name),
+      basisVectors: bases.map((v) => v.name),
+      expectState: d.outcome.state,
+    }),
+    ...candidates,
+    ...identities,
+    ...bases,
   ];
 }
 
@@ -425,10 +497,32 @@ export function generateBrt10Vectors() {
     ),
   ];
   vectors.push(...cases.flatMap((c) => c.vectors));
+  // Step 9 — QUALIFIED. REFERENCE ENGINE FIXTURES: FINAL / V3 / hold / target adoption are synthetic.
+  const rankingQ = qualifiedRankingFixture();
+  const canonicalQ = { ...qualifiedRankingFixture(), provenance: 'CANONICAL_ASSEMBLY' };
+  vectors.push(
+    ...qualified('ranking-top-n-shared', rankingQ),
+    vector(
+      'qualified-snapshot/ranking-top-n-shared-reordered',
+      'qualifiedSnapshot',
+      reversed(rankingQ),
+    ),
+    ...qualified('classification-top-n', qualifiedClassificationFixture()),
+    ...qualified(
+      'ranking-v2-below-floor',
+      qualifiedRankingFixture({ entries: [{ k: 1, rank: 1, levels: ['V2'] }] }),
+    ),
+    ...qualified(
+      'ranking-corrected-snapshot',
+      qualifiedRankingFixture({ correctedBy: QFX.correctingSnapshot }),
+    ),
+    // Production shape: no hold / target-authority producer ⇒ BLOCKED, whatever the snapshot says.
+    ...qualified('production-fails-closed', canonicalQ),
+  );
 
   return {
     schema: 'br-ranking-vectors/1',
-    note: 'REFERENCE ENGINE FIXTURES — NOT PERSISTED SPORTING TRUTH. hash = SHA-256("BR"‖0x01‖domainTag‖0x00‖schemaId@version‖0x00‖"br-json/1"‖0x00‖JCS). Ranks are competition-style shared ranks (1, 1, 3); only a PROPOSED derivation carries `@2` content, which is a ResultVersion proposal, never a RankingSnapshot.',
+    note: 'REFERENCE ENGINE FIXTURES — NOT PERSISTED SPORTING TRUTH. hash = SHA-256("BR"‖0x01‖domainTag‖0x00‖schemaId@version‖0x00‖"br-json/1"‖0x00‖JCS). Ranks are competition-style shared ranks (1, 1, 3); only a PROPOSED derivation carries `@2` content, which is a ResultVersion proposal, never a RankingSnapshot. QUALIFIED vectors are achievement-engine/3 documents: the target authority adoption, FINAL, V3 and hold behind them are synthetic (no producer).',
     vectors,
     /** Observations under which the classification is CURRENT (no staleness document exists). */
     freshCases: cases.flatMap((c) => c.fresh),
@@ -439,6 +533,10 @@ export function generateBrt10Vectors() {
       ['derivation-input/metrics-sum-max-tie', 'derivation-input/metrics-sum-max-tie-reordered'],
       ['content/metrics-sum-max-tie', 'content/metrics-sum-max-tie-reordered'],
       ['staleness/pin-superseded', 'staleness/pin-superseded-reordered'],
+      [
+        'qualified-snapshot/ranking-top-n-shared',
+        'qualified-snapshot/ranking-top-n-shared-reordered',
+      ],
     ],
     distinct: [
       ['run-input/best-mark-ties', 'run-input/missing-required-facts'],
@@ -451,6 +549,12 @@ export function generateBrt10Vectors() {
         'staleness/pin-out-of-scope',
         'staleness/admissible-set-unknown',
         'staleness/pins-unknown',
+      ],
+      [
+        'qualified-snapshot/ranking-top-n-shared',
+        'qualified-snapshot/ranking-v2-below-floor',
+        'qualified-snapshot/ranking-corrected-snapshot',
+        'qualified-snapshot/production-fails-closed',
       ],
     ],
   };

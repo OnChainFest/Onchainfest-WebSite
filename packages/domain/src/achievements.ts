@@ -27,21 +27,22 @@ export const AchievementType = {
    * the same validated engine path from the mark's exact performance basis + its ratification.
    */
   RECORD_SET: 'RECORD_SET',
+  /**
+   * BRT-10 (ADR-0050): cross-competition qualification — a holder's position ≤ N in a PUBLISHED,
+   * non-stale RankingSnapshot or a FINAL classification, adopted by the TARGET competition's authority.
+   * Derived by achievement-engine/3 only; never an entry, registration, seeding or prize.
+   */
+  QUALIFIED: 'QUALIFIED',
 } as const;
 export type AchievementType = (typeof AchievementType)[keyof typeof AchievementType];
 export const ACHIEVEMENT_TYPES = Object.values(AchievementType);
 
 /**
  * BRT-01 §8.2 types NOT derived by BRT-08: STREAK (needs a sequence of achievements), SEASON_TITLE
- * (no season/league entity), RANKING_MILESTONE (rankings), QUALIFIED (qualification engine). Rule
- * validation rejects them. RECORD_SET is derived since BRT-09 (from a ratified RecordMark).
+ * (no season/league entity), RANKING_MILESTONE (rankings). Rule validation rejects them. RECORD_SET
+ * is derived since BRT-09 (from a ratified RecordMark), QUALIFIED since BRT-10 (achievement-engine/3).
  */
-export const DEFERRED_ACHIEVEMENT_TYPES = [
-  'STREAK',
-  'SEASON_TITLE',
-  'RANKING_MILESTONE',
-  'QUALIFIED',
-] as const;
+export const DEFERRED_ACHIEVEMENT_TYPES = ['STREAK', 'SEASON_TITLE', 'RANKING_MILESTONE'] as const;
 
 /**
  * Stable holders (BRT-01 §8.1). A TEAM Achievement credits its athletes through immutable
@@ -93,6 +94,9 @@ export type DerivationProvenance = (typeof DerivationProvenance)[keyof typeof De
  *   CREDITED_LINEUP     the lineup inside Result content (ADR-0026)                 (NO producer)
  *   RECORD_RATIFICATION a RecordMark's valid ratification (BRT-09; RECORD_RATIFIED /
  *                       REVIEW_COMPLETED producer deferred to BRT-06R)              (NO producer)
+ *   TARGET_QUALIFICATION_AUTHORITY  the target competition's authority adopting a QUALIFIED rule
+ *                       (BRT-10, ADR-0050 §4) — the platform never decides another
+ *                       authority's qualification                                    (NO producer)
  */
 export const DerivationFactKind = {
   RESULT_STATUS: 'RESULT_STATUS',
@@ -101,6 +105,7 @@ export const DerivationFactKind = {
   HOLD_STATE: 'HOLD_STATE',
   CREDITED_LINEUP: 'CREDITED_LINEUP',
   RECORD_RATIFICATION: 'RECORD_RATIFICATION',
+  TARGET_QUALIFICATION_AUTHORITY: 'TARGET_QUALIFICATION_AUTHORITY',
 } as const;
 export type DerivationFactKind = (typeof DerivationFactKind)[keyof typeof DerivationFactKind];
 export const ALL_DERIVATION_FACT_KINDS = Object.values(DerivationFactKind);
@@ -173,6 +178,9 @@ export const ACHIEVEMENT_PLATFORM_FLOOR: Readonly<Record<AchievementType, Conseq
   // BRT-01 §8.2 "per record category": V2 · FINAL is the lowest record floor (PLATFORM V2 + review);
   // the engine raises it to the pinned RecordMark's category floor (V3 / V4) at derivation.
   RECORD_SET: { minimumVerificationLevel: 'V2', minimumResultStatus: 'FINAL', holdBlocks: true },
+  // BRT-01 §7 "Qualification / eligibility for another sanctioned competition": FINAL · V3 · hold
+  // blocks (ADR-0050 §3). The "target may set V2" alternative is unavailable (no governance fact).
+  QUALIFIED: { minimumVerificationLevel: 'V3', minimumResultStatus: 'FINAL', holdBlocks: true },
 };
 
 /** Public labels per type (never "Verified ✓"). */
@@ -184,4 +192,5 @@ export const ACHIEVEMENT_TYPE_LABEL: Readonly<Record<AchievementType, string>> =
   PERFORMANCE_THRESHOLD: 'Performance threshold',
   PERSONAL_BEST: 'Personal best',
   RECORD_SET: 'Record set',
+  QUALIFIED: 'Qualified (cross-competition)',
 };

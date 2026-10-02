@@ -49,13 +49,16 @@ export {
   dependencyIndex,
   liveCurrentSupport,
   passportAchievements,
+  qualificationIndex,
   type DerivationReport,
+  type QualificationDerivation,
   type PassportAchievementItem,
   type PersistedAchievement,
   type PublicAchievementV1,
   type PublicAthleteRef,
   type ResultVersionDerivation,
 } from './achievement-store';
+export { QUALIFICATION_ASSEMBLER_VERSION, type QualifyingSourceRef } from './qualification-loader';
 export * from './record-category-store';
 export * from './record-projection';
 export * from './record-reader';

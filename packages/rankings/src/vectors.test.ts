@@ -15,6 +15,16 @@ describe('BRT-10 ranking / classification vectors', () => {
     expect(state('derivation-outcome/undeclared-outcome')).toBe('BLOCKED');
     expect(state('derivation-outcome/policy-keys-reordered-forged')).toBe('BLOCKED');
   });
+  it('QUALIFIED (Step 9): top-N issuable on both paths; V2, a corrected snapshot and production block', () => {
+    const v = generateBrt10Vectors().vectors;
+    const state = (name: string) => v.find((x) => x.name === name)?.expectState;
+    expect(state('qualified-outcome/ranking-top-n-shared')).toBe('ISSUABLE');
+    expect(state('qualified-outcome/classification-top-n')).toBe('ISSUABLE');
+    expect(state('qualified-outcome/ranking-v2-below-floor')).toBe('NO_QUALIFYING_FACTS');
+    expect(state('qualified-outcome/ranking-corrected-snapshot')).toBe('BLOCKED');
+    expect(state('qualified-outcome/production-fails-closed')).toBe('BLOCKED');
+    expect(v.filter((x) => x.kind === 'qualifiedCandidate')).toHaveLength(8);
+  });
   it('staleness (Step 7): one fresh case, every stale state a distinct digest, reordering irrelevant', () => {
     const doc = generateBrt10Vectors();
     const stale = doc.vectors.filter((x) => x.kind === 'staleness');
