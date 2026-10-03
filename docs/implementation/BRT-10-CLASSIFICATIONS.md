@@ -48,7 +48,7 @@ The outcome accounts for every input (`ADMITTED | EXCLUDED` + reasons), every mi
 
 ## 4. Submission path (implemented, Step 6)
 
-1. **Propose (read-only).** `ResultLedger.proposeClassification(resultId)` re-assembles the canonical input (`classification-loader.ts`) and runs `deriveClassification`. It writes nothing. A later COMP_STAFF read endpoint (Step 11) exposes it.
+1. **Propose (read-only).** `ResultLedger.proposeClassification(resultId)` re-assembles the canonical input (`classification-loader.ts`) and runs `deriveClassification`. It writes nothing. Step 11 exposes it as `POST /v1/result-versions/:resultVersionId/classification-proposals` (COMP_STAFF, closed empty body, `COMP_VIEW_PRIVATE` on the version's competition from database facts, denial = 404; still writes nothing). See [development § API](./BRT-10-DEVELOPMENT.md#api-step-11).
 2. **Draft.** The content schema of a draft is `@2` iff the content carries `derivation` (the `@1` schema is closed, so `derivation` can never be `@1`). `@1` drafts are hashed and validated exactly as before. Malformed `@2` content is refused by the closed schema before a draft exists.
 3. **T2 (`submitDraft`).** A principal holding `SUBMIT_RESULT` for the classification's scope submits the draft. The existing checks run unchanged: hierarchy scope match, authority, idempotency, stream serialization, content dedupe. For `@2` content the ledger then, in the same transaction:
    - refuses `@2` on a non-classification Result (`INVALID_INPUT`, reason `NOT_A_CLASSIFICATION_RESULT`; BR162 also refuses it in the database);
@@ -88,6 +88,8 @@ Tests: `packages/persistence/src/rankings-writer.int.test.ts` ("classification @
 ## 5.1 Read model (Step 8)
 
 `ranking_read.classification_card` / `classification_entry` project each derived (`@2`) version: the derivation header, the sorted pinned input ids, the content hash, and the version's latest append-only status. Ranks, ties and the trace are copied byte for byte from the immutable content and are never re-ranked. The ResultLedger refreshes them in its own transaction (T2 and every transition). They are rebuildable by `br_rebuild`, readable by `br_public_read`, and carry no staleness. See [development § read models](./BRT-10-DEVELOPMENT.md#read-models-step-8).
+
+**Public API (Step 11).** `GET /v1/result-versions/:id/classification` (+ `/entries`) serves only `@2` versions whose latest status is PROVISIONAL / OFFICIAL / FINAL; any other status, a `@1` version or a CONTEST version is the same 404 as an unknown id. The card shows the derivation header and `inputCount`, never the derivedFrom pins; staleness is a `readTime` block (`state` + `reasons`) computed per request with `readClassificationIn` under the pinned policy — the staleness document and digest are not public. Projection rows that differ from the canonical version fail with `RANKING_INTEGRITY_FAILURE` / `PROJECTION_MISMATCH`.
 
 ## 6. Team / individual
 
