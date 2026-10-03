@@ -100,7 +100,9 @@ describe('migration 0027: fresh database before 0028, no ranking_read dependency
     const database = `br_qmig_${randomBytes(6).toString('hex')}`;
     const partial = mkdtempSync(join(tmpdir(), 'br-qmig-'));
     for (const f of readdirSync(MIGRATIONS_DIR).filter((f) => /^\d{4}_.*\.sql$/.test(f)))
-      if (!f.startsWith('0027')) copyFileSync(join(MIGRATIONS_DIR, f), join(partial, f));
+      // Bounded at 0028: the boundary under test is 0027 ↔ 0028 (later migrations apply afterwards).
+      if (!f.startsWith('0027') && f < '0029')
+        copyFileSync(join(MIGRATIONS_DIR, f), join(partial, f));
     const owner = new URL(databaseUrls().owner);
     owner.pathname = `/${database}`;
     const admin = new pg.Client({ connectionString: databaseUrls().admin });
@@ -108,7 +110,9 @@ describe('migration 0027: fresh database before 0028, no ranking_read dependency
       await bootstrapDatabase(databaseUrls().admin, [database], devRolePasswords());
       const first = await migrate(owner.toString(), `${partial}/`);
       expect(first.at(-1)).toBe('0028_ranking_read_models.sql');
-      expect(await migrate(owner.toString())).toEqual(['0027_qualified_achievements.sql']);
+      const second = await migrate(owner.toString());
+      expect(second[0]).toBe('0027_qualified_achievements.sql');
+      expect(second.filter((m) => m < '0029')).toEqual(['0027_qualified_achievements.sql']);
     } finally {
       rmSync(partial, { recursive: true, force: true });
       await admin.connect();
@@ -145,7 +149,9 @@ describe('migration 0027: fresh database before 0028, no ranking_read dependency
       } finally {
         await c.end();
       }
-      expect(await migrate(owner.toString())).toEqual(['0028_ranking_read_models.sql']);
+      const second = await migrate(owner.toString());
+      expect(second[0]).toBe('0028_ranking_read_models.sql');
+      expect(second.filter((m) => m < '0029')).toEqual(['0028_ranking_read_models.sql']);
     } finally {
       rmSync(partial, { recursive: true, force: true });
       await admin.connect();
