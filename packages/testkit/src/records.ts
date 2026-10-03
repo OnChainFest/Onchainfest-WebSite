@@ -25,6 +25,7 @@ import pg from 'pg';
 import { sql } from 'kysely';
 import { BOWLING_LIKE_SPEC } from './achievements';
 import { newTestAccount, RUNNING_5K_SPEC, TEST_DATABASE } from './index';
+import { dropThrowawayFixtureDatabase } from './throwaway-database';
 
 /**
  * BRT-09 test harness for RecordCategories and for the REFERENCE PERSISTENCE FIXTURE lane.
@@ -82,19 +83,9 @@ export async function applyRecordFixtureOverlays(database: string): Promise<void
 }
 
 export async function dropRecordFixtureDatabase(database: string): Promise<void> {
-  if (!RECORD_FIXTURE_DATABASE_PATTERN.test(database))
-    throw new Error(`refusing to drop ${database}: not a throwaway record fixture database`);
-  const admin = new pg.Client({ connectionString: databaseUrls().admin });
-  await admin.connect();
-  try {
-    await admin.query(
-      'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
-      [database],
-    );
-    await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(database)}`);
-  } finally {
-    await admin.end();
-  }
+  // Waits for the database's own sessions to close before terminating stragglers (see
+  // dropThrowawayFixtureDatabase): terminating a pool client mid-close is an unhandled 57P01.
+  await dropThrowawayFixtureDatabase(database, RECORD_FIXTURE_DATABASE_PATTERN);
 }
 
 export interface RecordFixtureEnvironment {

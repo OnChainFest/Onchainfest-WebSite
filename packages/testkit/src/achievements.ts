@@ -21,6 +21,7 @@ import {
 } from '@br/persistence';
 import pg from 'pg';
 import { newTestAccount, PADEL_DOUBLES_SPEC, RUNNING_5K_SPEC, TEST_DATABASE } from './index';
+import { dropThrowawayFixtureDatabase } from './throwaway-database';
 
 /**
  * BRT-08 test harness for AchievementRules and for the REFERENCE PERSISTENCE FIXTURE lane.
@@ -164,19 +165,9 @@ export async function applyAchievementFixtureOverlay(database: string): Promise<
 }
 
 export async function dropThrowawayDatabase(database: string): Promise<void> {
-  if (!FIXTURE_DATABASE_PATTERN.test(database))
-    throw new Error(`refusing to drop ${database}: not a throwaway fixture database`);
-  const admin = new pg.Client({ connectionString: databaseUrls().admin });
-  await admin.connect();
-  try {
-    await admin.query(
-      'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
-      [database],
-    );
-    await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(database)}`);
-  } finally {
-    await admin.end();
-  }
+  // Waits for the database's own sessions to close before terminating stragglers (see
+  // dropThrowawayFixtureDatabase): terminating a pool client mid-close is an unhandled 57P01.
+  await dropThrowawayFixtureDatabase(database, FIXTURE_DATABASE_PATTERN);
 }
 
 /**
