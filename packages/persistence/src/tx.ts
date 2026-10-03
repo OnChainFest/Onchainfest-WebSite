@@ -59,6 +59,11 @@ export const ModuleRole = {
   rankings: 'br_rankings',
   /** BRT-10 RankingSystem / ClassificationPolicy writer (reachable only from br_ranking_operator_app). */
   rankingRules: 'br_ranking_rules',
+  /**
+   * BRT-10 Step 11: SELECT-only on ranking_read.run_card / run_candidate (0030); the API login reads
+   * staff run diagnostics through it and never through br_rankings. Writes nothing.
+   */
+  rankingStaffReader: 'br_ranking_staff_reader',
 } as const;
 export type ModuleRole = (typeof ModuleRole)[keyof typeof ModuleRole];
 

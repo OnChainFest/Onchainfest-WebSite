@@ -83,6 +83,14 @@ describe('login → module-role graph (BRT-03R least privilege)', () => {
       { member: 'br_api', role: 'br_identity', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_organizations', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_public_read', inherit: false, set: true, admin: false },
+      // BRT-10 Step 11: SELECT-only staff run projections (0030); never br_rankings / br_ranking_rules.
+      {
+        member: 'br_api',
+        role: 'br_ranking_staff_reader',
+        inherit: false,
+        set: true,
+        admin: false,
+      },
       // BRT-09: record runtime (reads exact facts; writes record facts + record read models only).
       { member: 'br_api', role: 'br_records', inherit: false, set: true, admin: false },
       { member: 'br_api', role: 'br_results', inherit: false, set: true, admin: false },

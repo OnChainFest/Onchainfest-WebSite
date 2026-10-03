@@ -97,6 +97,14 @@ export {
   type RankingWorkerReaction,
 } from './ranking-worker';
 export { RankingHistoryReader, type SnapshotHistoryItem } from './ranking-history';
+export {
+  RANKING_MAX_PAGE,
+  RankingPublicReader,
+  RankingStaffReader,
+  decodeRankingCursor,
+  encodeRankingCursor,
+  type PageOptions,
+} from './ranking-api-reader';
 export { RANKING_ASSEMBLER_VERSION } from './ranking-loader';
 export { rebuildRankingReadModels, snapshotRankingReadModels } from './ranking-projection';
 export {

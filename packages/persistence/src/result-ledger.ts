@@ -157,6 +157,27 @@ export interface ResultScopeValidator {
 }
 
 /**
+ * The read-only classification proposal inside the caller's br_results transaction (ADR-0047 §3 step
+ * 1): canonical assembly + the pure engine. Writes nothing. Shared by `ResultLedger.proposeClassification`
+ * and the BRT-10 Step 11 COMP_STAFF read (which authorizes first).
+ */
+export async function proposeClassificationIn(ctx: TxContext, resultId: Uuid) {
+  const assembly = await assembleClassificationInput(ctx, resultId);
+  if (!assembly.ok) return { state: 'UNAVAILABLE' as const, reason: assembly.reason };
+  const derived = deriveClassification(assembly.input);
+  if (!derived.ok)
+    throw mismatch('CANONICAL_INPUT_INVALID', 'the canonical derivation input is invalid', {
+      issues: derived.issues.map((i) => i.code),
+    });
+  return {
+    state: derived.outcome.state,
+    inputsDigest: derived.inputsDigest,
+    outcome: derived.outcome,
+    outcomeHash: derived.outcomeHash,
+  };
+}
+
+/**
  * Result ledger (BRT-01 result domain §6–7; BRT-02 persistence §4.1, §5.4).
  * Every command runs in one transaction under the br_results role: ledger facts, class B
  * projections, outbox events and the idempotency record commit atomically.
@@ -663,21 +684,9 @@ export class ResultLedger {
    * again and compared.
    */
   proposeClassification(resultId: Uuid) {
-    return inTransaction(this.db, ModuleRole.results, async (ctx) => {
-      const assembly = await assembleClassificationInput(ctx, resultId);
-      if (!assembly.ok) return { state: 'UNAVAILABLE' as const, reason: assembly.reason };
-      const derived = deriveClassification(assembly.input);
-      if (!derived.ok)
-        throw mismatch('CANONICAL_INPUT_INVALID', 'the canonical derivation input is invalid', {
-          issues: derived.issues.map((i) => i.code),
-        });
-      return {
-        state: derived.outcome.state,
-        inputsDigest: derived.inputsDigest,
-        outcome: derived.outcome,
-        outcomeHash: derived.outcomeHash,
-      };
-    });
+    return inTransaction(this.db, ModuleRole.results, (ctx) =>
+      proposeClassificationIn(ctx, resultId),
+    );
   }
 
   /**

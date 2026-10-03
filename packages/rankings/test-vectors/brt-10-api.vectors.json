@@ -1,0 +1,942 @@
+{
+  "schema": "br:brt-10-api-vectors@1",
+  "note": "FICTIONAL DATA ONLY. Public / staff DTOs of the BRT-10 /v1 surface: input → DTO → JCS → SHA-256 (no domain tag).",
+  "vectors": [
+    {
+      "name": "system/platform-published",
+      "kind": "system",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000001",
+        "code": "fictional-5k-best",
+        "name": "Fictional 5K best marks",
+        "kind": "PLATFORM",
+        "latestVersion": 2,
+        "latestLifecycle": "PUBLISHED",
+        "latestSpecHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "publishedVersion": 2,
+        "displayName": "Fictional 5K best marks",
+        "method": "BEST_MARK",
+        "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+        "metricKey": "elapsedTimeMs",
+        "markMetricId": "running.elapsed_time",
+        "holderType": "ATHLETE",
+        "recognitionLevel": "PLATFORM",
+        "minimumVerificationLevel": "V2",
+        "effectiveFrom": "2027-01-01T00:00:00.000Z"
+      },
+      "canonicalText": "{\"code\":\"fictional-5k-best\",\"displayName\":\"Fictional 5K best marks\",\"effectiveFrom\":\"2027-01-01T00:00:00.000Z\",\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"method\":\"BEST_MARK\",\"name\":\"Fictional 5K best marks\",\"requirements\":{\"minimumVerificationLevel\":\"V2\",\"recognitionLevel\":\"PLATFORM\"},\"schema\":\"br:public-ranking-system@1\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"universe\":{\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"holderType\":\"ATHLETE\",\"metric\":{\"key\":\"elapsedTimeMs\",\"markMetricId\":\"running.elapsed_time\"}},\"version\":{\"latest\":2,\"lifecycle\":\"PUBLISHED\",\"published\":2,\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "digest": "sha256:1977af940bf76757a51e9d6c63478ea015b2626e3594e2e12c5f96bb9f335c97"
+    },
+    {
+      "name": "system/official-owner-publication-unavailable",
+      "kind": "system",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000003",
+        "code": "fictional-owned-5k",
+        "name": "Fictional owned 5K list",
+        "kind": "OFFICIAL",
+        "latestVersion": 1,
+        "latestLifecycle": "PUBLISHED",
+        "latestSpecHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "publishedVersion": 1,
+        "displayName": "Fictional owned 5K list",
+        "method": "BEST_MARK",
+        "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+        "metricKey": "elapsedTimeMs",
+        "markMetricId": "running.elapsed_time",
+        "holderType": "ATHLETE",
+        "recognitionLevel": "CLUB",
+        "minimumVerificationLevel": "V3",
+        "effectiveFrom": "2027-01-01T00:00:00.000Z"
+      },
+      "canonicalText": "{\"code\":\"fictional-owned-5k\",\"displayName\":\"Fictional owned 5K list\",\"effectiveFrom\":\"2027-01-01T00:00:00.000Z\",\"kind\":\"OFFICIAL\",\"method\":\"BEST_MARK\",\"name\":\"Fictional owned 5K list\",\"ownerPublication\":{\"reason\":\"OWNER_PUBLICATION_UNAVAILABLE\",\"status\":\"NOT_AVAILABLE\"},\"requirements\":{\"minimumVerificationLevel\":\"V3\",\"recognitionLevel\":\"CLUB\"},\"schema\":\"br:public-ranking-system@1\",\"systemId\":\"00000000-0000-4000-8000-000000000003\",\"universe\":{\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"holderType\":\"ATHLETE\",\"metric\":{\"key\":\"elapsedTimeMs\",\"markMetricId\":\"running.elapsed_time\"}},\"version\":{\"latest\":1,\"lifecycle\":\"PUBLISHED\",\"published\":1,\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "digest": "sha256:1ca366564a10d249cdcf05973a8ec2caa2abd58b47802233c8bd0a73897f8349"
+    },
+    {
+      "name": "system/retired-team",
+      "kind": "system",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000004",
+        "code": "fictional-retired",
+        "name": "Fictional retired list",
+        "kind": "PLATFORM",
+        "latestVersion": 1,
+        "latestLifecycle": "RETIRED",
+        "latestSpecHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "displayName": "Fictional retired list",
+        "method": "BEST_MARK",
+        "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+        "metricKey": "elapsedTimeMs",
+        "markMetricId": "running.elapsed_time",
+        "holderType": "TEAM",
+        "recognitionLevel": "PLATFORM",
+        "minimumVerificationLevel": "V2",
+        "effectiveFrom": "2026-01-01T00:00:00.000Z"
+      },
+      "canonicalText": "{\"code\":\"fictional-retired\",\"displayName\":\"Fictional retired list\",\"effectiveFrom\":\"2026-01-01T00:00:00.000Z\",\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"method\":\"BEST_MARK\",\"name\":\"Fictional retired list\",\"requirements\":{\"minimumVerificationLevel\":\"V2\",\"recognitionLevel\":\"PLATFORM\"},\"schema\":\"br:public-ranking-system@1\",\"systemId\":\"00000000-0000-4000-8000-000000000004\",\"universe\":{\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"holderType\":\"TEAM\",\"metric\":{\"key\":\"elapsedTimeMs\",\"markMetricId\":\"running.elapsed_time\"}},\"version\":{\"latest\":1,\"lifecycle\":\"RETIRED\",\"specHash\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "digest": "sha256:617ba63b034b46b8a23def3b249dece552cb21985dfc11528a4b36bb2dbffd64"
+    },
+    {
+      "name": "systemList/page-with-cursor",
+      "kind": "systemList",
+      "visibility": "PUBLIC",
+      "input": {
+        "cards": [
+          {
+            "systemId": "00000000-0000-4000-8000-000000000003",
+            "code": "fictional-owned-5k",
+            "name": "Fictional owned 5K list",
+            "kind": "OFFICIAL",
+            "latestVersion": 1,
+            "latestLifecycle": "PUBLISHED",
+            "latestSpecHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "publishedVersion": 1,
+            "displayName": "Fictional owned 5K list",
+            "method": "BEST_MARK",
+            "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+            "metricKey": "elapsedTimeMs",
+            "markMetricId": "running.elapsed_time",
+            "holderType": "ATHLETE",
+            "recognitionLevel": "CLUB",
+            "minimumVerificationLevel": "V3",
+            "effectiveFrom": "2027-01-01T00:00:00.000Z"
+          },
+          {
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "code": "fictional-5k-best",
+            "name": "Fictional 5K best marks",
+            "kind": "PLATFORM",
+            "latestVersion": 2,
+            "latestLifecycle": "PUBLISHED",
+            "latestSpecHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "publishedVersion": 2,
+            "displayName": "Fictional 5K best marks",
+            "method": "BEST_MARK",
+            "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+            "metricKey": "elapsedTimeMs",
+            "markMetricId": "running.elapsed_time",
+            "holderType": "ATHLETE",
+            "recognitionLevel": "PLATFORM",
+            "minimumVerificationLevel": "V2",
+            "effectiveFrom": "2027-01-01T00:00:00.000Z"
+          }
+        ],
+        "nextCursor": "ZmljdGlvbmFsLTVrLWJlc3Q"
+      },
+      "canonicalText": "{\"items\":[{\"code\":\"fictional-owned-5k\",\"displayName\":\"Fictional owned 5K list\",\"effectiveFrom\":\"2027-01-01T00:00:00.000Z\",\"kind\":\"OFFICIAL\",\"method\":\"BEST_MARK\",\"name\":\"Fictional owned 5K list\",\"ownerPublication\":{\"reason\":\"OWNER_PUBLICATION_UNAVAILABLE\",\"status\":\"NOT_AVAILABLE\"},\"requirements\":{\"minimumVerificationLevel\":\"V3\",\"recognitionLevel\":\"CLUB\"},\"schema\":\"br:public-ranking-system@1\",\"systemId\":\"00000000-0000-4000-8000-000000000003\",\"universe\":{\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"holderType\":\"ATHLETE\",\"metric\":{\"key\":\"elapsedTimeMs\",\"markMetricId\":\"running.elapsed_time\"}},\"version\":{\"latest\":1,\"lifecycle\":\"PUBLISHED\",\"published\":1,\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}},{\"code\":\"fictional-5k-best\",\"displayName\":\"Fictional 5K best marks\",\"effectiveFrom\":\"2027-01-01T00:00:00.000Z\",\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"method\":\"BEST_MARK\",\"name\":\"Fictional 5K best marks\",\"requirements\":{\"minimumVerificationLevel\":\"V2\",\"recognitionLevel\":\"PLATFORM\"},\"schema\":\"br:public-ranking-system@1\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"universe\":{\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"holderType\":\"ATHLETE\",\"metric\":{\"key\":\"elapsedTimeMs\",\"markMetricId\":\"running.elapsed_time\"}},\"version\":{\"latest\":2,\"lifecycle\":\"PUBLISHED\",\"published\":2,\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\"nextCursor\":\"ZmljdGlvbmFsLTVrLWJlc3Q\",\"schema\":\"br:public-ranking-system-list@1\"}",
+      "digest": "sha256:f53d6e39fe795790ca63dc5fc6928ee939e47cdad431573726097ac789182389"
+    },
+    {
+      "name": "history/as-published-keeps-every-snapshot",
+      "kind": "history",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000001",
+        "view": "as-published",
+        "cards": [
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000065",
+            "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-01T12:00:00.000Z",
+            "publishedAt": "2027-02-01T12:00:05.000Z",
+            "chainPosition": 1,
+            "entryCount": 3,
+            "lineageKind": "INITIAL",
+            "lineageReasons": []
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000066",
+            "snapshotHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-02T12:00:00.000Z",
+            "publishedAt": "2027-02-02T12:00:05.000Z",
+            "chainPosition": 2,
+            "entryCount": 3,
+            "lineageKind": "FOLLOWS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000065",
+            "priorSnapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "lineageReasons": [],
+            "correctedBySnapshotId": "00000000-0000-4000-8000-000000000067"
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000067",
+            "snapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-03T12:00:00.000Z",
+            "publishedAt": "2027-02-03T12:00:05.000Z",
+            "chainPosition": 3,
+            "entryCount": 1,
+            "lineageKind": "CORRECTS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000066",
+            "priorSnapshotHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "lineageReasons": [
+              "RESULT_SUPERSEDED"
+            ],
+            "correctedBySnapshotId": "00000000-0000-4000-8000-000000000068"
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000068",
+            "snapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-04T12:00:00.000Z",
+            "publishedAt": "2027-02-04T12:00:05.000Z",
+            "chainPosition": 4,
+            "entryCount": 1,
+            "lineageKind": "CORRECTS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000067",
+            "priorSnapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "lineageReasons": [
+              "RESULT_SUPERSEDED"
+            ]
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000069",
+            "snapshotHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-05T12:00:00.000Z",
+            "publishedAt": "2027-02-05T12:00:05.000Z",
+            "chainPosition": 5,
+            "entryCount": 3,
+            "lineageKind": "FOLLOWS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000068",
+            "priorSnapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "lineageReasons": []
+          }
+        ]
+      },
+      "canonicalText": "{\"items\":[{\"asOf\":\"2027-02-01T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":1,\"kind\":\"INITIAL\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-01T12:00:05.000Z\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-02T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":2,\"correctedBy\":\"00000000-0000-4000-8000-000000000067\",\"kind\":\"FOLLOWS\",\"priorSnapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000065\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-02T12:00:05.000Z\",\"snapshotHash\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"snapshotId\":\"00000000-0000-4000-8000-000000000066\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-03T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":1,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":3,\"correctedBy\":\"00000000-0000-4000-8000-000000000068\",\"kind\":\"CORRECTS\",\"priorSnapshotHash\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000066\",\"reasons\":[\"RESULT_SUPERSEDED\"]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-03T12:00:05.000Z\",\"snapshotHash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"snapshotId\":\"00000000-0000-4000-8000-000000000067\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-04T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":1,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":4,\"kind\":\"CORRECTS\",\"priorSnapshotHash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000067\",\"reasons\":[\"RESULT_SUPERSEDED\"]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-04T12:00:05.000Z\",\"snapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"snapshotId\":\"00000000-0000-4000-8000-000000000068\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-05T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":5,\"kind\":\"FOLLOWS\",\"priorSnapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000068\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-05T12:00:05.000Z\",\"snapshotHash\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"snapshotId\":\"00000000-0000-4000-8000-000000000069\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}],\"schema\":\"br:public-ranking-snapshot-history@1\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"view\":\"as-published\"}",
+      "digest": "sha256:5dafb618a6d6a4413541b5b2a0a2dc88b4fe26a5ee9a2f559c0219bace0c885d"
+    },
+    {
+      "name": "history/as-corrected-replaces-corrected",
+      "kind": "history",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000001",
+        "view": "as-corrected",
+        "cards": [
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000065",
+            "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-01T12:00:00.000Z",
+            "publishedAt": "2027-02-01T12:00:05.000Z",
+            "chainPosition": 1,
+            "entryCount": 3,
+            "lineageKind": "INITIAL",
+            "lineageReasons": []
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000068",
+            "snapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-04T12:00:00.000Z",
+            "publishedAt": "2027-02-04T12:00:05.000Z",
+            "chainPosition": 4,
+            "entryCount": 1,
+            "lineageKind": "CORRECTS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000067",
+            "priorSnapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "lineageReasons": [
+              "RESULT_SUPERSEDED"
+            ],
+            "corrects": [
+              "00000000-0000-4000-8000-000000000066",
+              "00000000-0000-4000-8000-000000000067"
+            ]
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000069",
+            "snapshotHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-05T12:00:00.000Z",
+            "publishedAt": "2027-02-05T12:00:05.000Z",
+            "chainPosition": 5,
+            "entryCount": 3,
+            "lineageKind": "FOLLOWS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000068",
+            "priorSnapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "lineageReasons": []
+          }
+        ]
+      },
+      "canonicalText": "{\"items\":[{\"asOf\":\"2027-02-01T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":1,\"kind\":\"INITIAL\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-01T12:00:05.000Z\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-04T12:00:00.000Z\",\"corrects\":[\"00000000-0000-4000-8000-000000000066\",\"00000000-0000-4000-8000-000000000067\"],\"engineVersion\":\"ranking-engine/1\",\"entryCount\":1,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":4,\"kind\":\"CORRECTS\",\"priorSnapshotHash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000067\",\"reasons\":[\"RESULT_SUPERSEDED\"]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-04T12:00:05.000Z\",\"snapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"snapshotId\":\"00000000-0000-4000-8000-000000000068\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-05T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":5,\"kind\":\"FOLLOWS\",\"priorSnapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000068\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-05T12:00:05.000Z\",\"snapshotHash\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"snapshotId\":\"00000000-0000-4000-8000-000000000069\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}],\"schema\":\"br:public-ranking-snapshot-history@1\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"view\":\"as-corrected\"}",
+      "digest": "sha256:e4d614a2f49b12eb8dc48b94424d9138a7ef460be6e09a5ea2dd4eb6f75c3be8"
+    },
+    {
+      "name": "history/page-with-cursor",
+      "kind": "history",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000001",
+        "view": "as-published",
+        "cards": [
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000065",
+            "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-01T12:00:00.000Z",
+            "publishedAt": "2027-02-01T12:00:05.000Z",
+            "chainPosition": 1,
+            "entryCount": 3,
+            "lineageKind": "INITIAL",
+            "lineageReasons": []
+          },
+          {
+            "snapshotId": "00000000-0000-4000-8000-000000000066",
+            "snapshotHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "systemId": "00000000-0000-4000-8000-000000000001",
+            "systemCode": "fictional-5k-best",
+            "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+            "systemVersion": 2,
+            "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "PLATFORM",
+            "method": "BEST_MARK",
+            "engineVersion": "ranking-engine/1",
+            "asOf": "2027-02-02T12:00:00.000Z",
+            "publishedAt": "2027-02-02T12:00:05.000Z",
+            "chainPosition": 2,
+            "entryCount": 3,
+            "lineageKind": "FOLLOWS",
+            "priorSnapshotId": "00000000-0000-4000-8000-000000000065",
+            "priorSnapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "lineageReasons": [],
+            "correctedBySnapshotId": "00000000-0000-4000-8000-000000000067"
+          }
+        ],
+        "nextCursor": "Mg"
+      },
+      "canonicalText": "{\"items\":[{\"asOf\":\"2027-02-01T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":1,\"kind\":\"INITIAL\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-01T12:00:05.000Z\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}},{\"asOf\":\"2027-02-02T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":2,\"correctedBy\":\"00000000-0000-4000-8000-000000000067\",\"kind\":\"FOLLOWS\",\"priorSnapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000065\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-02T12:00:05.000Z\",\"snapshotHash\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"snapshotId\":\"00000000-0000-4000-8000-000000000066\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}],\"nextCursor\":\"Mg\",\"schema\":\"br:public-ranking-snapshot-history@1\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"view\":\"as-published\"}",
+      "digest": "sha256:9b753ce6e76f03cc5efb191047bad7f2852337e2330d9da4321d11d889f8e783"
+    },
+    {
+      "name": "history/empty",
+      "kind": "history",
+      "visibility": "PUBLIC",
+      "input": {
+        "systemId": "00000000-0000-4000-8000-000000000004",
+        "view": "as-published",
+        "cards": []
+      },
+      "canonicalText": "{\"items\":[],\"schema\":\"br:public-ranking-snapshot-history@1\",\"systemId\":\"00000000-0000-4000-8000-000000000004\",\"view\":\"as-published\"}",
+      "digest": "sha256:507ba52a93628a7059c0af5c44f312853564de40668eab4408fde3fd9189a978"
+    },
+    {
+      "name": "snapshot/current",
+      "kind": "snapshot",
+      "visibility": "PUBLIC",
+      "input": {
+        "card": {
+          "snapshotId": "00000000-0000-4000-8000-000000000069",
+          "snapshotHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "systemId": "00000000-0000-4000-8000-000000000001",
+          "systemCode": "fictional-5k-best",
+          "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+          "systemVersion": 2,
+          "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "PLATFORM",
+          "method": "BEST_MARK",
+          "engineVersion": "ranking-engine/1",
+          "asOf": "2027-02-05T12:00:00.000Z",
+          "publishedAt": "2027-02-05T12:00:05.000Z",
+          "chainPosition": 5,
+          "entryCount": 3,
+          "lineageKind": "FOLLOWS",
+          "priorSnapshotId": "00000000-0000-4000-8000-000000000068",
+          "priorSnapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "lineageReasons": []
+        },
+        "staleness": {
+          "state": "CURRENT"
+        }
+      },
+      "canonicalText": "{\"readTime\":{\"staleness\":{\"reasons\":[],\"state\":\"CURRENT\"}},\"schema\":\"br:public-ranking-snapshot@1\",\"snapshot\":{\"asOf\":\"2027-02-05T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":5,\"kind\":\"FOLLOWS\",\"priorSnapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000068\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-05T12:00:05.000Z\",\"snapshotHash\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"snapshotId\":\"00000000-0000-4000-8000-000000000069\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}}",
+      "digest": "sha256:a207ef94a0fcba07140de546f30dac45aa758f45079451ff99136a72665147f9"
+    },
+    {
+      "name": "snapshot/stale-topology-omitted",
+      "kind": "snapshot",
+      "visibility": "PUBLIC",
+      "input": {
+        "card": {
+          "snapshotId": "00000000-0000-4000-8000-000000000065",
+          "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "systemId": "00000000-0000-4000-8000-000000000001",
+          "systemCode": "fictional-5k-best",
+          "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+          "systemVersion": 2,
+          "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "PLATFORM",
+          "method": "BEST_MARK",
+          "engineVersion": "ranking-engine/1",
+          "asOf": "2027-02-01T12:00:00.000Z",
+          "publishedAt": "2027-02-01T12:00:05.000Z",
+          "chainPosition": 1,
+          "entryCount": 3,
+          "lineageKind": "INITIAL",
+          "lineageReasons": []
+        },
+        "staleness": {
+          "state": "STALE",
+          "reasons": [
+            "BASIS_VERIFICATION_NOT_CURRENT",
+            "BASIS_RESULT_NOT_CURRENT"
+          ],
+          "affected": [
+            {
+              "resultVersionId": "00000000-0000-4000-8000-000000000384",
+              "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "verificationRunId": "00000000-0000-4000-8000-000000000385",
+              "reasons": [
+                "BASIS_RESULT_NOT_CURRENT",
+                "BASIS_VERIFICATION_NOT_CURRENT"
+              ]
+            }
+          ]
+        }
+      },
+      "canonicalText": "{\"readTime\":{\"staleness\":{\"reasons\":[\"BASIS_RESULT_NOT_CURRENT\",\"BASIS_VERIFICATION_NOT_CURRENT\"],\"state\":\"STALE\"}},\"schema\":\"br:public-ranking-snapshot@1\",\"snapshot\":{\"asOf\":\"2027-02-01T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":3,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":1,\"kind\":\"INITIAL\",\"reasons\":[]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-01T12:00:05.000Z\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}}",
+      "digest": "sha256:f1427312805b19a7fb469d3ad4c33cbaba30efa1051c731fa7c26becf2211f07"
+    },
+    {
+      "name": "snapshot/correction-lineage",
+      "kind": "snapshot",
+      "visibility": "PUBLIC",
+      "input": {
+        "card": {
+          "snapshotId": "00000000-0000-4000-8000-000000000068",
+          "snapshotHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "systemId": "00000000-0000-4000-8000-000000000001",
+          "systemCode": "fictional-5k-best",
+          "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+          "systemVersion": 2,
+          "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "PLATFORM",
+          "method": "BEST_MARK",
+          "engineVersion": "ranking-engine/1",
+          "asOf": "2027-02-04T12:00:00.000Z",
+          "publishedAt": "2027-02-04T12:00:05.000Z",
+          "chainPosition": 4,
+          "entryCount": 1,
+          "lineageKind": "CORRECTS",
+          "priorSnapshotId": "00000000-0000-4000-8000-000000000067",
+          "priorSnapshotHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "lineageReasons": [
+            "RESULT_SUPERSEDED"
+          ]
+        },
+        "staleness": {
+          "state": "CURRENT"
+        }
+      },
+      "canonicalText": "{\"readTime\":{\"staleness\":{\"reasons\":[],\"state\":\"CURRENT\"}},\"schema\":\"br:public-ranking-snapshot@1\",\"snapshot\":{\"asOf\":\"2027-02-04T12:00:00.000Z\",\"engineVersion\":\"ranking-engine/1\",\"entryCount\":1,\"kind\":\"PLATFORM\",\"label\":\"Bragging Rights platform ranking\",\"lineage\":{\"chainPosition\":4,\"kind\":\"CORRECTS\",\"priorSnapshotHash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"priorSnapshotId\":\"00000000-0000-4000-8000-000000000067\",\"reasons\":[\"RESULT_SUPERSEDED\"]},\"method\":\"BEST_MARK\",\"publishedAt\":\"2027-02-04T12:00:05.000Z\",\"snapshotHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"snapshotId\":\"00000000-0000-4000-8000-000000000068\",\"system\":{\"code\":\"fictional-5k-best\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"version\":2}}}",
+      "digest": "sha256:eb78dd3d850e998144a1579b7eb0b032b1c98ec947b47c3c47212ab0b2d4eb82"
+    },
+    {
+      "name": "leaderboard/shared-ties-private-and-team",
+      "kind": "leaderboard",
+      "visibility": "PUBLIC",
+      "input": {
+        "snapshotId": "00000000-0000-4000-8000-000000000065",
+        "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "entries": [
+          {
+            "holderType": "ATHLETE",
+            "holderId": "00000000-0000-4000-8000-0000000000c9",
+            "rank": 1,
+            "tied": true,
+            "value": {
+              "metricId": "running.elapsed_time",
+              "value": "900000",
+              "unit": "ms",
+              "precision": 0
+            },
+            "comparatorTrace": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "900000"
+              }
+            ],
+            "basisCount": 2,
+            "display": {
+              "kind": "ATHLETE",
+              "athleteSlug": "fictional-runner-a",
+              "displayName": "Fictional Runner A"
+            }
+          },
+          {
+            "holderType": "ATHLETE",
+            "holderId": "00000000-0000-4000-8000-0000000000ca",
+            "rank": 1,
+            "tied": true,
+            "value": {
+              "metricId": "running.elapsed_time",
+              "value": "900000",
+              "unit": "ms",
+              "precision": 0
+            },
+            "comparatorTrace": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "900000"
+              }
+            ],
+            "basisCount": 1,
+            "display": {
+              "kind": "PRIVATE_ENTRANT"
+            }
+          },
+          {
+            "holderType": "TEAM",
+            "holderId": "00000000-0000-4000-8000-0000000000cb",
+            "rank": 3,
+            "tied": false,
+            "value": {
+              "metricId": "running.elapsed_time",
+              "value": "905000",
+              "unit": "ms",
+              "precision": 0
+            },
+            "comparatorTrace": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "905000"
+              }
+            ],
+            "basisCount": 1,
+            "display": {
+              "kind": "TEAM",
+              "teamName": "Fictional Relay Club"
+            }
+          }
+        ]
+      },
+      "canonicalText": "{\"entries\":[{\"basisCount\":2,\"comparatorTrace\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"900000\"}],\"holder\":{\"display\":{\"athleteSlug\":\"fictional-runner-a\",\"displayName\":\"Fictional Runner A\",\"kind\":\"ATHLETE\"},\"holderType\":\"ATHLETE\"},\"rank\":1,\"tied\":true,\"value\":{\"display\":\"900000 ms\",\"metricId\":\"running.elapsed_time\",\"precision\":0,\"unit\":\"ms\",\"value\":\"900000\"}},{\"basisCount\":1,\"comparatorTrace\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"900000\"}],\"holder\":{\"display\":{\"kind\":\"PRIVATE_ENTRANT\"},\"holderType\":\"ATHLETE\"},\"rank\":1,\"tied\":true,\"value\":{\"display\":\"900000 ms\",\"metricId\":\"running.elapsed_time\",\"precision\":0,\"unit\":\"ms\",\"value\":\"900000\"}},{\"basisCount\":1,\"comparatorTrace\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"905000\"}],\"holder\":{\"display\":{\"kind\":\"TEAM\",\"teamName\":\"Fictional Relay Club\"},\"holderType\":\"TEAM\",\"teamId\":\"00000000-0000-4000-8000-0000000000cb\"},\"rank\":3,\"tied\":false,\"value\":{\"display\":\"905000 ms\",\"metricId\":\"running.elapsed_time\",\"precision\":0,\"unit\":\"ms\",\"value\":\"905000\"}}],\"schema\":\"br:public-ranking-leaderboard@1\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\"}",
+      "digest": "sha256:2bd95a553625e2434a103c665df6c844af28fcc2f1d099d7a8063c08ed3a0f09"
+    },
+    {
+      "name": "leaderboard/page-with-cursor",
+      "kind": "leaderboard",
+      "visibility": "PUBLIC",
+      "input": {
+        "snapshotId": "00000000-0000-4000-8000-000000000065",
+        "snapshotHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "entries": [
+          {
+            "holderType": "ATHLETE",
+            "holderId": "00000000-0000-4000-8000-0000000000c9",
+            "rank": 1,
+            "tied": true,
+            "value": {
+              "metricId": "running.elapsed_time",
+              "value": "900000",
+              "unit": "ms",
+              "precision": 0
+            },
+            "comparatorTrace": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "900000"
+              }
+            ],
+            "basisCount": 2,
+            "display": {
+              "kind": "ATHLETE",
+              "athleteSlug": "fictional-runner-a",
+              "displayName": "Fictional Runner A"
+            }
+          }
+        ],
+        "nextCursor": "MXxBVEhMRVRF"
+      },
+      "canonicalText": "{\"entries\":[{\"basisCount\":2,\"comparatorTrace\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"900000\"}],\"holder\":{\"display\":{\"athleteSlug\":\"fictional-runner-a\",\"displayName\":\"Fictional Runner A\",\"kind\":\"ATHLETE\"},\"holderType\":\"ATHLETE\"},\"rank\":1,\"tied\":true,\"value\":{\"display\":\"900000 ms\",\"metricId\":\"running.elapsed_time\",\"precision\":0,\"unit\":\"ms\",\"value\":\"900000\"}}],\"nextCursor\":\"MXxBVEhMRVRF\",\"schema\":\"br:public-ranking-leaderboard@1\",\"snapshotHash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"snapshotId\":\"00000000-0000-4000-8000-000000000065\"}",
+      "digest": "sha256:76a379bfab16640c7ed1945c8c70ad755151032b84ffe1681014d6c04eb7c411"
+    },
+    {
+      "name": "classification/current",
+      "kind": "classification",
+      "visibility": "PUBLIC",
+      "input": {
+        "card": {
+          "resultVersionId": "00000000-0000-4000-8000-00000000012d",
+          "resultId": "00000000-0000-4000-8000-00000000012e",
+          "scopeType": "COMPETITION_CLASSIFICATION",
+          "scopeTargetId": "00000000-0000-4000-8000-00000000012f",
+          "versionNumber": 1,
+          "contentHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "policyId": "00000000-0000-4000-8000-000000000130",
+          "policyVersionId": "00000000-0000-4000-8000-000000000131",
+          "policySpecHash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+          "engineVersion": "classification-engine/1",
+          "inputsDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "inputCount": 2,
+          "status": "PROVISIONAL",
+          "statusSince": "2027-03-01T10:00:00.000Z",
+          "submittedAt": "2027-03-01T09:00:00.000Z",
+          "entryCount": 3
+        },
+        "staleness": {
+          "state": "CURRENT"
+        }
+      },
+      "canonicalText": "{\"classification\":{\"contentHash\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"entryCount\":3,\"provenance\":{\"available\":true,\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"engineVersion\":\"classification-engine/1\",\"inputCount\":2,\"inputsDigest\":\"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"policy\":{\"policyId\":\"00000000-0000-4000-8000-000000000130\",\"policyVersionId\":\"00000000-0000-4000-8000-000000000131\",\"specHash\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}},\"resultId\":\"00000000-0000-4000-8000-00000000012e\",\"resultVersionId\":\"00000000-0000-4000-8000-00000000012d\",\"scopeTargetId\":\"00000000-0000-4000-8000-00000000012f\",\"scopeType\":\"COMPETITION_CLASSIFICATION\",\"status\":\"PROVISIONAL\",\"statusSince\":\"2027-03-01T10:00:00.000Z\",\"submittedAt\":\"2027-03-01T09:00:00.000Z\",\"versionNumber\":1},\"readTime\":{\"staleness\":{\"reasons\":[],\"state\":\"CURRENT\"}},\"schema\":\"br:public-classification@1\"}",
+      "digest": "sha256:4179be01d2e82c63c02f453b17ffa7e0f22c2ff66c2ef9b416463c99fc242a20"
+    },
+    {
+      "name": "classification/stale-topology-omitted",
+      "kind": "classification",
+      "visibility": "PUBLIC",
+      "input": {
+        "card": {
+          "resultVersionId": "00000000-0000-4000-8000-00000000012d",
+          "resultId": "00000000-0000-4000-8000-00000000012e",
+          "scopeType": "COMPETITION_CLASSIFICATION",
+          "scopeTargetId": "00000000-0000-4000-8000-00000000012f",
+          "versionNumber": 1,
+          "contentHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "policyId": "00000000-0000-4000-8000-000000000130",
+          "policyVersionId": "00000000-0000-4000-8000-000000000131",
+          "policySpecHash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "disciplineVersionId": "00000000-0000-4000-8000-000000000002",
+          "engineVersion": "classification-engine/1",
+          "inputsDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "inputCount": 2,
+          "status": "FINAL",
+          "statusSince": "2027-03-01T10:00:00.000Z",
+          "submittedAt": "2027-03-01T09:00:00.000Z",
+          "entryCount": 3
+        },
+        "staleness": {
+          "state": "STALE",
+          "document": {
+            "classificationVersionId": "00000000-0000-4000-8000-00000000012d",
+            "contentHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "inputsDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "reasons": [
+              "PINNED_INPUT_NOT_CURRENT",
+              "ADMISSIBLE_INPUT_SET_CHANGED"
+            ],
+            "notCurrent": [
+              {
+                "resultVersionId": "00000000-0000-4000-8000-00000000038e",
+                "contentHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+              }
+            ],
+            "added": [
+              {
+                "resultVersionId": "00000000-0000-4000-8000-00000000038f",
+                "contentHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+              }
+            ],
+            "removed": [
+              {
+                "resultVersionId": "00000000-0000-4000-8000-000000000390",
+                "contentHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+              }
+            ]
+          },
+          "staleDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      },
+      "canonicalText": "{\"classification\":{\"contentHash\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"entryCount\":3,\"provenance\":{\"available\":true,\"disciplineVersionId\":\"00000000-0000-4000-8000-000000000002\",\"engineVersion\":\"classification-engine/1\",\"inputCount\":2,\"inputsDigest\":\"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"policy\":{\"policyId\":\"00000000-0000-4000-8000-000000000130\",\"policyVersionId\":\"00000000-0000-4000-8000-000000000131\",\"specHash\":\"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}},\"resultId\":\"00000000-0000-4000-8000-00000000012e\",\"resultVersionId\":\"00000000-0000-4000-8000-00000000012d\",\"scopeTargetId\":\"00000000-0000-4000-8000-00000000012f\",\"scopeType\":\"COMPETITION_CLASSIFICATION\",\"status\":\"FINAL\",\"statusSince\":\"2027-03-01T10:00:00.000Z\",\"submittedAt\":\"2027-03-01T09:00:00.000Z\",\"versionNumber\":1},\"readTime\":{\"staleness\":{\"reasons\":[\"ADMISSIBLE_INPUT_SET_CHANGED\",\"PINNED_INPUT_NOT_CURRENT\"],\"state\":\"STALE\"}},\"schema\":\"br:public-classification@1\"}",
+      "digest": "sha256:1f8d9ffbe542a2f8958b3ab745c365ef964efed9cdc0a2b08e7979d4f3c73b72"
+    },
+    {
+      "name": "classificationEntries/shared-rank",
+      "kind": "classificationEntries",
+      "visibility": "PUBLIC",
+      "input": {
+        "resultVersionId": "00000000-0000-4000-8000-00000000012d",
+        "contentHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "entries": [
+          {
+            "participantId": "00000000-0000-4000-8000-000000000191",
+            "rank": 1,
+            "tied": false,
+            "tieBreakKeys": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "10870"
+              }
+            ],
+            "display": {
+              "kind": "ATHLETE",
+              "athleteSlug": "fictional-sprinter",
+              "displayName": "Fictional Sprinter"
+            }
+          },
+          {
+            "participantId": "00000000-0000-4000-8000-000000000192",
+            "rank": 2,
+            "tied": true,
+            "tieBreakKeys": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "11020"
+              }
+            ],
+            "display": {
+              "kind": "PRIVATE_ENTRANT"
+            }
+          },
+          {
+            "participantId": "00000000-0000-4000-8000-000000000193",
+            "rank": 2,
+            "tied": true,
+            "tieBreakKeys": [
+              {
+                "key": "elapsedTimeMs",
+                "order": "LOWER_IS_BETTER",
+                "value": "11020"
+              }
+            ],
+            "display": {
+              "kind": "TEAM",
+              "teamName": "Fictional Team"
+            }
+          }
+        ]
+      },
+      "canonicalText": "{\"contentHash\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"entries\":[{\"display\":{\"athleteSlug\":\"fictional-sprinter\",\"displayName\":\"Fictional Sprinter\",\"kind\":\"ATHLETE\"},\"participantId\":\"00000000-0000-4000-8000-000000000191\",\"rank\":1,\"tieBreakKeys\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"10870\"}],\"tied\":false},{\"display\":{\"kind\":\"PRIVATE_ENTRANT\"},\"participantId\":\"00000000-0000-4000-8000-000000000192\",\"rank\":2,\"tieBreakKeys\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"11020\"}],\"tied\":true},{\"display\":{\"kind\":\"TEAM\",\"teamName\":\"Fictional Team\"},\"participantId\":\"00000000-0000-4000-8000-000000000193\",\"rank\":2,\"tieBreakKeys\":[{\"key\":\"elapsedTimeMs\",\"order\":\"LOWER_IS_BETTER\",\"value\":\"11020\"}],\"tied\":true}],\"resultVersionId\":\"00000000-0000-4000-8000-00000000012d\",\"schema\":\"br:public-classification-entries@1\"}",
+      "digest": "sha256:9e0ae7de077f4f2003fb4dfc94f496893821205620285f8a2bdbd16e4caf7302"
+    },
+    {
+      "name": "staffRun/blocked-with-blockers",
+      "kind": "staffRun",
+      "visibility": "STAFF",
+      "input": {
+        "card": {
+          "runId": "00000000-0000-4000-8000-0000000001f5",
+          "systemId": "00000000-0000-4000-8000-000000000001",
+          "systemVersionId": "00000000-0000-4000-8000-00000000000a",
+          "systemVersion": 2,
+          "specHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "engineVersion": "ranking-engine/1",
+          "provenance": "CANONICAL_ASSEMBLY",
+          "inputHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "outcomeHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "asOf": "2027-02-01T12:00:00.000Z",
+          "publicationState": "BLOCKED",
+          "publicationReasons": [
+            "NO_RANKED_ENTRIES"
+          ],
+          "entryCount": 0,
+          "candidateCount": 2,
+          "trigger": "UPSTREAM_FACT_CHANGED",
+          "recordedAt": "2027-02-01T12:00:01.000Z"
+        },
+        "candidates": [
+          {
+            "resultVersionId": "00000000-0000-4000-8000-000000000259",
+            "participantId": "00000000-0000-4000-8000-00000000025a",
+            "ordinal": 0,
+            "state": "PENDING_REQUIRED_FACTS",
+            "reasons": [
+              "RESULT_STATUS_BELOW_REQUIRED",
+              "HOLD_STATE_UNAVAILABLE"
+            ]
+          },
+          {
+            "resultVersionId": "00000000-0000-4000-8000-00000000025b",
+            "participantId": "00000000-0000-4000-8000-00000000025c",
+            "ordinal": 0,
+            "state": "PENDING_REQUIRED_FACTS",
+            "reasons": [
+              "VERIFICATION_NOT_EVALUATED",
+              "HOLD_STATE_UNAVAILABLE"
+            ]
+          }
+        ]
+      },
+      "canonicalText": "{\"candidates\":[{\"ordinal\":0,\"participantId\":\"00000000-0000-4000-8000-00000000025a\",\"reasons\":[\"HOLD_STATE_UNAVAILABLE\",\"RESULT_STATUS_BELOW_REQUIRED\"],\"resultVersionId\":\"00000000-0000-4000-8000-000000000259\",\"state\":\"PENDING_REQUIRED_FACTS\"},{\"ordinal\":0,\"participantId\":\"00000000-0000-4000-8000-00000000025c\",\"reasons\":[\"HOLD_STATE_UNAVAILABLE\",\"VERIFICATION_NOT_EVALUATED\"],\"resultVersionId\":\"00000000-0000-4000-8000-00000000025b\",\"state\":\"PENDING_REQUIRED_FACTS\"}],\"run\":{\"asOf\":\"2027-02-01T12:00:00.000Z\",\"candidateCount\":2,\"engineVersion\":\"ranking-engine/1\",\"entryCount\":0,\"inputHash\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"outcomeHash\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"provenance\":\"CANONICAL_ASSEMBLY\",\"publicationReasons\":[\"NO_RANKED_ENTRIES\"],\"publicationState\":\"BLOCKED\",\"recordedAt\":\"2027-02-01T12:00:01.000Z\",\"runId\":\"00000000-0000-4000-8000-0000000001f5\",\"specHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"systemId\":\"00000000-0000-4000-8000-000000000001\",\"systemVersion\":2,\"systemVersionId\":\"00000000-0000-4000-8000-00000000000a\",\"trigger\":\"UPSTREAM_FACT_CHANGED\"},\"schema\":\"br:staff-ranking-run@1\"}",
+      "digest": "sha256:4360bfae82a5209f388aa7ac185c61382291226c631f12c270fc461ebf2af648"
+    },
+    {
+      "name": "error/snapshot-not-found",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "NOT_FOUND",
+            "message": "ranking snapshot not found"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"ranking snapshot not found\"}}",
+      "digest": "sha256:d519d4efdc1db291d22fdd231726068ceaaa17dd7cce0ec4e876eea1860b95ec"
+    },
+    {
+      "name": "error/system-not-found",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "NOT_FOUND",
+            "message": "ranking system not found"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"ranking system not found\"}}",
+      "digest": "sha256:aeebe1e943e597913ff2a21ac703cbf1639f4a4c57d516e6ba16b1d2c63d277a"
+    },
+    {
+      "name": "error/classification-not-found",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "NOT_FOUND",
+            "message": "classification not found"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"classification not found\"}}",
+      "digest": "sha256:4fa0d100e95f743cf3f2863a8b6f671edb42f21b246b75060c6378d8085a58a8"
+    },
+    {
+      "name": "error/proposal-not-found",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "NOT_FOUND",
+            "message": "result version not found"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"result version not found\"}}",
+      "digest": "sha256:7212d21af5ece4d9a3fc1b7aa8417dc74991a5bd807d3878d553462e8b6668e2"
+    },
+    {
+      "name": "error/invalid-cursor",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_INPUT",
+            "message": "invalid cursor"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"invalid cursor\"}}",
+      "digest": "sha256:8c0bf66a2e7b8d608e382c0fec307ebef8719c5e8f4ba45efb067227376df832"
+    },
+    {
+      "name": "error/malformed-snapshot-id",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_INPUT",
+            "message": "params/snapshotId must match format \"uuid\""
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"params/snapshotId must match format \\\"uuid\\\"\"}}",
+      "digest": "sha256:6bd2c6f721409be649a0d02237cfa8ec74629b258e1c18a857ec1bca067faea5"
+    },
+    {
+      "name": "error/projection-mismatch",
+      "kind": "error",
+      "visibility": "ERROR",
+      "input": {
+        "status": 500,
+        "body": {
+          "error": {
+            "code": "RANKING_INTEGRITY_FAILURE",
+            "message": "ranking projection does not match the canonical facts",
+            "reason": "PROJECTION_MISMATCH"
+          }
+        }
+      },
+      "canonicalText": "{\"error\":{\"code\":\"RANKING_INTEGRITY_FAILURE\",\"message\":\"ranking projection does not match the canonical facts\",\"reason\":\"PROJECTION_MISMATCH\"}}",
+      "digest": "sha256:6230dbbf56f6073d7ccdc864be8c31f3cfa4bae4637d59c671982b717f8789fe"
+    }
+  ]
+}

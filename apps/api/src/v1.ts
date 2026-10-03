@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthAdapter } from './auth';
 import { registerAchievementsV1, type AchievementsV1Deps } from './v1-achievements';
 import { registerRecordsV1, type RecordsV1Deps } from './v1-records';
+import { registerRankingsV1, type RankingsV1Deps } from './v1-rankings';
 import { registerCompetitionV1, type CompetitionV1Deps } from './v1-competition';
 import { registerEvidenceV1, type EvidenceV1Deps } from './v1-evidence';
 import { registerVerificationV1, type VerificationV1Deps } from './v1-verification';
@@ -60,6 +61,8 @@ export interface V1Deps {
   readonly achievements?: AchievementsV1Deps;
   /** BRT-09 records & Record Hall of Fame (registered when provided). */
   readonly records?: RecordsV1Deps;
+  /** BRT-10 rankings & classifications read surface (registered when provided). */
+  readonly rankings?: RankingsV1Deps;
 }
 
 /** Shared route-registration toolkit (same auth boundary, DTO strictness and classification). */
@@ -148,7 +151,8 @@ export function errorBody(err: DomainError): {
       err.code === 'VERIFICATION_INTEGRITY_FAILURE' ||
       err.code === 'VERIFICATION_TIME_INCONSISTENT' ||
       err.code === 'ACHIEVEMENT_INTEGRITY_FAILURE' ||
-      err.code === 'RECORD_INTEGRITY_FAILURE') &&
+      err.code === 'RECORD_INTEGRITY_FAILURE' ||
+      err.code === 'RANKING_INTEGRITY_FAILURE') &&
     typeof reason === 'string' &&
     /^[A-Z][A-Z0-9_]{0,39}$/.test(reason);
   // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
@@ -1033,6 +1037,8 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       { route, requireAuth, operator, key },
       { ...deps.records, passports: deps.passports },
     );
+  if (deps.rankings !== undefined)
+    registerRankingsV1({ route, requireAuth, operator, key }, deps.rankings);
 
   return routes;
 }
