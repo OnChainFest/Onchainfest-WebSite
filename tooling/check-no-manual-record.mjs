@@ -10,15 +10,27 @@
 //     objects, record columns added to results / verification tables;
 //   · raw SQL writes into record.* canonical tables outside the validated writers (tests, the
 //     throwaway-DB harness and migrations exempt);
-//   · BRT-10+ leapfrogging in record code and BRT-09 migrations: rankings, ranking points,
-//     qualification, prizes, payouts, trophies / NFTs;
+//   · ranking / qualification / prize leapfrogging in record code and BRT-09 migrations: rankings,
+//     ranking points, qualification, prizes, payouts, trophies / NFTs. BRT-10 now exists, but only
+//     through its own validated writers (tooling/check-no-manual-ranking.mjs) and QUALIFIED only
+//     through the Achievement writer (tooling/check-no-manual-achievement.mjs); record code neither
+//     produces those facts nor consumes them;
+//   · BRT-10 as an alternative record source or side effect: record code never reads ranking.* /
+//     ranking_read.* / achievement.qualification_basis (a record rests on the verified Performance
+//     basis, ADR-0044), never calls a ranking writer or engine (RankingService,
+//     RankingDefinitionStore, persistRankingRun / publishRankingSnapshot, ClassificationStale
+//     emission, evaluateRankingRun / deriveClassification) and never derives QUALIFIED;
 //   · application code (apps/*) importing record fixture lanes: @br/records/fixtures,
 //     @br/persistence/record-lanes, @br/testkit/records — except the demo CLI, whose Part B / Part C
 //     are explicitly labelled reference fixtures (Part C in a throwaway database).
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
-const repo = new URL('../', import.meta.url).pathname;
+// An explicit root (guard tests) or the repository.
+const repo =
+  process.argv[2] === undefined
+    ? new URL('../', import.meta.url).pathname
+    : `${resolve(process.argv[2])}/`;
 const scanDirs = ['packages', 'apps', 'db/migrations'];
 const isTest = /\.(int\.)?test\.ts$/;
 const WRITERS = new Set([
@@ -35,7 +47,12 @@ const code = [
 const recordWrite =
   /INSERT\s+INTO\s+record(_read)?\.(record_mark|mark_status_entry|mark_supersession|mark_dependency|evaluation|mark_member_credit|category|category_version|category_version_status_change|category_card|mark_card|hall_of_fame_entry|athlete_record)\b/i;
 const leapfrog =
-  /\b(RankingUpdated|RankingSnapshot|RankingPoints|QualificationGranted|PrizeEntitlement|PrizePaid|PayoutReleased|TrophyMinted|mintTrophy|mintNft)\b/;
+  /\b(RankingUpdated|RankingSnapshot|RankingSnapshotPublished|RankingPoints|QualificationGranted|PrizeEntitlement|PrizePaid|PayoutReleased|TrophyMinted|mintTrophy|mintNft)\b/;
+// BRT-10 facts are neither a record source nor a record side effect.
+const rankingSource = [
+  /\b(ranking|ranking_read)\.[a-z_]+|\bqualification_basis\b/,
+  /\b(RankingService|RankingDefinitionStore|persistRankingRun|publishRankingSnapshot|emitStale|evaluateRankingRun|deriveClassification|deriveQualification)\b/,
+];
 const fixtureImport =
   /from\s+['"]@br\/(records\/fixtures|persistence\/record-lanes|testkit\/records)['"]/;
 const sqlRules = [
@@ -69,6 +86,8 @@ const walk = (dir) => {
             offenders.push(`${at} raw record write outside the validated writers`);
           if (!test && brt09 && leapfrog.test(line))
             offenders.push(`${at} ranking / qualification / prize / trophy leapfrog`);
+          if (!test && brt09 && rankingSource.some((re) => re.test(line)))
+            offenders.push(`${at} record code uses a ranking / qualification fact or writer`);
           if (!test && rel.startsWith('apps/') && rel !== DEMO && fixtureImport.test(line))
             offenders.push(`${at} application code imports a record fixture lane`);
         });
@@ -92,5 +111,5 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 console.log(
-  'record guard: no manual record path, no isRecord shortcut, no raw record write, no record fixture lane in apps, no ranking/qualification/prize/trophy',
+  'record guard: no manual record path, no isRecord shortcut, no raw record write, no record fixture lane in apps, no ranking/qualification/prize/trophy, no ranking / qualification fact or writer in record code',
 );
