@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–11 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API). Commands and web sections are filled in as the corresponding steps land.
+Status: Steps 1–12 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces). The commands section is filled in with Step 14.
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -19,7 +19,7 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 9 | QUALIFIED (`achievement-engine/3`) + `0027_qualified_achievements` — **implemented** ([qualification](./BRT-10-QUALIFICATION.md); no worker wiring, no API) |
 | 10 | Worker reaction `rankings.react` (emits `ClassificationStale`, evaluates canonical runs) + `0029_ranking_worker_round_read` — **implemented** ([worker](#worker-step-10)) |
 | 11 | API routes (read surface + COMP_STAFF proposal + INTERNAL run read) + `0030_ranking_staff_reader` + API vectors — **implemented** ([API](#api-step-11)) |
-| 12 | Web surfaces |
+| 12 | Web surfaces (public read pages over the Step 11 API) — **implemented** ([web](#web-step-12)) |
 | 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) |
 | 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) |
 | 15 | Integration tests |
@@ -227,6 +227,75 @@ Operator flag at the edge (401 / 403). `RankingStaffReader.run` runs a plain `RE
 - `packages/rankings/src/public.test.ts` — composer determinism, corpus reproduction, staleness reduction, computed labels, private holders.
 - `apps/api/src/rankings.int.test.ts` — canonical lane: route inventory; systems (code / uuid / draft hidden / pages); cursor and limit bounds; empty history; 404 / 400 envelopes; SUBMITTED / REJECTED / REVOKED / `@1` / CONTEST → 404; proposal (staff, stranger 404, closed body, canonical hash, zero writes); CURRENT → STALE classification with no topology and zero writes; projection drift for card, rows, snapshot and leaderboard; INTERNAL run (401 / 403 / 200 / 404, no-store); least privilege (no `br_rankings` / `br_ranking_rules`, staff reader exactly SELECT on two projections, no PUBLIC grant, no ranking INSERT for any `br_api` role); no qualification route; leak scan of bodies and logs. Fixture lane (`br_rkfx_`): fixture snapshots invisible through the production reader; as-published / as-corrected over a real INITIAL → FOLLOWS → CORRECTS → CORRECTS → FOLLOWS lineage; STALE snapshot detail without basis ids; leaderboard ties and paging; snapshot / leaderboard drift. The fixture reader (`rankingFixturePublicReader`) is exported only from `@br/persistence/ranking-lanes`.
 - `packages/persistence/src/security.int.test.ts` — the role graph now includes `br_api → br_ranking_staff_reader`.
+
+## Web (Step 12)
+
+`apps/web` renders the PUBLIC Step 11 routes, and only those. Pages are server components (`force-dynamic`) that call the API through the existing `_lib/api.ts` `getPublic` helper, with no credentials. The web never connects to PostgreSQL and never imports a persistence, ranking or domain package. Dependency direction: web → public `/v1` → `RankingPublicReader` → `public.ts` composer → canonical facts + `ranking_read.*`. The presentation module is `apps/web/app/_lib/ranking.tsx`. Its types mirror the Step 11 DTOs field for field. No staff or INTERNAL route (proposal, run read) is called or linked, and the web has no form, button or mutation control.
+
+### Route matrix
+
+| Web route | API calls | Shows |
+|---|---|---|
+| `/ranking-systems` (`?cursor=`) | `GET /v1/ranking-systems?limit=50` | Public systems: display name, code, kind / label, lifecycle, method, holder type, metric, effective date |
+| `/ranking-systems/[system]` (code; a uuid 308-redirects to the code) | `GET /v1/ranking-systems/:system` | Universe, requirements, version facts, spec hash, links to both history views |
+| `/ranking-systems/[system]/snapshots` (`?view=as-published\|as-corrected`, `?cursor=`) | system + `GET …/snapshots?view=…&limit=50` | Chain position, `asOf`, lineage kind + prior link, `correctedBy` (as-published), `corrects` (as-corrected), reasons, entry count |
+| `/ranking-snapshots/[id]` (`?cursor=`) | `GET /v1/ranking-snapshots/:id` + `GET …/leaderboard?limit=50` | Immutable facts, hashes, lineage, `readTime.staleness`, leaderboard page |
+| `/result-versions/[id]/classification` (`?cursor=`) | `GET /v1/result-versions/:id/classification` + `GET …/classification/entries?limit=50` | `@2` card (status, version, derivation header, hashes), `readTime.staleness`, ranked rows |
+
+The URLs follow the existing conventions. `/records/[id]` and `/record-categories/[code]` mirror their API resources, and slugs are canonicalized like `/competitions/[slug]`. A classification sits next to `/result-versions/[id]/verification` because a classification is a ResultVersion. The home page links `/ranking-systems`. The public DTOs do not map an event or competition to its classification version, so the web does not invent one: a classification is reached by its ResultVersion id.
+
+### Presentation rules
+
+- **Exactly as returned.** Rows are rendered in API order. The web never sorts, re-ranks, breaks a tie or adds a secondary key. A shared rank is shown as the rank plus a "(shared)" marker (1, 1, 3 stays 1, 1, 3), and the page states that the order inside a shared rank has no meaning (ADR-0049). Marks are the API's `value.display` string, and comparator / tie-break values are the trace strings. Nothing is parsed into a JavaScript number.
+- **Snapshot ≠ Result.** The snapshot page says it is an immutable published table, not a sporting result: never attested, verified, disputed or edited. A corrected snapshot stays visible, labelled "corrected by …", with a link. Snapshots are never reached from a classification and never shown as a source for one.
+- **Classification = ResultVersion.** The page is titled by scope type, shows the ledger status (PROVISIONAL / OFFICIAL / FINAL) and the derivation header the DTO carries (engine version, input count, policy spec hash, inputs digest, content hash). Any classification the API does not expose publicly answers 404, including `@1`, SUBMITTED, REJECTED, REVOKED, SUPERSEDED and CONTEST versions. That 404 is the site's normal not-found page; there is no fallback card.
+- **Recognition.** PLATFORM shows the API's computed `label`. OFFICIAL shows "Official ranking system" and states that owner publication is not available (`ownerPublication`). It never shows a platform label or any other recognition claim.
+- **Ids.** Snapshot, prior, corrected-by and corrects ids appear only as links. Hashes are shown because the DTO publishes them deliberately. `participantId` and `teamId` are React keys only and are never printed. A private athlete is "Private entrant" (the existing BRT-05 `Entrant` component).
+
+### Read-time staleness
+
+The web renders `readTime.staleness` as returned: "Current at read time", or "Stale at read time" with each fixed reason code and a fixed plain-language explanation. An unknown code is shown verbatim. The web stores nothing and infers nothing from clocks. It does not recompute staleness, never sees the `affected` / `notCurrent` / `added` / `removed` pins or the staleDigest (the DTO has none), and states that STALE does not mean the stored facts changed.
+
+### Pagination
+
+Forward-only "Next page" / "First page" links carry the API's opaque `nextCursor` unchanged. `limit` is fixed at 50. A malformed `cursor` (not `[A-Za-z0-9_-]{1,400}`, or repeated) is a 404 without an API call. A well-formed cursor the API rejects (400 `invalid cursor`) is also a 404: `getPublic(path, {badRequestIsNotFound: true})`, an opt-in flag, so every existing page still maps a 400 to "unavailable". An invalid cursor is never shown as the first page.
+
+### Error and empty states
+
+These follow the existing web conventions:
+
+- A malformed route parameter (uuid / system ref / view) or an API 404 renders `notFound()`, the shared not-found page that says private, restricted and missing look the same.
+- A network failure, any other non-2xx response, or `RANKING_INTEGRITY_FAILURE` / `PROJECTION_MISMATCH` renders the existing `<Unavailable />`. The error code is not shown, and drifted data is never rendered.
+- Empty states are "No public ranking systems yet." and "No published snapshots yet.". Production holds zero snapshots, so a history page is empty and every snapshot id is a 404. No data is manufactured.
+- Loading: like every existing page, the ranking pages are fully server-rendered per request with no client loading state (no `loading.tsx` exists in the app).
+
+### Tests
+
+`apps/web/app/_tests/rankings.test.tsx` (18 tests, `unit` project). It renders the real page components with `react-dom/server` against a stubbed `fetch` that serves the Step 11 API vector DTOs (`brt-10-api.vectors.json`) verbatim, matched on the exact path and query. Coverage:
+
+- systems list / detail / OFFICIAL vs PLATFORM, uuid → code redirect, empty list;
+- as-published / as-corrected / paged / empty history, invalid view;
+- snapshot facts, CURRENT / STALE / correction lineage, corrected-by banner;
+- leaderboard shared ties (1, 1, 3), private / team holders;
+- cursor pass-through, next / first links, malformed and API-rejected cursors;
+- a deliberately non-monotonic page with odd exact decimals (rendered in API order, byte for byte);
+- classification card + shared-rank rows, STALE reasons, not-public 404;
+- 404 / unavailable / projection-mismatch handling;
+- a leak scan over every rendered surface: no `br_`, SQL, `pg_`, staleDigest, run / account / owner / anchor ids, topology member names, table names or `42501`, no `br:` schema tags, no staff run id, and no id or hash the composer received but dropped from that page's DTOs (e.g. the private athlete's holder id and the stale pins);
+- `getPublic`'s default 400 behaviour unchanged.
+
+To support this, the `unit` project of `vitest.config.ts` now includes `apps/web/app/**/*.test.tsx` and compiles JSX with the automatic runtime (`apps/web` keeps `jsx: preserve` for Next). `_tests` is a private App Router folder, so it is never a route. `_tests/react-dom-server.d.ts` types the one test-only import, because `@types/react-dom` is not a dependency.
+
+### Live verification
+
+Run `pnpm dev:api` against the development database, then `pnpm --filter @br/web build && pnpm --filter @br/web start`. Then check:
+
+- `/ranking-systems` renders the empty state (no ranking system is seeded before Step 14).
+- Unknown and malformed system / snapshot / classification URLs and bad cursors answer 404. A well-formed undecodable cursor reaches the API as 400 and renders 404.
+- The existing pages still answer 200.
+- The rendered HTML and the API / web logs contain none of the leak patterns above.
+
+Populated snapshots and classifications are verified through the vector-driven tests, because production cannot produce a positive RankingSnapshot today (see [Limitations](#limitations)).
 
 ## Fixture lanes
 
