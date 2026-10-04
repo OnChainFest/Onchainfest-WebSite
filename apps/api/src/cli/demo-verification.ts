@@ -31,6 +31,7 @@ import {
 } from '@br/persistence';
 import {
   awaitDbTimePast,
+  brt10ConsequenceFootprint,
   declaredNoParticipation,
   newAthlete,
   newContestResult,
@@ -168,6 +169,7 @@ const count = async (q: string) =>
 try {
   // ═════════════════════════════ PART A — REAL CANONICAL FLOW ═════════════════════════════
   console.log('\n══════ PART A — REAL CANONICAL FLOW (persisted, fictional data) ══════');
+  const brt10Before = await brt10ConsequenceFootprint(owner);
   show('Service health and readiness', {
     health: (await call('GET', '/health')).body,
     ready: (await call('GET', '/ready')).body,
@@ -434,13 +436,19 @@ try {
   );
   const consequences = await count(
     // BRT-08/09: rule / category administration and record-evaluation log events are not
-    // consequences; verification derives none.
-    `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|RecordMark|CurrentRecordChanged|Ranking|Prize|Trophy)'`,
+    // consequences; verification derives none. BRT-10 ranking definition / run events are not
+    // consequences either: rankings are checked by the footprint below.
+    `SELECT count(*)::int AS n FROM platform.outbox_event WHERE event_type ~ '(AchievementDerived|AchievementCurrentStateChanged|RecordMark|CurrentRecordChanged|Prize|Trophy)'`,
   );
-  show('No Achievement / Record / Ranking / Prize / Trophy events exist', {
+  const brt10After = await brt10ConsequenceFootprint(owner);
+  show('No Achievement / Record / Ranking / Prize / Trophy consequence exists', {
     consequenceEvents: consequences,
+    brt10: { before: brt10Before, after: brt10After },
   });
-  check('no consequence events', consequences === 0);
+  check(
+    'no consequence events',
+    consequences === 0 && JSON.stringify(brt10After) === JSON.stringify(brt10Before),
+  );
 
   // ═════════════════ PART B — REFERENCE ENGINE FIXTURES — NOT PERSISTED SPORTING TRUTH ═════════════════
   console.log(`\n══════ PART B — ${FIXTURE_LABEL.toUpperCase()} ══════`);

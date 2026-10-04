@@ -10,7 +10,7 @@
   },
   "type": "module",
   "scripts": {
-    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs && node tooling/check-result-ledger-composition.mjs && node tooling/check-no-manual-verification.mjs && node tooling/check-no-manual-achievement.mjs && node tooling/check-no-manual-record.mjs",
+    "lint": "eslint . --max-warnings=0 && node tooling/check-no-key-material.mjs && node tooling/check-result-ledger-composition.mjs && node tooling/check-no-manual-verification.mjs && node tooling/check-no-manual-achievement.mjs && node tooling/check-no-manual-record.mjs && node tooling/check-no-manual-ranking.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
