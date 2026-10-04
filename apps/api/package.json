@@ -25,6 +25,7 @@
     "kysely": "0.29.6"
   },
   "devDependencies": {
+    "@br/rankings": "workspace:*",
     "@br/testkit": "workspace:*"
   }
 }

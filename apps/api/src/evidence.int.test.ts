@@ -523,10 +523,12 @@ describe('BRT-06 /v1 signing: keys, attestations, retractions, public cards, bun
   });
 
   it('route classification is explicit and non-PUBLIC routes refuse anonymous callers', () => {
-    // BRT-06 routes only (BRT-07 verification routes are classified in verification.int.test.ts).
+    // BRT-06 routes only (BRT-07 verification routes are classified in verification.int.test.ts,
+    // BRT-10 classification routes in rankings.int.test.ts).
     const brt06 = app.v1Routes.filter(
       (r) =>
-        /evidence|attestation|principal|result-versions/.test(r.url) && !/verification/.test(r.url),
+        /evidence|attestation|principal|result-versions/.test(r.url) &&
+        !/verification|classification/.test(r.url),
     );
     expect(brt06.length).toBeGreaterThanOrEqual(18);
     for (const r of brt06)

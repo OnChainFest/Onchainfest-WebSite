@@ -21,6 +21,7 @@ import type { VerificationLevel } from '@br/domain';
 import { sql } from 'kysely';
 import pg from 'pg';
 import { TEST_DATABASE } from './index';
+import { dropThrowawayFixtureDatabase } from './throwaway-database';
 
 /**
  * BRT-10 test logins and the REFERENCE PERSISTENCE FIXTURE lane (persistence foundation, Step 4).
@@ -77,19 +78,9 @@ export async function createRankingFixtureDatabase(): Promise<RankingFixtureData
 }
 
 export async function dropRankingFixtureDatabase(database: string): Promise<void> {
-  if (!RANKING_FIXTURE_DATABASE_PATTERN.test(database))
-    throw new Error(`refusing to drop ${database}: not a throwaway ranking fixture database`);
-  const admin = new pg.Client({ connectionString: databaseUrls().admin });
-  await admin.connect();
-  try {
-    await admin.query(
-      'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
-      [database],
-    );
-    await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(database)}`);
-  } finally {
-    await admin.end();
-  }
+  // Waits for the database's own sessions to close before terminating stragglers (see
+  // dropThrowawayFixtureDatabase): terminating a pool client mid-close is an unhandled 57P01.
+  await dropThrowawayFixtureDatabase(database, RANKING_FIXTURE_DATABASE_PATTERN);
 }
 
 // ───────────────────────────── BRT-10 Step 9: the QUALIFIED fixture lane ─────────────────────────────

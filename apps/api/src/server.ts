@@ -12,6 +12,8 @@ import {
   RecordCategoryStore,
   RecordPublicReader,
   RecordService,
+  RankingPublicReader,
+  RankingStaffReader,
   AttestationPublicReader,
   AttestationStore,
   CatalogStore,
@@ -88,7 +90,7 @@ export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInf
 
 /**
  * API: health/readiness plus the /v1 identity, passport, organization (BRT-04), catalog and
- * competition (BRT-05), evidence and attestation (BRT-06), verification (BRT-07), achievement (BRT-08), record (BRT-09) endpoints.
+ * competition (BRT-05), evidence and attestation (BRT-06), verification (BRT-07), achievement (BRT-08), record (BRT-09), ranking / classification read (BRT-10) endpoints.
  * Logs never include request bodies or the Authorization header.
  */
 export function buildServer(options: ApiOptions): ApiServer {
@@ -222,6 +224,11 @@ export function buildServer(options: ApiOptions): ApiServer {
       ...(options.recordOperatorDb === undefined
         ? {}
         : { categories: new RecordCategoryStore(options.recordOperatorDb) }),
+    },
+    // BRT-10 reads only: no ranking-definition, run, snapshot or classification writer on the API.
+    rankings: {
+      publicReader: new RankingPublicReader(options.db),
+      staffReader: new RankingStaffReader(options.db),
     },
   });
 

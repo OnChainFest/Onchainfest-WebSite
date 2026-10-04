@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–10 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`). Commands, worker, API and web sections are filled in as the corresponding steps land.
+Status: Steps 1–11 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API). Commands and web sections are filled in as the corresponding steps land.
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -18,7 +18,7 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 8 | Read-model projections + rebuild equality — **implemented** (`0028_ranking_read_models`; no CLI, no API, no worker) |
 | 9 | QUALIFIED (`achievement-engine/3`) + `0027_qualified_achievements` — **implemented** ([qualification](./BRT-10-QUALIFICATION.md); no worker wiring, no API) |
 | 10 | Worker reaction `rankings.react` (emits `ClassificationStale`, evaluates canonical runs) + `0029_ranking_worker_round_read` — **implemented** ([worker](#worker-step-10)) |
-| 11 | API routes |
+| 11 | API routes (read surface + COMP_STAFF proposal + INTERNAL run read) + `0030_ranking_staff_reader` + API vectors — **implemented** ([API](#api-step-11)) |
 | 12 | Web surfaces |
 | 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) |
 | 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) |
@@ -41,7 +41,7 @@ Implemented with the persistence foundation (`db/bootstrap/roles.sql`, `database
 - `br_rankings` writes only `ranking.run`, `run_dependency`, `snapshot` and `snapshot_entry`, plus outbox events and audit rows (0026). Since Step 10 it also computes classification staleness and emits `ClassificationStale` (an outbox row; nothing else) for the worker, which can never become `br_results`. It reads the exact result, verification and definition facts it binds to, and the competition path / participants / contest occurrence / DisciplineVersion a run re-assembly needs (0026, mirroring `br_records`). It has no command-idempotency grant: runs and snapshots are idempotent on their natural keys.
 - `br_ranking_rules` writes only the definition tables, plus outbox, command idempotency and audit (0026). It reads catalog facts, the trust-anchor scope, the anchor's validity window and REVOKED facts (an OFFICIAL owner must be currently anchored), and competition ids.
 - `br_results` (the ResultLedger) is the only writer of `results.classification_derivation` / `classification_input`. 0026 gives it column-level read access to the contest → round → event → competition ids and the DisciplineVersion (id, spec, spec hash), so it can re-derive a classification inside T2.
-- `br_api` reaches neither ranking role yet (API: a later step).
+- `br_api` reaches neither ranking role. Since Step 11 it holds the SELECT-only `br_ranking_staff_reader` (`ranking_read.run_card` / `run_candidate` only, migration 0030) for the INTERNAL run read; snapshot staleness is read through the roles it already had (`br_achievements` + `br_verification_reader`, 0027), classification staleness through `br_results`.
 - Development passwords: `BR_RANKING_OPERATOR_PASSWORD` / `BR_RANKING_WORKER_PASSWORD`; dev-only defaults otherwise.
 
 ## Migrations
@@ -59,6 +59,8 @@ Implemented (persistence foundation):
 Every table of 0023–0025 is class A (append-only); provenance is `CANONICAL_ASSEMBLY` only. 0023–0025 are applied (checksum-locked) and never edited. The gap is deliberate (by decision): fresh databases apply 0027 before 0028, while an existing database applies it after, so **0027 references no `ranking_read` object** (an integration test migrates a fresh database through 0027 without 0028, then applies 0028; the achievement guard scans 0027). The runner applies files in order and tolerates the gap.
 
 - `0029_ranking_worker_round_read` (Step 10): **grants only** — `SELECT (id, event_id) ON competition.round TO br_rankings`, the exact column grant `br_results` holds (0026), so the worker login can re-assemble a ROUND_CLASSIFICATION scope when computing its staleness. No table, function, trigger, SECURITY DEFINER, PUBLIC or write grant; independent of 0027 / 0028. 0001–0028 are untouched (the Step 9 migration-boundary test now bounds its 0027 ↔ 0028 check below 0029).
+
+- `0030_ranking_staff_reader` (Step 11): **grants only** — `USAGE ON SCHEMA ranking_read` and `SELECT ON ranking_read.run_card, ranking_read.run_candidate` to the new NOLOGIN role `br_ranking_staff_reader` (created by `roles.sql`, reachable only from `br_api` with `INHERIT FALSE, SET TRUE, ADMIN FALSE`). Nothing else: no canonical table, no definition table, no function (not even `platform.tx_time_ms()`: the staff read runs in a plain transaction), no INSERT / UPDATE / DELETE / TRUNCATE, no PUBLIC grant, no SECURITY DEFINER. 0001–0029 untouched.
 
 - `0027_qualified_achievements` (Step 9): ALTER of the BRT-08 type CHECKs (`QUALIFIED`) + `achievement_qualified_shape`; the append-only link `achievement.qualification_basis` (rank ≤ N CHECK, kind coherence, BR183 binding to the candidate pin and to the stored snapshot entry, BR184 refusal of every canonical QUALIFIED — no target-authority producer —, BR185 completeness and one non-terminal QUALIFIED per rule / holder / target); SELECT-only qualification inputs for `br_achievements` and reference reads for `br_achievement_rules`. 0016–0026 untouched. See [qualification §7](./BRT-10-QUALIFICATION.md#7-persistence-migration-0027).
 
@@ -163,6 +165,68 @@ Test: `pnpm vitest run --project integration packages/persistence/src/rankings-w
 - least privilege and the 0029 grant.
 
 Demonstrate: submit and accept a contest result in a competition that already has a submitted `@2` competition classification, then run the worker once. The log shows `stale checked=1 emitted=1`, and the outbox holds one `ClassificationStale` for that classification version. A second `--once` emits nothing more. A seeded demo command is Step 14.
+
+## API (Step 11)
+
+`apps/api/src/v1-rankings.ts` (routes) → `packages/persistence/src/ranking-api-reader.ts` (`RankingPublicReader`, `RankingStaffReader`) → `packages/rankings/src/public.ts` (pure DTO composition). The API exposes the read model and the Step 7 read semantics; it is not a second ranking model. It writes nothing.
+
+### Route matrix
+
+| Method | Path | Class | Response schema |
+|---|---|---|---|
+| GET | `/v1/ranking-systems` (`cursor`, `limit`) | PUBLIC | `br:public-ranking-system-list@1` |
+| GET | `/v1/ranking-systems/:system` (uuid or code) | PUBLIC | `br:public-ranking-system@1` |
+| GET | `/v1/ranking-systems/:system/snapshots` (`view=as-published\|as-corrected`, `cursor`, `limit`) | PUBLIC | `br:public-ranking-snapshot-history@1` |
+| GET | `/v1/ranking-snapshots/:snapshotId` | PUBLIC | `br:public-ranking-snapshot@1` |
+| GET | `/v1/ranking-snapshots/:snapshotId/leaderboard` (`cursor`, `limit`) | PUBLIC | `br:public-ranking-leaderboard@1` |
+| GET | `/v1/result-versions/:resultVersionId/classification` | PUBLIC | `br:public-classification@1` |
+| GET | `/v1/result-versions/:resultVersionId/classification/entries` (`cursor`, `limit`) | PUBLIC | `br:public-classification-entries@1` |
+| POST | `/v1/result-versions/:resultVersionId/classification-proposals` (body `{}`, closed) | COMP_STAFF | `br:staff-classification-proposal@1` |
+| GET | `/v1/internal/ranking-runs/:runId` | INTERNAL | `br:staff-ranking-run@1` |
+
+There is no other BRT-10 route: no definition administration, run evaluation, snapshot publication, classification submission / replacement or QUALIFIED / qualification route. QUALIFIED stays visible only through the existing `br:public-achievement@1` (`typeLabel` "Qualified (cross-competition)", `context.competition` = the target).
+
+### Public visibility
+
+- **Systems:** a card whose latest version is a DRAFT is not public (the BRT-09 category rule); PUBLISHED and RETIRED are. The label is computed: PLATFORM → "Bragging Rights platform ranking"; OFFICIAL → no label and `ownerPublication: {status: NOT_AVAILABLE, reason: OWNER_PUBLICATION_UNAVAILABLE}` (ADR-0048 §6–7). No owner, anchor or account id.
+- **Snapshots / history / leaderboards:** `CANONICAL_ASSEMBLY` provenance only (fixture rows are never public; production holds zero snapshots, so history is empty and snapshot ids are 404). Snapshot facts: id, hash, system (id, code, version id, version, spec hash), kind, label, method, engine version, `asOf`, `publishedAt`, lineage (kind, prior id / hash, reasons, `chainPosition`, `correctedBy`), `corrects` (as-corrected), `entryCount`. Never run ids / hashes, provenance or basis topology.
+- **Leaderboard rows:** rank, tied, holder (TEAM: `teamId` + team name; ATHLETE: Passport display only — a private athlete is `PRIVATE_ENTRANT`, never identified, not even by id), exact Mark value + display, comparator trace, `basisCount`. Canonical order `(rank, holder type, holder id)`; the order inside a tie carries no meaning.
+- **Classifications:** only `@2` versions (they alone have a card) whose latest status is PROVISIONAL / OFFICIAL / FINAL. SUBMITTED, REJECTED, REVOKED, SUPERSEDED, `@1` and CONTEST versions answer exactly like an unknown id (404 `classification not found`): the public API is not a ResultLedger inspection API. The card shows the derivation header (policy, DisciplineVersion, engine version, `inputsDigest`, `inputCount`), never the derivedFrom pins. Rows: participant id + BRT-05 entrant display, rank, tied, tie-break keys — copied, never re-ranked.
+
+### Read-time staleness (never stored)
+
+Every snapshot / classification response is `{stored facts…, readTime: {staleness: {state: CURRENT | STALE, reasons[]}}}`. It is computed per request, inside ONE `REPEATABLE READ` transaction that also reads the projection rows:
+
+- snapshot: `snapshotStalenessIn` (Step 7, unchanged) under `br_achievements` (SELECT on `ranking.snapshot` since 0027) + `br_verification_reader`, over the canonical content re-hashed against its stored hash. Reasons: `BASIS_RESULT_NOT_CURRENT`, `BASIS_VERIFICATION_NOT_CURRENT`. The `affected` pins are dropped.
+- classification: `readClassificationIn` (Step 7, unchanged) under `br_results`, with the **pinned** policy. Reasons: `PINNED_INPUT_NOT_CURRENT`, `ADMISSIBLE_INPUT_SET_CHANGED`, `ADMISSIBLE_INPUT_SET_UNKNOWN`. The staleness document (`notCurrent` / `added` / `removed`) and the staleDigest are dropped.
+
+There is no second staleness implementation, no `isStale` / `isCurrent` anywhere, and no write.
+
+### Projection drift
+
+In the same transaction each served projection row is compared with the canonical fact: the snapshot card with the canonical snapshot (hash, system version, spec hash, provenance, lineage, entry count, times, kind, method, engine) and its re-hashed content; every leaderboard row with its canonical entry (rank, tied, value, trace, basis count) and the row count; the classification card with the canonical version (status, content hash, schema, scope, derivation header, pin count) and every row with the immutable content. Any difference is `RANKING_INTEGRITY_FAILURE` (500) with `reason: PROJECTION_MISMATCH` (the reason is now in `errorBody`'s fixed-vocabulary allow-list); a canonical snapshot whose content does not re-hash is `SNAPSHOT_HASH_MISMATCH`. Nothing else is disclosed. A rebuild (`br_rebuild`) restores the projection.
+
+### Pagination
+
+Opaque base64url cursors (≤ 400 characters) over the deterministic sort key; `limit` 1–50 (default 20). A cursor must be exactly the encoding of a key of the route's shape — otherwise **400 `INVALID_INPUT` `invalid cursor`**, never the first page (threat review). No offsets, no caller sort, no filter language: unknown query members are rejected by the closed schema.
+
+### COMP_STAFF classification proposal
+
+`POST …/classification-proposals` with a closed empty body. In one `br_results` transaction it resolves the version and its competition path through the SELECT-only `br_verification_reader` (`results.resolve_result_version`, `competition.resolve_scope_path`, `competition.account_competition_roles`), requires `COMP_VIEW_PRIVATE` on that competition (the BRT-07/08/09 staff rule, from database facts, never a caller-supplied competition id), then runs `proposeClassificationIn` (the body of `ResultLedger.proposeClassification`, unchanged) for the version's Result. Unknown and denied are the same 404. It writes nothing (no draft, version, event or audit row) and returns `{schema, resultVersionId, resultId, state, …}` — `PROPOSED` with the outcome and proposed content, `BLOCKED` with blockers, or `UNAVAILABLE` with a reason (e.g. `NOT_A_CLASSIFICATION_RESULT`). A proposal becomes a classification only through the unchanged T2 submission.
+
+### INTERNAL run read
+
+Operator flag at the edge (401 / 403). `RankingStaffReader.run` runs a plain `REPEATABLE READ` transaction under `SET LOCAL ROLE br_ranking_staff_reader` and reads only `run_card` / `run_candidate`: every candidate with its state and sorted blockers (excluded results are visible here, and only here). `cache-control: no-store`. It never evaluates, publishes, re-ranks or writes.
+
+### API vectors
+
+`packages/rankings/test-vectors/brt-10-api.vectors.json` (24 vectors; `pnpm vectors:generate:brt10-api`, checked by `pnpm vectors:check`): literal input → `src/public.ts` DTO → JCS → SHA-256 (no domain tag: a DTO is a response document). Coverage: PLATFORM / OFFICIAL / RETIRED systems, a system page, as-published, as-corrected, a paged and an empty history, CURRENT / STALE / correction-lineage snapshots, leaderboards with shared ties, a private athlete and a team, CURRENT / STALE classifications, classification rows, a staff run, and the exact error envelopes (unknown snapshot / system / classification / proposal, invalid cursor, malformed uuid, projection mismatch). The independent checker `reference/check_brt10_api_vectors.py` rebuilds each DTO from its input, re-derives JCS and the digest, enforces the coverage, and fails on any forbidden member or on any input topology (affected / notCurrent / added / removed ids, staleDigest, private holder id) found in a public DTO. The HTTP tests compare real error responses with these vectors.
+
+### Tests
+
+- `packages/rankings/src/public.test.ts` — composer determinism, corpus reproduction, staleness reduction, computed labels, private holders.
+- `apps/api/src/rankings.int.test.ts` — canonical lane: route inventory; systems (code / uuid / draft hidden / pages); cursor and limit bounds; empty history; 404 / 400 envelopes; SUBMITTED / REJECTED / REVOKED / `@1` / CONTEST → 404; proposal (staff, stranger 404, closed body, canonical hash, zero writes); CURRENT → STALE classification with no topology and zero writes; projection drift for card, rows, snapshot and leaderboard; INTERNAL run (401 / 403 / 200 / 404, no-store); least privilege (no `br_rankings` / `br_ranking_rules`, staff reader exactly SELECT on two projections, no PUBLIC grant, no ranking INSERT for any `br_api` role); no qualification route; leak scan of bodies and logs. Fixture lane (`br_rkfx_`): fixture snapshots invisible through the production reader; as-published / as-corrected over a real INITIAL → FOLLOWS → CORRECTS → CORRECTS → FOLLOWS lineage; STALE snapshot detail without basis ids; leaderboard ties and paging; snapshot / leaderboard drift. The fixture reader (`rankingFixturePublicReader`) is exported only from `@br/persistence/ranking-lanes`.
+- `packages/persistence/src/security.int.test.ts` — the role graph now includes `br_api → br_ranking_staff_reader`.
 
 ## Fixture lanes
 

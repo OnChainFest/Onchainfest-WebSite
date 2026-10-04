@@ -84,6 +84,9 @@ importers:
         specifier: 0.29.6
         version: 0.29.6
     devDependencies:
+      '@br/rankings':
+        specifier: workspace:*
+        version: link:../../packages/rankings
       '@br/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
