@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–12 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces). The commands section is filled in with Step 14.
+Status: Steps 1–13 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces, repository guards). Next: Step 14 (seed + demo). The commands section is filled in with Step 14.
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -20,7 +20,7 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 10 | Worker reaction `rankings.react` (emits `ClassificationStale`, evaluates canonical runs) + `0029_ranking_worker_round_read` — **implemented** ([worker](#worker-step-10)) |
 | 11 | API routes (read surface + COMP_STAFF proposal + INTERNAL run read) + `0030_ranking_staff_reader` + API vectors — **implemented** ([API](#api-step-11)) |
 | 12 | Web surfaces (public read pages over the Step 11 API) — **implemented** ([web](#web-step-12)) |
-| 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) |
+| 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) — **implemented** ([guards](#guards-step-13)) |
 | 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) |
 | 15 | Integration tests |
 | 16 | Acceptance gates |
@@ -296,6 +296,71 @@ Run `pnpm dev:api` against the development database, then `pnpm --filter @br/web
 - The rendered HTML and the API / web logs contain none of the leak patterns above.
 
 Populated snapshots and classifications are verified through the vector-driven tests, because production cannot produce a positive RankingSnapshot today (see [Limitations](#limitations)).
+
+## Guards (Step 13)
+
+`tooling/check-no-manual-ranking.mjs` makes the BRT-10 trust boundary mechanical, like the BRT-07/08/09 guards. It runs last in `pnpm lint` (after the key-material, ResultLedger-composition, verification, achievement and record guards). It scans `packages/`, `apps/` and `db/migrations/`. It skips comment lines and `*.test.ts(x)` / `*.int.test.ts` files, because tests prove these paths are refused. No source file is exempt as a whole: each exception is an explicit file (or directory prefix) per rule.
+
+### What it forbids
+
+| Class | Rule |
+|---|---|
+| Manual ranking / classification | Setters, forcers and publishers by name, declared or called (`setRanking`, `forceRanking`, `overrideRank`, `setStanding`, `updateStandings`, `forcePublish`, `makeOfficial`, `insertSnapshot`, `setSnapshotLineage`, `forceClassification`, …). |
+| Shortcut fields | `isRanked`, `rankingPosition`, `currentRank`, `rankingPoints`, `currentRanking`, `isClassified` and `currentSnapshotId` (and their snake_case forms). Stored staleness or currentness (`isStale`, `isCurrentSnapshot`, … as members). `.ranking` / `.ranked` / `.qualified` members on Results, Performances, Verification, Achievements or holders. |
+| Raw canonical writes | SQL or query-builder writes into `ranking.*`, `ranking_read.*` or `results.classification_*` outside the exact writer and table allowlist below. UPDATE, DELETE and TRUNCATE of class-A `ranking.*` tables are refused everywhere, the writers included. Application code also may not run `ALTER TABLE ranking…` or touch `session_replication_role`. |
+| Publication / runtime bypass | Each writer entry point may be named only by its allowlisted files: `persistRankingRun` / `publishRankingSnapshot`, `RankingService`, `RankingDefinitionStore`, the `refresh*Card` / `rebuildRankingReadModels` projection functions, `emitStale`, `RANKING_FIXTURE_READ_LANE`, and the pure engines `evaluateRankingRun` / `deriveClassification`. Running an engine outside the writers is re-ranking. |
+| Consequence leapfrogging | Ranking code must not reference QUALIFIED derivation (`deriveQualification`, `AchievementService`, `deriveAchievements`, `persistDerivation`, `QualificationGranted`), RecordMark writers, prizes, payouts, trophies, NFTs (`mintTrophy`, `mintNft`, …), `advancement` / seeding / slot resolution, or SQL writes into any non-ranking schema. "Ranking code" is `packages/rankings/src`, `packages/persistence/src/{ranking,classification}-*`, `apps/api/src/v1-rankings.ts` and the web ranking / classification pages. |
+| Fixture-lane leakage | `@br/rankings/fixtures`, `@br/persistence/ranking-lanes` and `@br/testkit/rankings` (and the relative `./fixtures` / `./ranking-lanes` imports) are refused outside tests, `packages/testkit/` and `packages/rankings/scripts/` (vector generation). Naming a `br_rkfx_` database or the ranking fixture overlay is refused there too. No demo exception exists yet; `demo:rankings` is Step 14. |
+| Write surfaces | Any non-GET API route whose path mentions a ranking or classification is refused, except the approved, write-free COMP_STAFF `POST /v1/result-versions/:resultVersionId/classification-proposals`. The web may not import `@br/persistence`, `@br/testkit`, `pg` or `kysely`, and web ranking pages may not send POST / PUT / PATCH / DELETE. |
+| Migrations | No data writes (INSERT / UPDATE / DELETE / TRUNCATE) on ranking or classification tables. Write grants are checked per statement, including `format()`-built grants: `ranking.*` → only `br_ranking_rules` / `br_rankings`, INSERT only (never UPDATE / DELETE / TRUNCATE / ALL); `ranking_read.*` → only the projection writers (`br_ranking_rules`, `br_rankings`, `br_results`, `br_rebuild`); `results.classification_*` → only `br_results`. No rank / standing / qualification / leaderboard column or table outside the ranking schemas, and no `is_current` / `is_stale`-style stored state on ranking tables. No prize / payout / trophy / NFT / mint / settlement / entitlement / advancement / seeding vocabulary in 0023–0030. |
+
+### Canonical writer exceptions (exact files)
+
+| File | May |
+|---|---|
+| `packages/persistence/src/ranking-store.ts` | INSERT `ranking.run`, `run_dependency`, `snapshot`, `snapshot_entry`. Defines `persistRankingRun` / `publishRankingSnapshot` / `RankingService` and runs `evaluateRankingRun`. |
+| `packages/persistence/src/ranking-definition-store.ts` | INSERT the six definition tables (`system`, `system_version`, `system_version_status_change`, `classification_policy`, `classification_policy_version`, `classification_policy_version_status_change`). |
+| `packages/persistence/src/ranking-projection.ts` | Write and TRUNCATE `ranking_read.*`; defines the refresh / rebuild functions. The refresh functions are called only by the writer of the projected fact: `ranking-store.ts`, `ranking-definition-store.ts`, `result-ledger.ts`. |
+| `packages/persistence/src/result-ledger.ts` | INSERT `results.classification_derivation` / `classification_input` (T2) and run `deriveClassification`. |
+| `packages/persistence/src/ranking-worker.ts` | Use `RankingService` (evaluate only) and `emitStale`: the approved worker. `apps/worker` reaches it only through `RankingWorkerService`. |
+| `packages/persistence/src/classification-staleness.ts` | Defines `emitStale`; re-runs `deriveClassification` for staleness. |
+| `packages/persistence/src/ranking-lanes.ts`, `ranking-api-reader.ts`, `index.ts` | The lane re-exports, the fixture read lane, and the package-root exports. |
+| `packages/rankings/src/`, `packages/rankings/scripts/` | The pure engines and the vector generators. |
+
+### Relationship with the achievement and record guards
+
+The ranking guard owns the ranking write boundary everywhere. The two older guards keep every BRT-08 / BRT-09 rule and add the BRT-10 direction for their own code:
+
+- `check-no-manual-achievement.mjs`:
+  - QUALIFIED is derived only through `AchievementService.deriveQualification`. Nothing else may call it, because its event-driven invocation is deferred.
+  - Achievement / QUALIFIED code, including `qualification-loader.ts`, reads the canonical `ranking.*` / classification facts only. It never reads `ranking_read.*` projections (a hidden source of truth), never calls a ranking writer, refresh or `emitStale`, and never writes ranking / classification tables.
+  - `QualificationGranted` and `RankingSnapshotPublished` join the shortcut / leapfrog vocabularies. The 0027 rules are unchanged.
+- `check-no-manual-record.mjs`:
+  - Record code never reads `ranking.*`, `ranking_read.*` or `achievement.qualification_basis` (a record rests on the verified Performance basis, ADR-0044).
+  - It never calls a ranking writer or engine, and never derives QUALIFIED.
+  - Its BRT-10 leapfrog vocabulary now also names `RankingSnapshotPublished`. The 0019–0022 migration rules are unchanged.
+- Both scripts accept an optional root argument, so the guard tests can run them on throwaway trees.
+
+### Demos
+
+BRT-10 schemas exist, so "no ranking schema exists" stopped being evidence. The check also failed: `demo:records` asserted it, and `demo:achievements` / `demo:verification` counted every `Ranking*` event in the database. All three now compare `brt10ConsequenceFootprint` (`@br/testkit`, owner login) before and after Part A. The footprint counts:
+
+- snapshots and their entries;
+- `@2` classification derivations;
+- QUALIFIED Achievements and their qualification links;
+- `RankingSnapshotPublished`, qualification, prize, payout, trophy and mint events;
+- prize, payout, trophy and NFT schemas (none may exist).
+
+Ranking run evaluations are not counted. The approved worker may evaluate runs from any result event (always BLOCKED in production); a published snapshot is the ranking consequence. Each demo's other canonical-flow checks are unchanged.
+
+### Tests
+
+`tooling/guards.test.ts` (unit project; `vitest.config.ts` now includes `tooling/**/*.test.ts`) runs the guard scripts the way lint does:
+
+- the ranking, achievement and record guards on the real repository;
+- the real BRT-10 writers, entry points and migrations copied into a throwaway tree, proving none is flagged (comment lines and test files with forbidden text included);
+- one planted violation per rule class: manual setters / publication, shortcut fields, raw / multi-line / query-builder / TRUNCATE / projection / classification writes, entry-point bypasses, re-ranking, fixture imports and fixture databases, ranking → QUALIFIED / prize / record leapfrogs, a write route, web database access, and the migration rules;
+- the new achievement- and record-guard rules.
 
 ## Fixture lanes
 

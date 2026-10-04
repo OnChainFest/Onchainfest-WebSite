@@ -48,6 +48,7 @@ import {
 } from '@br/persistence/record-lanes';
 import {
   awaitDbTimePast,
+  brt10ConsequenceFootprint,
   declaredNoParticipation,
   newContestResult,
   personSigner,
@@ -153,6 +154,7 @@ const expectThat = (cond: boolean, what: string) => {
 try {
   // ═══════════════════════════════ PART A ═══════════════════════════════
   banner(['PART A — REAL CANONICAL FLOW (development database, real /v1 surface)']);
+  const brt10Before = await brt10ConsequenceFootprint(owner);
   const health = await call(app, 'GET', '/health');
   const ready = await call(app, 'GET', '/ready');
   show('health / readiness', { health: health.body, ready: ready.body });
@@ -402,14 +404,13 @@ try {
     cur.body.status === 'NO_CURRENT_RECORD' && hof.body.items.length === 0,
     'public: no current record, empty Record Hall of Fame for the category',
   );
-  const { rows: brt10 } = await sql<{
-    n: number;
-  }>`SELECT count(*)::int AS n FROM pg_namespace WHERE nspname ~ '(ranking|qualification|prize|trophy|payout)'`.execute(
-    owner,
-  );
+  // BRT-10 schemas exist (0023–0030): the evidence is the footprint of Part A, not a missing schema.
+  const brt10After = await brt10ConsequenceFootprint(owner);
+  show('BRT-10 / consequence footprint of Part A', { before: brt10Before, after: brt10After });
   expectThat(
-    brt10[0]?.n === 0,
-    'no Ranking / Qualification / Prize / Trophy side effect (no such schema exists)',
+    JSON.stringify(brt10After) === JSON.stringify(brt10Before) &&
+      brt10After.consequenceSchemas === 0,
+    'no Ranking / Qualification / Prize / Trophy side effect: Part A created no snapshot, classification, QUALIFIED, qualification link or consequence event (and no prize / trophy / payout schema exists)',
   );
 
   // ═══════════════════════════════ PART B ═══════════════════════════════

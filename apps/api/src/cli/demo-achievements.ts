@@ -41,6 +41,7 @@ import {
 } from '@br/persistence';
 import { persistDerivation, recordSupportAssessment } from '@br/persistence/achievement-lanes';
 import {
+  brt10ConsequenceFootprint,
   declaredNoParticipation,
   newContestResult,
   personSigner,
@@ -141,6 +142,7 @@ const expectThat = (cond: boolean, what: string) => {
 
 try {
   banner(['PART A — REAL CANONICAL FLOW (development database, real /v1 surface)']);
+  const brt10Before = await brt10ConsequenceFootprint(owner);
   const health = await call(app, 'GET', '/health');
   const ready = await call(app, 'GET', '/ready');
   show('health / readiness', { health: health.body, ready: ready.body });
@@ -420,12 +422,14 @@ try {
   );
   const { rows: events } = await sql<{ event_type: string }>`
     SELECT DISTINCT event_type FROM platform.outbox_event
-    WHERE event_type ~* '(recordmark|currentrecordchanged|trophy|prize|ranking|qualif|mint)'`.execute(
-    owner,
-  );
+    WHERE event_type ~* '(recordmark|currentrecordchanged|trophy|prize|mint)'`.execute(owner);
+  expectThat(events.length === 0, 'no RecordMark / Trophy / Prize / Mint consequence event exists');
+  // BRT-10 legitimately emits ranking definition / run events: the evidence is Part A's footprint.
+  const brt10After = await brt10ConsequenceFootprint(owner);
+  show('BRT-10 / consequence footprint of Part A', { before: brt10Before, after: brt10After });
   expectThat(
-    events.length === 0,
-    'no RecordMark / Trophy / Prize / Ranking / Qualification / Mint consequence event exists',
+    JSON.stringify(brt10After) === JSON.stringify(brt10Before),
+    'no Ranking / Qualification side effect: Part A created no snapshot, classification, QUALIFIED, qualification link or consequence event',
   );
 
   // ───────────────────────────── PART B ─────────────────────────────

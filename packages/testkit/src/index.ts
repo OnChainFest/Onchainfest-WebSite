@@ -922,3 +922,42 @@ export async function retryOnClockStep<T>(fn: () => Promise<T>, attempts = 3): P
     }
   }
 }
+
+/** The BRT-10 / consequence facts a non-ranking demo must never create (counted, never sampled). */
+export interface Brt10ConsequenceFootprint {
+  readonly rankingSnapshots: number;
+  readonly rankingSnapshotEntries: number;
+  readonly classificationDerivations: number;
+  readonly qualifiedAchievements: number;
+  readonly qualificationLinks: number;
+  readonly consequenceEvents: number;
+  readonly consequenceSchemas: number;
+}
+
+/**
+ * Demo HARNESS ONLY (owner login): BRT-10 schemas exist since migrations 0023–0030, so "no ranking
+ * schema" is no longer evidence. A demo instead compares this footprint before and after its own
+ * canonical flow: published snapshots and their entries, derived (`@2`) classifications, QUALIFIED
+ * Achievements and their qualification links, snapshot-publication / qualification / prize / payout
+ * / trophy / mint events, and prize / payout / trophy / NFT schemas (none exists). Ranking RUN
+ * evaluations are not counted: the approved worker may legitimately evaluate (always BLOCKED in
+ * production) runs from any result event; a published snapshot is the ranking consequence.
+ */
+export async function brt10ConsequenceFootprint(owner: Db): Promise<Brt10ConsequenceFootprint> {
+  const { rows } = await sql<Brt10ConsequenceFootprint>`
+    SELECT
+      (SELECT count(*) FROM ranking.snapshot)::int AS "rankingSnapshots",
+      (SELECT count(*) FROM ranking.snapshot_entry)::int AS "rankingSnapshotEntries",
+      (SELECT count(*) FROM results.classification_derivation)::int AS "classificationDerivations",
+      (SELECT count(*) FROM achievement.achievement
+        WHERE achievement_type = 'QUALIFIED')::int AS "qualifiedAchievements",
+      (SELECT count(*) FROM achievement.qualification_basis)::int AS "qualificationLinks",
+      (SELECT count(*) FROM platform.outbox_event
+        WHERE event_type = 'RankingSnapshotPublished'
+           OR event_type ~* '(qualif|prize|payout|trophy|mint|nft|entitlement)')::int AS "consequenceEvents",
+      (SELECT count(*) FROM pg_namespace
+        WHERE nspname ~ '(prize|payout|trophy|nft)')::int AS "consequenceSchemas"`.execute(owner);
+  const footprint = rows[0];
+  if (footprint === undefined) throw new Error('BRT-10 footprint query returned no row');
+  return footprint;
+}
