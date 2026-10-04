@@ -90,10 +90,18 @@ export interface PublicOrganization {
 
 export type Fetched<T> = { kind: 'ok'; data: T } | { kind: 'not_found' } | { kind: 'unavailable' };
 
-export async function getPublic<T>(path: string): Promise<Fetched<T>> {
+/**
+ * `badRequestIsNotFound`: for paged reads whose only caller-supplied input is an opaque cursor, a 400
+ * (`invalid cursor`) means "no such page" — shown as not found, never as the first page or an outage.
+ */
+export async function getPublic<T>(
+  path: string,
+  opts: { badRequestIsNotFound?: boolean } = {},
+): Promise<Fetched<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
-    if (res.status === 404) return { kind: 'not_found' };
+    if (res.status === 404 || (res.status === 400 && opts.badRequestIsNotFound === true))
+      return { kind: 'not_found' };
     if (!res.ok) return { kind: 'unavailable' };
     return { kind: 'ok', data: (await res.json()) as T };
   } catch {
