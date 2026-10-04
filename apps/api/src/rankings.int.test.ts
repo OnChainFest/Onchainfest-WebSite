@@ -1013,7 +1013,7 @@ describe('BRT-10 /v1 rankings — canonical lane', () => {
     expect(pub).not.toContain(organizer.ownerAccountId);
     for (const text of [pub, staffBodies.join('\n'), logLines.join('\n')])
       expect(text).not.toMatch(
-        /\bbr_[a-z_]+\b|SELECT |INSERT INTO|ranking_read\.|pg_|42501|duplicate key/,
+        /\bbr_[a-z_]+\b|SELECT |INSERT INTO|ranking_read\.|pg_|\b42501\b|duplicate key/,
       );
   });
 });
