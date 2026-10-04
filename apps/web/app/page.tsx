@@ -21,7 +21,8 @@ export default async function Home() {
         <code>/organizations/&lt;slug&gt;</code>. With the development seed loaded:{' '}
         <a href="/athletes/ana-ficticia">ana-ficticia</a> ·{' '}
         <a href="/organizations/club-ficticio-padel">club-ficticio-padel</a> (fictional data).{' '}
-        <a href="/hall-of-fame">Record Hall of Fame</a>.
+        <a href="/hall-of-fame">Record Hall of Fame</a> ·{' '}
+        <a href="/ranking-systems">Ranking systems</a>.
       </p>
       <p>
         <small>{health}</small>
