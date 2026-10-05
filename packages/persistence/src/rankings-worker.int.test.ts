@@ -9,7 +9,10 @@ import {
   newContestResult,
   operatorDb,
   ownerDb,
+  publishPolicy,
+  retryOnClockStep,
   seedTestCatalog,
+  verificationOperatorDb,
   workerDb,
   type TestCatalog,
 } from '@br/testkit';
@@ -38,6 +41,7 @@ import {
   rankingWorkerTarget,
 } from './ranking-worker';
 import { inTransaction, ModuleRole } from './tx';
+import { VerificationPolicyStore, VerificationService } from './verification-store';
 import { consumeOutbox } from './worker-queue';
 
 /**
@@ -66,8 +70,9 @@ const rw = rankingWorkerDb();
 const op = operatorDb();
 const worker = workerDb();
 const maintenance = maintenanceDb();
+const vop = verificationOperatorDb();
 afterAll(async () => {
-  await Promise.all([api, owner, rop, rw, op, worker, maintenance].map((d) => d.destroy()));
+  await Promise.all([api, owner, rop, rw, op, worker, maintenance, vop].map((d) => d.destroy()));
 });
 
 const identity = new IdentityStore(api);
@@ -791,5 +796,332 @@ describe('canonical ranking runs reacting to candidate fact changes (never publi
           sql`INSERT INTO ${sql.raw(t)} DEFAULT VALUES`.execute(ctx.trx),
         ),
       ).rejects.toMatchObject(DENIED);
+  });
+});
+
+// ═════════════════════════════ Step 15: every consumed producer, first-delivery concurrency, identity ═════════════════════════════
+
+describe('Step 15 — real producers of every consumed event, concurrent FIRST delivery, every identity rule', () => {
+  let systemVersionId: string;
+
+  /** Runs of this describe's own PUBLISHED system version (other systems are never asserted on). */
+  const runsAt = (asOf: Date) => runsOf(systemVersionId, asOf);
+  const runIdsOf = async () =>
+    (
+      await sql<{ id: string }>`
+        SELECT id::text AS id FROM ranking.run WHERE system_version_id = ${systemVersionId}`.execute(
+        owner,
+      )
+    ).rows
+      .map((r) => r.id)
+      .sort();
+  const candidateOf = (
+    run: { outcome: { candidates: { reasons: string[] }[] } },
+    resultVersionId: string,
+  ) =>
+    (
+      run.outcome.candidates as unknown as {
+        resultVersionId: string;
+        state: string;
+        reasons: string[];
+      }[]
+    ).filter((c) => c.resultVersionId === resultVersionId);
+
+  beforeAll(async () => {
+    const { rows } = await sql<{ sport: string }>`
+      SELECT s.code AS sport FROM sports.discipline_version v
+      JOIN sports.discipline d ON d.id = v.discipline_id JOIN sports.sport s ON s.id = d.sport_id
+      WHERE v.id = ${catalog.timedSingles}`.execute(owner);
+    const eff = futureIso(3);
+    const { systemId } = await definitions.createRankingSystem({
+      operatorAccountId: catalog.operatorAccountId,
+      code: `rk-${newId().slice(-12)}`,
+      name: 'Fictional best marks (Step 15)',
+      kind: 'PLATFORM',
+      idempotencyKey: k('rs'),
+    });
+    const v = await definitions.createRankingSystemVersion({
+      operatorAccountId: catalog.operatorAccountId,
+      systemId,
+      spec: rankingSpec({
+        universe: {
+          disciplineVersionId: catalog.timedSingles,
+          metric: { key: 'elapsedTimeMs', markMetricId: 'athletics.100m.time' },
+          resultScope: 'CONTEST',
+          holderType: 'ATHLETE',
+          population: {},
+        },
+        recognition: { level: 'PLATFORM', sport: [rows[0]?.sport as string] },
+        effectiveFrom: eff,
+      }),
+      idempotencyKey: k('rsv'),
+    });
+    await definitions.changeRankingSystemVersionStatus({
+      operatorAccountId: catalog.operatorAccountId,
+      systemVersionId: v.systemVersionId,
+      status: 'PUBLISHED',
+    });
+    systemVersionId = v.systemVersionId;
+    // A real BRT-07 policy bound to this file's DisciplineVersion, so VerificationService produces real
+    // VerificationEvaluated / CurrentVerificationChanged events.
+    await publishPolicy(
+      new VerificationPolicyStore(vop),
+      catalog.operatorAccountId,
+      catalog.timedSingles,
+    );
+    await awaitDbTimePast(api, eff);
+  }, 180_000);
+
+  it('ResultRejected (real T4): a staleness check and a new honest run in which the candidate is RESULT_REJECTED', async () => {
+    const w = await contestWorld({ winnerMs: '10600', loserMs: '10700' }, undefined, false);
+    await reactor.react(await outboxEvent(w.resultVersionId, 'ResultSubmitted'));
+    await ledger.transition({
+      resultVersionId: w.resultVersionId as Uuid,
+      toStatus: 'REJECTED',
+      actorPrincipalId: w.acceptorId as Uuid,
+      scope: await scopeOf('CONTEST', w.contestId),
+      idempotencyKey: k('reject'),
+      reason: 'fixture: duplicate sheet',
+    });
+    const rejected = await outboxEvent(w.resultVersionId, 'ResultRejected');
+    expect(rejected).toMatchObject({
+      aggregateType: 'RESULT_VERSION',
+      aggregateId: w.resultVersionId,
+    });
+    const before = await forbiddenFootprint();
+    const r = await reactor.react(rejected);
+    // Both reactions ran: the staleness side (no classification in this new competition) and a run.
+    expect(r).toMatchObject({
+      eventType: 'ResultRejected',
+      resultVersionId: w.resultVersionId,
+      staleness: { checked: 0, emitted: 0 },
+    });
+    const runs = await runsAt(rejected.occurredAt);
+    expect(runs).toHaveLength(1);
+    const run = runs[0];
+    if (run === undefined) throw new Error('run');
+    expect(run).toMatchObject({
+      trigger: 'UPSTREAM_FACT_CHANGED',
+      publication_state: 'BLOCKED',
+      publication_reasons: ['NO_RANKED_ENTRIES'],
+    });
+    const mine = candidateOf(run, w.resultVersionId);
+    expect(mine.length).toBeGreaterThanOrEqual(1);
+    for (const c of mine) expect(c.reasons).toContain('RESULT_REJECTED');
+    // The run is exactly the canonical re-assembly at the rejection's cutoff.
+    const input = await inTransaction(rw, ModuleRole.rankings, (ctx) =>
+      assembleRankingRunInput(ctx, { systemVersionId, asOf: rejected.occurredAt }),
+    );
+    const h = hashRankingRunInput(input);
+    if (!h.ok) throw new Error('canonical input');
+    expect(run.input_hash).toBe(h.hash);
+    // The rejection itself is the ledger's; the worker changed no result / classification / snapshot.
+    expect(await forbiddenFootprint()).toEqual(before);
+  });
+
+  it('VerificationEvaluated + CurrentVerificationChanged (real BRT-07 run): one cutoff, one run, pinning the verification run', async () => {
+    const w = await contestWorld({ winnerMs: '10610', loserMs: '10710' });
+    const evaluation = await retryOnClockStep(() =>
+      new VerificationService(api).evaluate({
+        actor: { internal: true },
+        resultVersionId: w.resultVersionId,
+      }),
+    );
+    if (evaluation.kind !== 'RUN') throw new Error(`no verification run: ${evaluation.kind}`);
+    const verificationRunId = evaluation.run.runId;
+    const evaluated = await outboxEvent(verificationRunId, 'VerificationEvaluated');
+    const changed = await outboxEvent(w.resultVersionId, 'CurrentVerificationChanged');
+    // The real identities: VERIFICATION_RUN + payload.resultVersionId; RESULT_VERSION (+ equal payload).
+    expect(evaluated).toMatchObject({
+      aggregateType: 'VERIFICATION_RUN',
+      aggregateId: verificationRunId,
+      payload: { resultVersionId: w.resultVersionId },
+    });
+    expect(changed).toMatchObject({
+      aggregateType: 'RESULT_VERSION',
+      aggregateId: w.resultVersionId,
+      payload: { resultVersionId: w.resultVersionId, verificationRunId },
+    });
+    expect(rankingWorkerTarget(evaluated)).toBe(w.resultVersionId);
+    expect(rankingWorkerTarget(changed)).toBe(w.resultVersionId);
+    // Both come from ONE verification transaction: the same occurredAt, hence the same cutoff.
+    expect(changed.occurredAt.getTime()).toBe(evaluated.occurredAt.getTime());
+
+    const before = await forbiddenFootprint();
+    const baseline = await outboxIds();
+    const a = await reactor.react(evaluated);
+    const b = await reactor.react(changed);
+    // Verification events are run triggers, never staleness triggers (no status change).
+    expect(a?.staleness).toEqual({ checked: 0, emitted: 0 });
+    expect(b?.staleness).toEqual({ checked: 0, emitted: 0 });
+    expect(a?.runs.evaluated).toBeGreaterThanOrEqual(1);
+    expect(b?.runs.created).toBe(0); // same cutoff + same facts ⇒ the same run (natural key)
+    const runs = await runsAt(evaluated.occurredAt);
+    expect(runs).toHaveLength(1);
+    const run = runs[0];
+    if (run === undefined) throw new Error('run');
+    // The run re-assembled the NEW verification fact: its dependency index pins that exact BRT-07 run.
+    const { rows: deps } = await sql<{ hash: string }>`
+      SELECT dependency_hash AS hash FROM ranking.run_dependency
+      WHERE run_id = ${run.id} AND dependency_type = 'VERIFICATION_RUN'
+        AND dependency_id = ${verificationRunId}`.execute(owner);
+    expect(deps).toEqual([{ hash: evaluation.run.outcomeHash }]);
+    // Still never publishable: the candidate keeps its exact blockers (no FINAL, no hold state).
+    for (const c of candidateOf(run, w.resultVersionId))
+      expect(c.reasons).toEqual(
+        expect.arrayContaining(['HOLD_STATE_UNAVAILABLE', 'RESULT_STATUS_BELOW_REQUIRED']),
+      );
+    expect(run.publication_state).toBe('BLOCKED');
+    expect(
+      (await emittedSince(baseline))
+        .map((e) => e.event_type)
+        .filter((t) => t !== 'RankingRunEvaluated'),
+    ).toEqual([]);
+    expect(await forbiddenFootprint()).toEqual(before);
+  });
+
+  describe('concurrent FIRST delivery of a never-processed event', () => {
+    let first: Awaited<ReturnType<typeof contestWorld>>;
+    let comp: Awaited<ReturnType<typeof submitClassification>>;
+
+    beforeAll(async () => {
+      await soleBinding('COMPETITION_CLASSIFICATION', 'Fictional competition table (Step 15)');
+      first = await contestWorld({ winnerMs: '10620', loserMs: '10720' });
+      comp = await submitClassification(
+        first,
+        'COMPETITION_CLASSIFICATION',
+        first.competitionId,
+        await scopeOf('COMPETITION', first.competitionId),
+      );
+    }, 300_000);
+    afterAll(async () => {
+      for (const id of await publishedPolicyVersions('COMPETITION_CLASSIFICATION'))
+        await retire(id);
+    });
+
+    it('four concurrent reactions to a fresh event: exactly one ClassificationStale and one run', async () => {
+      const next = await contestWorld(
+        { winnerMs: '10630', loserMs: '10730' },
+        { organizer: first.organizer, competitionId: first.competitionId },
+      );
+      const fresh = await outboxEvent(next.resultVersionId, 'ResultProvisional');
+      expect(await staleEventsOf(comp.versionId)).toEqual([]);
+      expect(await runsAt(fresh.occurredAt)).toEqual([]);
+      const runsBefore = await runIdsOf();
+
+      const outs = await Promise.all([1, 2, 3, 4].map(() => reactor.react(fresh)));
+      // The per-version advisory lock + staleDigest key, and the run natural key, let ONE win each.
+      expect(outs.reduce((n, o) => n + (o?.staleness.emitted ?? 0), 0)).toBe(1);
+      for (const o of outs) expect(o?.staleness.checked).toBe(1);
+      const evaluated = outs[0]?.runs.evaluated ?? 0;
+      expect(evaluated).toBeGreaterThanOrEqual(1);
+      for (const o of outs) expect(o?.runs.evaluated).toBe(evaluated);
+      // One created run per evaluated system version, no matter how many deliveries raced.
+      expect(outs.reduce((n, o) => n + (o?.runs.created ?? 0), 0)).toBe(evaluated);
+      expect(await staleEventsOf(comp.versionId)).toHaveLength(1);
+      expect(await runsAt(fresh.occurredAt)).toHaveLength(1);
+      expect((await runIdsOf()).length).toBe(runsBefore.length + 1);
+    });
+
+    it('four concurrent rounds of the real consumer on a fresh event: delivered once, one effect each', async () => {
+      const next = await contestWorld(
+        { winnerMs: '10640', loserMs: '10740' },
+        { organizer: first.organizer, competitionId: first.competitionId },
+      );
+      const fresh = await outboxEvent(next.resultVersionId, 'ResultProvisional');
+      const staleBefore = (await staleEventsOf(comp.versionId)).length;
+      const consumer = `${RANKING_WORKER_CONSUMER}.test-${newId()}`;
+      const reactions: Awaited<ReturnType<RankingWorkerService['react']>>[] = [];
+      const roundOf = () =>
+        consumeOutbox(
+          worker,
+          consumer,
+          async (event) => {
+            if (event.eventId !== fresh.eventId) return;
+            reactions.push(await reactor.react(event));
+          },
+          100_000,
+        );
+      await Promise.all([1, 2, 3, 4].map(roundOf));
+      await roundOf();
+      expect(reactions).toHaveLength(1);
+      expect(reactions[0]).toMatchObject({ staleness: { checked: 1, emitted: 1 } });
+      expect(reactions[0]?.runs.created).toBe(reactions[0]?.runs.evaluated);
+      expect(await staleEventsOf(comp.versionId)).toHaveLength(staleBefore + 1);
+      expect(await runsAt(fresh.occurredAt)).toHaveLength(1);
+    });
+  });
+
+  it('every established identity rule, for every consumed type: acknowledged as invalid, no effect at all', async () => {
+    const synthetic = (
+      eventType: string,
+      aggregateType: string,
+      aggregateId: string,
+      payload: Record<string, unknown> = {},
+      occurredAt: unknown = new Date(),
+    ) =>
+      ({
+        eventId: newId(),
+        eventType,
+        eventVersion: 1,
+        aggregateType,
+        aggregateId,
+        occurredAt,
+        payload,
+      }) as unknown as DomainEvent;
+    const invalid: DomainEvent[] = [];
+    for (const t of [
+      'ResultSubmitted',
+      'ResultProvisional',
+      'ResultRejected',
+      'CurrentVerificationChanged',
+    ]) {
+      const rv = newId();
+      invalid.push(
+        synthetic(t, 'RESULT', rv), // wrong aggregate type
+        synthetic(t, 'VERIFICATION_RUN', rv, { resultVersionId: rv }), // wrong aggregate type
+        synthetic(t, 'RESULT_VERSION', 'not-a-uuid'), // non-UUID aggregate id
+        synthetic(t, 'RESULT_VERSION', rv.toUpperCase()), // not the canonical lower-case UUID
+        synthetic(t, 'RESULT_VERSION', rv, { resultVersionId: newId() }), // payload id mismatch
+        synthetic(t, 'RESULT_VERSION', rv, { resultVersionId: 42 }), // payload id of another type
+        synthetic(t, 'RESULT_VERSION', rv, {}, new Date(NaN)), // invalid event time
+        synthetic(t, 'RESULT_VERSION', rv, {}, new Date().toISOString()), // time that is not a Date
+      );
+    }
+    const rv = newId();
+    invalid.push(
+      synthetic('VerificationEvaluated', 'RESULT_VERSION', rv, { resultVersionId: rv }),
+      synthetic('VerificationEvaluated', 'VERIFICATION_RUN', newId()), // no payload id
+      synthetic('VerificationEvaluated', 'VERIFICATION_RUN', newId(), { resultVersionId: 'x' }),
+      synthetic('VerificationEvaluated', 'VERIFICATION_RUN', newId(), { resultVersionId: 7 }),
+      synthetic(
+        'VerificationEvaluated',
+        'VERIFICATION_RUN',
+        newId(),
+        { resultVersionId: rv },
+        new Date(NaN),
+      ),
+      synthetic(
+        'VerificationEvaluated',
+        'VERIFICATION_RUN',
+        newId(),
+        { resultVersionId: rv },
+        new Date().toISOString(),
+      ),
+    );
+    const baseline = await outboxIds();
+    const before = await forbiddenFootprint();
+    const runsBefore = await runIdsOf();
+    for (const e of invalid)
+      expect(await reactor.react(e), `${e.eventType} ${e.aggregateType}`).toEqual({
+        eventId: e.eventId,
+        eventType: e.eventType,
+        invalid: 'INVALID_EVENT_IDENTITY',
+        staleness: { checked: 0, emitted: 0 },
+        runs: { evaluated: 0, created: 0 },
+      });
+    expect(await emittedSince(baseline)).toEqual([]);
+    expect(await forbiddenFootprint()).toEqual(before);
+    expect(await runIdsOf()).toEqual(runsBefore);
   });
 });
