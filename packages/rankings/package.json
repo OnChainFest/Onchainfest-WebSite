@@ -1,0 +1,26 @@
+{
+  "name": "@br/rankings",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-10 Rankings & Classifications (pure; no database, network, filesystem, clock, randomness or environment): immutable declarative RankingSystemVersions and ClassificationPolicies with BRT-01 platform floors, the BEST_MARK ranking vocabulary over the verified Performance basis, competition-style shared ties, immutable RankingSnapshot content and the QUALIFIED qualification basis. Never a manual ranking.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/achievements": "workspace:*",
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/competition": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/records": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}

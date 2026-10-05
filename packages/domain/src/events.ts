@@ -1,0 +1,203 @@
+import type { Uuid } from './ids';
+import type { Instant } from './time';
+
+export const DomainEventType = {
+  ResultCreated: 'ResultCreated',
+  ResultSubmitted: 'ResultSubmitted',
+  ResultProvisional: 'ResultProvisional',
+  ResultRejected: 'ResultRejected',
+  PrincipalRegistered: 'PrincipalRegistered',
+  PrincipalKeyRegistered: 'PrincipalKeyRegistered',
+  PrincipalKeyStatusChanged: 'PrincipalKeyStatusChanged',
+  TrustAnchorRecognized: 'TrustAnchorRecognized',
+  TrustAnchorChanged: 'TrustAnchorChanged',
+  AuthorityGrantIssued: 'AuthorityGrantIssued',
+  AuthorityGrantRevoked: 'AuthorityGrantRevoked',
+  // BRT-04 identity / organizations (payloads: ids and public-safe statuses only — never PII)
+  AccountCreated: 'AccountCreated',
+  AccountDisabled: 'AccountDisabled',
+  PersonCreated: 'PersonCreated',
+  AthleteCreated: 'AthleteCreated',
+  AthleteProfileUpdated: 'AthleteProfileUpdated',
+  AthleteSlugChanged: 'AthleteSlugChanged',
+  OrganizationCreated: 'OrganizationCreated',
+  OrganizationProfileUpdated: 'OrganizationProfileUpdated',
+  MembershipInvited: 'MembershipInvited',
+  MembershipActivated: 'MembershipActivated',
+  MembershipDeclined: 'MembershipDeclined',
+  MembershipEnded: 'MembershipEnded',
+  GuardianRelationshipAsserted: 'GuardianRelationshipAsserted',
+  GuardianRelationshipActivated: 'GuardianRelationshipActivated',
+  GuardianRelationshipRevoked: 'GuardianRelationshipRevoked',
+  WalletLinkActivated: 'WalletLinkActivated',
+  WalletLinkRevoked: 'WalletLinkRevoked',
+  ExternalIdentityLinked: 'ExternalIdentityLinked',
+  ExternalIdentityConfirmed: 'ExternalIdentityConfirmed',
+  ExternalIdentityRevoked: 'ExternalIdentityRevoked',
+  // BRT-05 sport catalog (operator)
+  SportCreated: 'SportCreated',
+  DisciplineCreated: 'DisciplineCreated',
+  DisciplineVersionCreated: 'DisciplineVersionCreated',
+  DisciplineVersionPublished: 'DisciplineVersionPublished',
+  DisciplineVersionRetired: 'DisciplineVersionRetired',
+  FormatTemplateCreated: 'FormatTemplateCreated',
+  FormatVersionCreated: 'FormatVersionCreated',
+  FormatVersionPublished: 'FormatVersionPublished',
+  FormatVersionRetired: 'FormatVersionRetired',
+  // BRT-05 competition operations (operational facts only — never results/verification)
+  CompetitionCreated: 'CompetitionCreated',
+  CompetitionPublished: 'CompetitionPublished',
+  CompetitionStatusChanged: 'CompetitionStatusChanged',
+  CompetitionStaffAssigned: 'CompetitionStaffAssigned',
+  CompetitionStaffEnded: 'CompetitionStaffEnded',
+  EventCreated: 'EventCreated',
+  EventStatusChanged: 'EventStatusChanged',
+  RegistrationOpened: 'RegistrationOpened',
+  RegistrationClosed: 'RegistrationClosed',
+  RegistrationRequested: 'RegistrationRequested',
+  RegistrationConfirmed: 'RegistrationConfirmed',
+  RegistrationWaitlisted: 'RegistrationWaitlisted',
+  RegistrationDeclined: 'RegistrationDeclined',
+  RegistrationWithdrawn: 'RegistrationWithdrawn',
+  RegistrationCancelled: 'RegistrationCancelled',
+  EventFieldLocked: 'EventFieldLocked',
+  ParticipantsMaterialized: 'ParticipantsMaterialized',
+  ParticipantWithdrawn: 'ParticipantWithdrawn',
+  ParticipantDisqualified: 'ParticipantDisqualified',
+  EventSeeded: 'EventSeeded',
+  EventPlanGenerated: 'EventPlanGenerated',
+  TeamCreated: 'TeamCreated',
+  TeamMembershipProposed: 'TeamMembershipProposed',
+  TeamMembershipActivated: 'TeamMembershipActivated',
+  TeamMembershipDeclined: 'TeamMembershipDeclined',
+  TeamMembershipEnded: 'TeamMembershipEnded',
+  ContestScheduled: 'ContestScheduled',
+  ContestStarted: 'ContestStarted',
+  ContestCompleted: 'ContestCompleted',
+  ContestCancelled: 'ContestCancelled',
+  ContestVoided: 'ContestVoided',
+  LineupSubmitted: 'LineupSubmitted',
+  // BRT-06 evidence & attestation (ids, hashes, statuses only — never bytes, paths, keys or PII;
+  // never a verification, achievement, record or prize outcome)
+  EvidenceAdded: 'EvidenceAdded',
+  EvidenceAttached: 'EvidenceAttached',
+  EvidenceDerived: 'EvidenceDerived',
+  EvidenceAvailabilityChanged: 'EvidenceAvailabilityChanged',
+  EvidencePrivacyRaised: 'EvidencePrivacyRaised',
+  AttestationIssued: 'AttestationIssued',
+  AttestationRetracted: 'AttestationRetracted',
+  AttestationSuperseded: 'AttestationSuperseded',
+  PersonPrincipalMapped: 'PersonPrincipalMapped',
+  // BRT-07 verification (ids, hashes, levels, statuses only — never PII, evidence or authority
+  // topology; never an achievement, record, ranking, prize or trophy outcome)
+  VerificationPolicyCreated: 'VerificationPolicyCreated',
+  VerificationPolicyVersionCreated: 'VerificationPolicyVersionCreated',
+  VerificationPolicyVersionPublished: 'VerificationPolicyVersionPublished',
+  VerificationPolicyVersionRetired: 'VerificationPolicyVersionRetired',
+  VerificationPolicyBound: 'VerificationPolicyBound',
+  VerificationEvaluated: 'VerificationEvaluated',
+  CurrentVerificationChanged: 'CurrentVerificationChanged',
+  // BRT-08 achievements (ids, hashes, types, statuses only — never PII or evidence; never a record,
+  // ranking, prize, trophy or qualification outcome)
+  AchievementRuleCreated: 'AchievementRuleCreated',
+  AchievementRuleVersionCreated: 'AchievementRuleVersionCreated',
+  AchievementRuleVersionPublished: 'AchievementRuleVersionPublished',
+  AchievementRuleVersionRetired: 'AchievementRuleVersionRetired',
+  AchievementRuleBound: 'AchievementRuleBound',
+  AchievementDerived: 'AchievementDerived',
+  AchievementCurrentStateChanged: 'AchievementCurrentStateChanged',
+  // BRT-09 records (ids, hashes, statuses, values only — never PII, evidence or authority topology;
+  // never a ranking, qualification, prize, payout or trophy outcome)
+  RecordCategoryCreated: 'RecordCategoryCreated',
+  RecordCategoryVersionCreated: 'RecordCategoryVersionCreated',
+  RecordCategoryVersionPublished: 'RecordCategoryVersionPublished',
+  RecordCategoryVersionRetired: 'RecordCategoryVersionRetired',
+  RecordCandidateEvaluated: 'RecordCandidateEvaluated',
+  RecordMarkPendingRatification: 'RecordMarkPendingRatification',
+  RecordMarkRatified: 'RecordMarkRatified',
+  RecordMarkCanonicalized: 'RecordMarkCanonicalized',
+  RecordMarkSuperseded: 'RecordMarkSuperseded',
+  RecordMarkRestored: 'RecordMarkRestored',
+  RecordMarkRescinded: 'RecordMarkRescinded',
+  CurrentRecordChanged: 'CurrentRecordChanged',
+  // BRT-10 classification policies / rankings (ids, hashes, statuses only — never PII; a ranking is
+  // never a ResultVersion, a qualification, a prize or a trophy). A classification itself is a
+  // ResultVersion and emits the normal ResultSubmitted / ResultProvisional events.
+  ClassificationPolicyCreated: 'ClassificationPolicyCreated',
+  ClassificationPolicyVersionCreated: 'ClassificationPolicyVersionCreated',
+  ClassificationPolicyVersionPublished: 'ClassificationPolicyVersionPublished',
+  ClassificationPolicyVersionRetired: 'ClassificationPolicyVersionRetired',
+  RankingSystemCreated: 'RankingSystemCreated',
+  RankingSystemVersionCreated: 'RankingSystemVersionCreated',
+  RankingSystemVersionPublished: 'RankingSystemVersionPublished',
+  RankingSystemVersionRetired: 'RankingSystemVersionRetired',
+  RankingRunEvaluated: 'RankingRunEvaluated',
+  RankingSnapshotPublished: 'RankingSnapshotPublished',
+  // A classification ResultVersion's pins are no longer current, or its admissible input set changed
+  // (ADR-0047 §5). Computed, never stored; idempotent per (classification version, staleDigest).
+  ClassificationStale: 'ClassificationStale',
+} as const;
+export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];
+
+export const AggregateType = {
+  RESULT: 'RESULT',
+  RESULT_VERSION: 'RESULT_VERSION',
+  PRINCIPAL: 'PRINCIPAL',
+  PRINCIPAL_KEY: 'PRINCIPAL_KEY',
+  TRUST_ANCHOR: 'TRUST_ANCHOR',
+  AUTHORITY_GRANT: 'AUTHORITY_GRANT',
+  ACCOUNT: 'ACCOUNT',
+  PERSON: 'PERSON',
+  ATHLETE: 'ATHLETE',
+  ORGANIZATION: 'ORGANIZATION',
+  MEMBERSHIP: 'MEMBERSHIP',
+  GUARDIAN_RELATIONSHIP: 'GUARDIAN_RELATIONSHIP',
+  WALLET_LINK: 'WALLET_LINK',
+  EXTERNAL_IDENTITY: 'EXTERNAL_IDENTITY',
+  SPORT: 'SPORT',
+  DISCIPLINE: 'DISCIPLINE',
+  DISCIPLINE_VERSION: 'DISCIPLINE_VERSION',
+  FORMAT_TEMPLATE: 'FORMAT_TEMPLATE',
+  FORMAT_VERSION: 'FORMAT_VERSION',
+  COMPETITION: 'COMPETITION',
+  EVENT: 'EVENT',
+  REGISTRATION: 'REGISTRATION',
+  PARTICIPANT: 'PARTICIPANT',
+  TEAM: 'TEAM',
+  TEAM_MEMBERSHIP: 'TEAM_MEMBERSHIP',
+  CONTEST: 'CONTEST',
+  EVIDENCE_ITEM: 'EVIDENCE_ITEM',
+  ATTESTATION: 'ATTESTATION',
+  VERIFICATION_POLICY: 'VERIFICATION_POLICY',
+  VERIFICATION_POLICY_VERSION: 'VERIFICATION_POLICY_VERSION',
+  VERIFICATION_RUN: 'VERIFICATION_RUN',
+  ACHIEVEMENT_RULE: 'ACHIEVEMENT_RULE',
+  ACHIEVEMENT_RULE_VERSION: 'ACHIEVEMENT_RULE_VERSION',
+  ACHIEVEMENT: 'ACHIEVEMENT',
+  RECORD_CATEGORY: 'RECORD_CATEGORY',
+  RECORD_CATEGORY_VERSION: 'RECORD_CATEGORY_VERSION',
+  RECORD_MARK: 'RECORD_MARK',
+  CLASSIFICATION_POLICY: 'CLASSIFICATION_POLICY',
+  CLASSIFICATION_POLICY_VERSION: 'CLASSIFICATION_POLICY_VERSION',
+  RANKING_SYSTEM: 'RANKING_SYSTEM',
+  RANKING_SYSTEM_VERSION: 'RANKING_SYSTEM_VERSION',
+  RANKING_RUN: 'RANKING_RUN',
+  RANKING_SNAPSHOT: 'RANKING_SNAPSHOT',
+} as const;
+export type AggregateType = (typeof AggregateType)[keyof typeof AggregateType];
+
+/** BRT-02 system architecture §11.2. Payloads carry ids, hashes and statuses — never PII. */
+export interface DomainEvent<
+  P extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
+> {
+  readonly eventId: Uuid;
+  readonly eventType: DomainEventType;
+  readonly eventVersion: number;
+  readonly aggregateType: AggregateType;
+  readonly aggregateId: Uuid;
+  readonly occurredAt: Instant;
+  readonly causationId?: string;
+  readonly correlationId?: string;
+  readonly actorPrincipalId?: Uuid;
+  readonly payload: P;
+}
