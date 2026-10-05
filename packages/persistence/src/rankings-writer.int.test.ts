@@ -844,6 +844,225 @@ describe('ranking system definitions: immutable versions, lifecycle, owner bindi
 
 // ═════════════════════════════ canonical ranking runs (br_ranking_worker_app → br_rankings) ═════════════════════════════
 
+// ═════════════════════════════ Step 15: definitions against the real catalog; command idempotency ═════════════════════════════
+
+describe('Step 15 — definitions are validated against the exact catalog facts; commands are idempotent', () => {
+  /** Every row, event and audit entry a ranking-system definition command can write. */
+  const definitionFootprint = async () =>
+    (
+      await sql<Record<string, number>>`
+        SELECT (SELECT count(*) FROM ranking.system)::int AS systems,
+               (SELECT count(*) FROM ranking.system_version)::int AS versions,
+               (SELECT count(*) FROM ranking.system_version_status_change)::int AS transitions,
+               (SELECT count(*) FROM ranking_read.system_card)::int AS cards,
+               (SELECT count(*) FROM platform.outbox_event WHERE event_type LIKE 'RankingSystem%')::int AS events,
+               (SELECT count(*) FROM platform.audit_event WHERE action LIKE 'ranking.system%')::int AS audits,
+               (SELECT count(*) FROM platform.command_idempotency
+                 WHERE command_type LIKE 'Create%Ranking%')::int AS commands`.execute(owner)
+    ).rows[0];
+  const refusedWith = (p: Promise<unknown>, code: string) =>
+    expect(p).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+      details: { issues: expect.arrayContaining([expect.objectContaining({ code })]) },
+    });
+
+  it('a spec is refused against the REAL DisciplineVersion / competition facts, and a refusal writes nothing', async () => {
+    const { systemId } = await definitions.createRankingSystem({
+      operatorAccountId: catalog.operatorAccountId,
+      code: `rk-${newId().slice(-12)}`,
+      name: 'Fictional best marks',
+      kind: 'PLATFORM',
+      idempotencyKey: k('rs'),
+    });
+    // A DRAFT DisciplineVersion of the same sport (never published).
+    const { rows } = await sql<{ sport_id: string }>`
+      SELECT d.sport_id::text FROM sports.discipline_version v JOIN sports.discipline d ON d.id = v.discipline_id
+      WHERE v.id = ${catalog.timedSingles}`.execute(owner);
+    const catalogStore = new CatalogStore(op);
+    const { disciplineId } = await catalogStore.createDiscipline({
+      operatorAccountId: catalog.operatorAccountId,
+      sportId: rows[0]?.sport_id as string,
+      code: `${codes.sport}.draft${newId().replace(/-/g, '').slice(-8)}`,
+      name: 'Fictional draft discipline',
+      idempotencyKey: k('disc'),
+    });
+    const { rows: dvSpec } = await sql<{ spec: unknown }>`
+      SELECT spec FROM sports.discipline_version WHERE id = ${catalog.timedSingles}`.execute(owner);
+    const { disciplineVersionId: draftDv } = await catalogStore.createDisciplineVersion({
+      operatorAccountId: catalog.operatorAccountId,
+      disciplineId,
+      spec: dvSpec[0]?.spec as Parameters<CatalogStore['createDisciplineVersion']>[0]['spec'],
+      idempotencyKey: k('dv'),
+    });
+
+    const base = systemSpec({ effectiveFrom: futureIso(120) }) as {
+      universe: Record<string, unknown> & { metric: Record<string, unknown> };
+      comparator: { keys: Record<string, unknown>[] };
+    };
+    const variant = (o: {
+      universe?: Record<string, unknown>;
+      metric?: Record<string, unknown>;
+      key?: Record<string, unknown>;
+      displayName?: string;
+    }) => ({
+      ...base,
+      ...(o.displayName === undefined ? {} : { displayName: o.displayName }),
+      universe: {
+        ...base.universe,
+        ...(o.universe ?? {}),
+        metric: { ...base.universe.metric, ...(o.metric ?? {}) },
+      },
+      comparator: { keys: [{ ...base.comparator.keys[0], ...(o.key ?? {}) }] },
+    });
+    const version = (spec: unknown) =>
+      definitions.createRankingSystemVersion({
+        operatorAccountId: catalog.operatorAccountId,
+        systemId,
+        spec,
+        idempotencyKey: k('rsv'),
+      });
+
+    const before = await definitionFootprint();
+    await refusedWith(
+      version(variant({ universe: { disciplineVersionId: newId() } })),
+      'DISCIPLINE_VERSION_UNKNOWN',
+    );
+    await refusedWith(
+      version(variant({ universe: { disciplineVersionId: draftDv } })),
+      'DISCIPLINE_VERSION_NOT_PUBLISHED',
+    );
+    await refusedWith(
+      version(variant({ key: { order: 'HIGHER_IS_BETTER' } })),
+      'COMPARATOR_MISMATCH',
+    );
+    await refusedWith(
+      version(variant({ metric: { key: 'distanceM' }, key: { metric: 'distanceM' } })),
+      'METRIC_UNKNOWN',
+    );
+    await refusedWith(
+      version(variant({ universe: { competitionIds: [newId()] } })),
+      'COMPETITION_UNKNOWN',
+    );
+    await refusedWith(
+      version(variant({ displayName: 'Fictional national best marks' })),
+      'DISPLAY_NAME_CLAIMS_RECOGNITION',
+    );
+    // The free-text system name obeys the same rule (refused before any transaction).
+    await refusedWith(
+      definitions.createRankingSystem({
+        operatorAccountId: catalog.operatorAccountId,
+        code: `rk-${newId().slice(-12)}`,
+        name: 'Fictional Official Rankings',
+        kind: 'PLATFORM',
+        idempotencyKey: k('rs'),
+      }),
+      'DISPLAY_NAME_CLAIMS_RECOGNITION',
+    );
+    // No row, projection, event, audit entry or idempotency record was written by any refusal.
+    expect(await definitionFootprint()).toEqual(before);
+    // The control: the unmodified spec is accepted against the same facts.
+    await expect(version(base)).resolves.toMatchObject({ version: 1, created: true });
+  });
+
+  it('command idempotency: a replay returns the first response and writes nothing; a reused key is refused', async () => {
+    const code = `rk-${newId().slice(-12)}`;
+    const cmd = {
+      operatorAccountId: catalog.operatorAccountId,
+      code,
+      name: 'Fictional best marks',
+      kind: 'PLATFORM',
+      idempotencyKey: k('rs'),
+    };
+    const first = await definitions.createRankingSystem(cmd);
+    expect(first.created).toBe(true);
+    const spec = systemSpec({ effectiveFrom: futureIso(120) });
+    const vcmd = {
+      operatorAccountId: catalog.operatorAccountId,
+      systemId: first.systemId,
+      spec,
+      idempotencyKey: k('rsv'),
+    };
+    const v1 = await definitions.createRankingSystemVersion(vcmd);
+    const publish = {
+      operatorAccountId: catalog.operatorAccountId,
+      systemVersionId: v1.systemVersionId,
+      status: 'PUBLISHED' as const,
+    };
+    await expect(definitions.changeRankingSystemVersionStatus(publish)).resolves.toMatchObject({
+      changed: true,
+    });
+    const after = await definitionFootprint();
+
+    expect(await definitions.createRankingSystem(cmd)).toEqual({
+      systemId: first.systemId,
+      created: false,
+    });
+    expect(await definitions.createRankingSystemVersion(vcmd)).toEqual({ ...v1, created: false });
+    await expect(definitions.changeRankingSystemVersionStatus(publish)).resolves.toMatchObject({
+      status: 'PUBLISHED',
+      changed: false,
+    });
+    expect(await definitionFootprint()).toEqual(after);
+
+    // The same key for a different request is refused, never replayed and never executed.
+    await expect(
+      definitions.createRankingSystem({ ...cmd, name: 'Fictional best marks two' }),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    await expect(
+      definitions.createRankingSystemVersion({
+        ...vcmd,
+        spec: systemSpec({ effectiveFrom: futureIso(180) }),
+      }),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(await definitionFootprint()).toEqual(after);
+  });
+
+  it('concurrent identical commands produce exactly one system and one version', async () => {
+    const before = await definitionFootprint();
+    const cmd = {
+      operatorAccountId: catalog.operatorAccountId,
+      code: `rk-${newId().slice(-12)}`,
+      name: 'Fictional best marks',
+      kind: 'PLATFORM',
+      idempotencyKey: k('rs'),
+    };
+    const systems = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => definitions.createRankingSystem(cmd)),
+    );
+    expect(new Set(systems.map((r) => r.systemId)).size).toBe(1);
+    expect(systems.filter((r) => r.created)).toHaveLength(1);
+    const systemId = systems[0]?.systemId as string;
+    const vcmd = {
+      operatorAccountId: catalog.operatorAccountId,
+      systemId,
+      spec: systemSpec({ effectiveFrom: futureIso(120) }),
+      idempotencyKey: k('rsv'),
+    };
+    const versions = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => definitions.createRankingSystemVersion(vcmd)),
+    );
+    expect(new Set(versions.map((r) => r.systemVersionId)).size).toBe(1);
+    expect(versions.filter((r) => r.created)).toHaveLength(1);
+    expect(
+      await countOf(
+        owner,
+        sql`SELECT count(*)::text AS n FROM ranking.system_version WHERE system_id = ${systemId}`,
+      ),
+    ).toBe(1);
+    // One system, one version, their two events and two audit rows, two command records.
+    const after = await definitionFootprint();
+    expect(after).toEqual({
+      ...before,
+      systems: (before?.systems ?? 0) + 1,
+      versions: (before?.versions ?? 0) + 1,
+      cards: (before?.cards ?? 0) + 1,
+      events: (before?.events ?? 0) + 2,
+      audits: (before?.audits ?? 0) + 2,
+      commands: (before?.commands ?? 0) + 2,
+    });
+  });
+});
+
 describe('canonical ranking runs: re-assembled, re-evaluated, persisted (BLOCKED in production)', () => {
   let systemVersionId: string;
   let asOf: Date;

@@ -7,9 +7,9 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
- * BRT-10 Step 14 through the real commands: `db:seed:rankings` (twice) and `demo:rankings`, run as
- * child processes exactly as `pnpm` runs them, against the integration database (BR_DATABASE_NAME is
- * inherited from the integration project). The only prerequisite created here is the one the seed
+ * BRT-10 Step 14 through the real commands: `db:seed:rankings` (twice) and `demo:rankings` (twice
+ * since Step 15), run as child processes exactly as `pnpm` runs them, against the integration database
+ * (BR_DATABASE_NAME is inherited from the integration project). The only prerequisite created here is the one the seed
  * documents — the PUBLISHED running.5k DisciplineVersion of `db:seed:competition`, through the same
  * catalog writer, idempotency keys and spec — and nothing else. ALL DATA IS FICTIONAL.
  */
@@ -125,6 +125,79 @@ const state = async () =>
                WHERE datname LIKE 'br\\_rkfx\\_%') AS "fixtureDatabases"`.execute(owner)
   ).rows[0];
 
+/** One real `demo:rankings` invocation and its exact effect on the integration database. */
+async function demoOnce(before: Awaited<ReturnType<typeof state>>) {
+  const footprintBefore = await brt10ConsequenceFootprint(owner);
+  const demo = await cli(DEMO);
+  expect(demo.err).toBe('');
+  expect(demo.out).not.toContain('✘');
+  expect(demo.code).toBe(0);
+  for (const line of [
+    // canonical lane: honest outcome
+    '✔ BLOCKED with the honest blocker NO_RANKED_ENTRIES only',
+    '✔ the validated writer refuses to publish a BLOCKED run (RUN_NOT_PUBLISHABLE)',
+    '✔ no snapshot is falsely published',
+    '✔ the development database holds no REFERENCE_FIXTURE ranking row',
+    '✔ Part A added only the canonical run itself',
+    // fixture lane: positive mechanics
+    '✔ deterministic BEST_MARK ranking with a shared tie: A 1=, B 1=, C 3',
+    '✔ holder best:',
+    '✔ snapshot 1 is INITIAL',
+    '✔ idempotent replay: same run, same snapshot, no new run / snapshot / entry / event',
+    '✔ snapshot 2 FOLLOWS snapshot 1',
+    '✔ snapshot 3 CORRECTS snapshot 2',
+    '✔ as-published keeps every snapshot in chain order',
+    '✔ as-corrected replaces snapshot 2 by its correction',
+    '✔ ranking_read.* rebuild (maintenance login) equals the incremental projections',
+    '✔ every fixture run and snapshot is REFERENCE_FIXTURE',
+    '✔ fixture snapshots are invisible to the production reader and the real /v1 server',
+    // cleanup
+    '✔ the throwaway fixture database no longer exists',
+    '✔ Part B left the development database exactly as Part A did',
+  ])
+    expect(demo.out).toContain(line);
+
+  const fixtureDb = /"database": "(br_rkfx_[0-9a-f]{12})"/.exec(demo.out)?.[1];
+  expect(fixtureDb).toBeDefined();
+  const after = await state();
+  // Cleanup: the throwaway database is gone, and no other one was left behind.
+  expect(after?.fixtureDatabases).not.toContain(fixtureDb);
+  expect(after?.fixtureDatabases).toEqual(before?.fixtureDatabases);
+  // Canonical footprint: exactly one new canonical run of the seeded system; nothing else.
+  expect(after?.seededRuns).toBe((before?.seededRuns ?? 0) + 1);
+  expect(after?.runs).toBe((before?.runs ?? 0) + 1);
+  expect(after).toMatchObject({
+    systems: 1,
+    versions: 1,
+    published: 1,
+    snapshots: before?.snapshots,
+    fixtureRows: 0,
+    events: before?.events,
+    audits: before?.audits,
+  });
+  expect(await brt10ConsequenceFootprint(owner)).toEqual(footprintBefore);
+  // The honest ceiling, exactly: BLOCKED by NO_RANKED_ENTRIES alone, over zero candidates
+  // (running.5k is catalog-only), with no entry.
+  const { rows } = await sql<{
+    provenance: string;
+    publication_state: string;
+    publication_reasons: string[];
+    entry_count: number;
+    candidate_count: number;
+  }>`
+    SELECT r.provenance, r.publication_state, r.publication_reasons, r.entry_count, r.candidate_count
+    FROM ranking.run r JOIN ranking.system s ON s.id = r.system_id WHERE s.code = ${CODE}
+    ORDER BY r.recorded_at DESC LIMIT 1`.execute(owner);
+  expect(rows[0]).toEqual({
+    provenance: 'CANONICAL_ASSEMBLY',
+    publication_state: 'BLOCKED',
+    publication_reasons: ['NO_RANKED_ENTRIES'],
+    entry_count: 0,
+    candidate_count: 0,
+  });
+  return { fixtureDb: fixtureDb as string };
+}
+
 describe('BRT-10 Step 14 — db:seed:rankings and demo:rankings (real commands, integration database)', () => {
   it('the seed creates one fictional PLATFORM definition through the canonical definition writer, idempotently', async () => {
     const before = await state();
@@ -181,66 +254,17 @@ describe('BRT-10 Step 14 — db:seed:rankings and demo:rankings (real commands, 
   it('the demo: an honest BLOCKED canonical run, the positive lifecycle only in a destroyed fixture database', async () => {
     const before = await state();
     const footprintBefore = await brt10ConsequenceFootprint(owner);
-    const demo = await cli(DEMO);
-    expect(demo.err).toBe('');
-    expect(demo.out).not.toContain('✘');
-    expect(demo.code).toBe(0);
-    for (const line of [
-      // canonical lane: honest outcome
-      '✔ BLOCKED with the honest blocker NO_RANKED_ENTRIES only',
-      '✔ the validated writer refuses to publish a BLOCKED run (RUN_NOT_PUBLISHABLE)',
-      '✔ no snapshot is falsely published',
-      '✔ the development database holds no REFERENCE_FIXTURE ranking row',
-      '✔ Part A added only the canonical run itself',
-      // fixture lane: positive mechanics
-      '✔ deterministic BEST_MARK ranking with a shared tie: A 1=, B 1=, C 3',
-      '✔ holder best:',
-      '✔ snapshot 1 is INITIAL',
-      '✔ idempotent replay: same run, same snapshot, no new run / snapshot / entry / event',
-      '✔ snapshot 2 FOLLOWS snapshot 1',
-      '✔ snapshot 3 CORRECTS snapshot 2',
-      '✔ as-published keeps every snapshot in chain order',
-      '✔ as-corrected replaces snapshot 2 by its correction',
-      '✔ ranking_read.* rebuild (maintenance login) equals the incremental projections',
-      '✔ every fixture run and snapshot is REFERENCE_FIXTURE',
-      '✔ fixture snapshots are invisible to the production reader and the real /v1 server',
-      // cleanup
-      '✔ the throwaway fixture database no longer exists',
-      '✔ Part B left the development database exactly as Part A did',
-    ])
-      expect(demo.out).toContain(line);
-
-    const fixtureDb = /"database": "(br_rkfx_[0-9a-f]{12})"/.exec(demo.out)?.[1];
-    expect(fixtureDb).toBeDefined();
+    const first = await demoOnce(before);
+    // Step 15: a second invocation is safe — the same honest outcome, one more canonical run (a new
+    // cutoff), its own throwaway database destroyed, and still no consequence of any kind.
+    const second = await demoOnce(await state());
+    expect(second.fixtureDb).not.toBe(first.fixtureDb);
     const after = await state();
-    // Cleanup: the throwaway database is gone, and no other one was left behind.
-    expect(after?.fixtureDatabases).not.toContain(fixtureDb);
+    expect(after?.seededRuns).toBe((before?.seededRuns ?? 0) + 2);
+    expect(after?.runs).toBe((before?.runs ?? 0) + 2);
     expect(after?.fixtureDatabases).toEqual(before?.fixtureDatabases);
-    // Canonical footprint: exactly one new canonical run of the seeded system; nothing else.
-    expect(after?.seededRuns).toBe((before?.seededRuns ?? 0) + 1);
-    expect(after?.runs).toBe((before?.runs ?? 0) + 1);
-    expect(after).toMatchObject({
-      systems: 1,
-      versions: 1,
-      published: 1,
-      snapshots: before?.snapshots,
-      fixtureRows: 0,
-      events: before?.events,
-      audits: before?.audits,
-    });
+    expect(after?.fixtureDatabases).not.toContain(first.fixtureDb);
+    expect(after?.fixtureDatabases).not.toContain(second.fixtureDb);
     expect(await brt10ConsequenceFootprint(owner)).toEqual(footprintBefore);
-    const { rows } = await sql<{
-      provenance: string;
-      publication_state: string;
-      entry_count: number;
-    }>`
-      SELECT r.provenance, r.publication_state, r.entry_count FROM ranking.run r
-      JOIN ranking.system s ON s.id = r.system_id WHERE s.code = ${CODE}
-      ORDER BY r.recorded_at DESC LIMIT 1`.execute(owner);
-    expect(rows[0]).toEqual({
-      provenance: 'CANONICAL_ASSEMBLY',
-      publication_state: 'BLOCKED',
-      entry_count: 0,
-    });
-  }, 300_000);
+  }, 600_000);
 });

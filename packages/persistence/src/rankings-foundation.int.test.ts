@@ -1014,6 +1014,84 @@ describe('BRT-10 role graph and grants (least privilege)', () => {
       await expect(sql.raw(stmt).execute(probe)).rejects.toMatchObject(DENIED);
   });
 
+  it('Step 15: the COMPLETE write authority of every BRT-10 role, in every schema, is exactly what the migrations grant', async () => {
+    // Effective privileges (has_*_privilege), so a grant reached through any membership would show too.
+    const ROLES = [
+      'br_rankings',
+      'br_ranking_rules',
+      'br_ranking_staff_reader',
+      'br_ranking_worker_app',
+      'br_ranking_operator_app',
+    ];
+    const { rows: tables } = await sql<{ g: string }>`
+      SELECT r.role || ' ' || n.nspname || '.' || c.relname || ':' || p.p AS g
+      FROM unnest(${ROLES}::text[]) r(role)
+      CROSS JOIN pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      CROSS JOIN (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(p)
+      WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'
+        AND has_table_privilege(r.role, c.oid, p.p)
+      ORDER BY 1`.execute(owner);
+    expect(tables.map((r) => r.g)).toEqual([
+      // 0023 + 0024: the six definition tables, INSERT only (append-only facts).
+      'br_ranking_rules platform.audit_event:INSERT', // 0026
+      'br_ranking_rules platform.command_idempotency:INSERT', // 0026
+      'br_ranking_rules platform.outbox_event:INSERT', // 0026
+      'br_ranking_rules ranking.classification_policy:INSERT',
+      'br_ranking_rules ranking.classification_policy_version:INSERT',
+      'br_ranking_rules ranking.classification_policy_version_status_change:INSERT',
+      'br_ranking_rules ranking.system:INSERT',
+      'br_ranking_rules ranking.system_version:INSERT',
+      'br_ranking_rules ranking.system_version_status_change:INSERT',
+      // 0028: the one class-B projection it refreshes (never TRUNCATE: that is br_rebuild's).
+      'br_ranking_rules ranking_read.system_card:DELETE',
+      'br_ranking_rules ranking_read.system_card:INSERT',
+      'br_ranking_rules ranking_read.system_card:UPDATE',
+      'br_rankings platform.audit_event:INSERT', // 0026
+      'br_rankings platform.outbox_event:INSERT', // 0026
+      // 0025: runs, dependencies, snapshots, entries — INSERT only.
+      'br_rankings ranking.run:INSERT',
+      'br_rankings ranking.run_dependency:INSERT',
+      'br_rankings ranking.snapshot:INSERT',
+      'br_rankings ranking.snapshot_entry:INSERT',
+      // 0028: the projections of the facts it writes.
+      'br_rankings ranking_read.leaderboard_entry:DELETE',
+      'br_rankings ranking_read.leaderboard_entry:INSERT',
+      'br_rankings ranking_read.leaderboard_entry:UPDATE',
+      'br_rankings ranking_read.run_candidate:DELETE',
+      'br_rankings ranking_read.run_candidate:INSERT',
+      'br_rankings ranking_read.run_candidate:UPDATE',
+      'br_rankings ranking_read.run_card:DELETE',
+      'br_rankings ranking_read.run_card:INSERT',
+      'br_rankings ranking_read.run_card:UPDATE',
+      'br_rankings ranking_read.snapshot_card:DELETE',
+      'br_rankings ranking_read.snapshot_card:INSERT',
+      'br_rankings ranking_read.snapshot_card:UPDATE',
+      // 0029 (round read) and 0030 (staff reader) grant no write at all; the NOINHERIT logins hold
+      // nothing until they SET ROLE.
+    ]);
+    // No column-level write grant exists beside the table grants (a narrower INSERT / UPDATE would
+    // otherwise escape the table inventory above).
+    const { rows: columns } = await sql<{ g: string }>`
+      SELECT r.role || ' ' || n.nspname || '.' || c.relname || '.' || a.attname || ':' || p.p AS g
+      FROM unnest(${ROLES}::text[]) r(role)
+      CROSS JOIN pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+      CROSS JOIN (VALUES ('INSERT'), ('UPDATE')) p(p)
+      WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        AND has_column_privilege(r.role, c.oid, a.attnum, p.p)
+        AND NOT has_table_privilege(r.role, c.oid, p.p)`.execute(owner);
+    expect(columns).toEqual([]);
+    // The module roles are members of nothing (the inventory above is their whole authority).
+    const { rows: member } = await sql<{ m: string }>`
+      SELECT r.rolname AS m FROM pg_auth_members a JOIN pg_roles r ON r.oid = a.member
+      WHERE r.rolname IN ('br_rankings', 'br_ranking_rules', 'br_ranking_staff_reader')`.execute(
+      owner,
+    );
+    expect(member).toEqual([]);
+  });
+
   it('application roles cannot bypass immutability (no UPDATE / DELETE / TRUNCATE grant anywhere)', async () => {
     const { rows } = await sql<{ t: string }>`
       SELECT grantee || ' ' || table_schema || '.' || table_name || ':' || privilege_type AS t
