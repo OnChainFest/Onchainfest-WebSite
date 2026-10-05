@@ -45,6 +45,8 @@
     "db:seed:records": "tsx packages/persistence/src/cli/seed-records.ts",
     "demo:records": "tsx apps/api/src/cli/demo-records.ts",
     "vectors:generate:brt09": "tsx packages/records/scripts/generate-vectors.ts",
+    "db:seed:rankings": "tsx packages/persistence/src/cli/seed-rankings.ts",
+    "demo:rankings": "tsx apps/api/src/cli/demo-rankings.ts",
     "vectors:generate:brt10": "tsx packages/rankings/scripts/generate-vectors.ts",
     "vectors:generate:brt10-api": "tsx packages/rankings/scripts/generate-api-vectors.ts"
   },

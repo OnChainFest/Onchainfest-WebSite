@@ -51,6 +51,9 @@ const WRITERS = [
   `${P}/qualification-loader.ts`,
   `${P}/achievement-store.ts`,
   `${P}/index.ts`,
+  // Step 14: the development seed (definitions only) and the two-lane demo.
+  `${P}/cli/seed-rankings.ts`,
+  'apps/api/src/cli/demo-rankings.ts',
   'apps/api/src/v1-rankings.ts',
   'apps/worker/src/main.ts',
   'packages/testkit/src/rankings.ts',
@@ -204,6 +207,66 @@ describe('check-no-manual-ranking', () => {
       'a throwaway fixture database named by application code',
       { 'apps/api/src/x.ts': "const url = 'postgres://h/br_rkfx_0123456789ab';" },
       /x\.ts:1 names a throwaway ranking fixture database/,
+    ],
+    // Step 14: the seed and the demo are exact-file exceptions, never a CLI-wide one.
+    [
+      'the canonical runtime in the ranking seed (definitions only)',
+      { [`${P}/cli/seed-rankings.ts`]: 'await new RankingService(db).evaluate(input);' },
+      /seed-rankings\.ts:1 canonical ranking runtime outside the worker/,
+    ],
+    [
+      'a lane writer in the ranking seed',
+      { [`${P}/cli/seed-rankings.ts`]: 'await publishRankingSnapshot(db, { runId });' },
+      /seed-rankings\.ts:1 ranking lane writer/,
+    ],
+    [
+      'a fixture lane imported by the ranking seed',
+      {
+        [`${P}/cli/seed-rankings.ts`]:
+          "import { createRankingFixtureDatabase } from '@br/testkit/rankings';",
+      },
+      /seed-rankings\.ts:1 imports a ranking fixture lane/,
+    ],
+    [
+      'the definition writer in another seed',
+      { [`${P}/cli/seed-records.ts`]: 'const d = new RankingDefinitionStore(op);' },
+      /seed-records\.ts:1 ranking definition writer used directly/,
+    ],
+    [
+      'a fixture lane imported by another demo',
+      {
+        'apps/api/src/cli/demo-records.ts':
+          "import { rankingRunInput } from '@br/rankings/fixtures';",
+      },
+      /demo-records\.ts:1 imports a ranking fixture lane/,
+    ],
+    [
+      'the canonical runtime in another demo',
+      { 'apps/api/src/cli/demo-achievements.ts': 'await new RankingService(db).evaluate(input);' },
+      /demo-achievements\.ts:1 canonical ranking runtime outside the worker/,
+    ],
+    [
+      'a raw snapshot write in the ranking demo',
+      {
+        'apps/api/src/cli/demo-rankings.ts':
+          'await sql`INSERT INTO ranking.snapshot (id) VALUES (1)`;',
+      },
+      /demo-rankings\.ts:1 raw INSERT on ranking\.snapshot/,
+    ],
+    [
+      'a projection refresh in the ranking demo',
+      { 'apps/api/src/cli/demo-rankings.ts': 'await refreshSnapshotCard(ctx, id);' },
+      /demo-rankings\.ts:1 ranking read-model refresh/,
+    ],
+    [
+      're-ranking in the ranking demo',
+      { 'apps/api/src/cli/demo-rankings.ts': 'const r = evaluateRankingRun(input);' },
+      /demo-rankings\.ts:1 ranking \/ classification engine run outside the validated writers/,
+    ],
+    [
+      'ClassificationStale emitted by the ranking demo',
+      { 'apps/api/src/cli/demo-rankings.ts': 'await staleness.emitStale(versionId);' },
+      /demo-rankings\.ts:1 ClassificationStale emission outside the worker/,
     ],
     [
       'ranking → QUALIFIED leapfrog',

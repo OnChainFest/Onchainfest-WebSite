@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–13 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces, repository guards). Next: Step 14 (seed + demo). The commands section is filled in with Step 14.
+Status: Steps 1–14 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces, repository guards, development seed + demo). Next: Step 15 (integration tests).
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -21,13 +21,20 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 11 | API routes (read surface + COMP_STAFF proposal + INTERNAL run read) + `0030_ranking_staff_reader` + API vectors — **implemented** ([API](#api-step-11)) |
 | 12 | Web surfaces (public read pages over the Step 11 API) — **implemented** ([web](#web-step-12)) |
 | 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) — **implemented** ([guards](#guards-step-13)) |
-| 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) |
+| 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) — **implemented** ([seed and demo](#seed-and-demo-step-14)) |
 | 15 | Integration tests |
 | 16 | Acceptance gates |
 
 ## Commands
 
-_Step 14._
+```sh
+pnpm db:up && pnpm db:bootstrap && pnpm db:migrate
+pnpm db:seed:competition     # prerequisite: the PUBLISHED running.5k DisciplineVersion (catalog only)
+pnpm db:seed:rankings        # one fictional PLATFORM ranking definition (idempotent)
+pnpm demo:rankings           # Part A canonical lane (BLOCKED, honest) + Part B throwaway fixture lane
+```
+
+Details: [seed and demo](#seed-and-demo-step-14).
 
 ## Logins / env
 
@@ -164,7 +171,7 @@ Test: `pnpm vitest run --project integration packages/persistence/src/rankings-w
 - read-model rebuild equality;
 - least privilege and the 0029 grant.
 
-Demonstrate: submit and accept a contest result in a competition that already has a submitted `@2` competition classification, then run the worker once. The log shows `stale checked=1 emitted=1`, and the outbox holds one `ClassificationStale` for that classification version. A second `--once` emits nothing more. A seeded demo command is Step 14.
+Demonstrate: submit and accept a contest result in a competition that already has a submitted `@2` competition classification, then run the worker once. The log shows `stale checked=1 emitted=1`, and the outbox holds one `ClassificationStale` for that classification version. A second `--once` emits nothing more. `pnpm demo:rankings` (Step 14) shows the canonical run evaluation itself; it does not drive the worker.
 
 ## API (Step 11)
 
@@ -290,7 +297,7 @@ To support this, the `unit` project of `vitest.config.ts` now includes `apps/web
 
 Run `pnpm dev:api` against the development database, then `pnpm --filter @br/web build && pnpm --filter @br/web start`. Then check:
 
-- `/ranking-systems` renders the empty state (no ranking system is seeded before Step 14).
+- `/ranking-systems` renders the empty state before `pnpm db:seed:rankings`, and afterwards the one fictional PLATFORM system `br-dev-5k-best-marks`, whose snapshot history is empty (zero canonical snapshots).
 - Unknown and malformed system / snapshot / classification URLs and bad cursors answer 404. A well-formed undecodable cursor reaches the API as 400 and renders 404.
 - The existing pages still answer 200.
 - The rendered HTML and the API / web logs contain none of the leak patterns above.
@@ -310,7 +317,7 @@ Populated snapshots and classifications are verified through the vector-driven t
 | Raw canonical writes | SQL or query-builder writes into `ranking.*`, `ranking_read.*` or `results.classification_*` outside the exact writer and table allowlist below. UPDATE, DELETE and TRUNCATE of class-A `ranking.*` tables are refused everywhere, the writers included. Application code also may not run `ALTER TABLE ranking…` or touch `session_replication_role`. |
 | Publication / runtime bypass | Each writer entry point may be named only by its allowlisted files: `persistRankingRun` / `publishRankingSnapshot`, `RankingService`, `RankingDefinitionStore`, the `refresh*Card` / `rebuildRankingReadModels` projection functions, `emitStale`, `RANKING_FIXTURE_READ_LANE`, and the pure engines `evaluateRankingRun` / `deriveClassification`. Running an engine outside the writers is re-ranking. |
 | Consequence leapfrogging | Ranking code must not reference QUALIFIED derivation (`deriveQualification`, `AchievementService`, `deriveAchievements`, `persistDerivation`, `QualificationGranted`), RecordMark writers, prizes, payouts, trophies, NFTs (`mintTrophy`, `mintNft`, …), `advancement` / seeding / slot resolution, or SQL writes into any non-ranking schema. "Ranking code" is `packages/rankings/src`, `packages/persistence/src/{ranking,classification}-*`, `apps/api/src/v1-rankings.ts` and the web ranking / classification pages. |
-| Fixture-lane leakage | `@br/rankings/fixtures`, `@br/persistence/ranking-lanes` and `@br/testkit/rankings` (and the relative `./fixtures` / `./ranking-lanes` imports) are refused outside tests, `packages/testkit/` and `packages/rankings/scripts/` (vector generation). Naming a `br_rkfx_` database or the ranking fixture overlay is refused there too. No demo exception exists yet; `demo:rankings` is Step 14. |
+| Fixture-lane leakage | `@br/rankings/fixtures`, `@br/persistence/ranking-lanes` and `@br/testkit/rankings` (and the relative `./fixtures` / `./ranking-lanes` imports) are refused outside tests, `packages/testkit/`, `packages/rankings/scripts/` (vector generation) and the one Step 14 demo file `apps/api/src/cli/demo-rankings.ts`. Naming a `br_rkfx_` database or the ranking fixture overlay is refused there too. The seed is not a fixture host. |
 | Write surfaces | Any non-GET API route whose path mentions a ranking or classification is refused, except the approved, write-free COMP_STAFF `POST /v1/result-versions/:resultVersionId/classification-proposals`. The web may not import `@br/persistence`, `@br/testkit`, `pg` or `kysely`, and web ranking pages may not send POST / PUT / PATCH / DELETE. |
 | Migrations | No data writes (INSERT / UPDATE / DELETE / TRUNCATE) on ranking or classification tables. Write grants are checked per statement, including `format()`-built grants: `ranking.*` → only `br_ranking_rules` / `br_rankings`, INSERT only (never UPDATE / DELETE / TRUNCATE / ALL); `ranking_read.*` → only the projection writers (`br_ranking_rules`, `br_rankings`, `br_results`, `br_rebuild`); `results.classification_*` → only `br_results`. No rank / standing / qualification / leaderboard column or table outside the ranking schemas, and no `is_current` / `is_stale`-style stored state on ranking tables. No prize / payout / trophy / NFT / mint / settlement / entitlement / advancement / seeding vocabulary in 0023–0030. |
 
@@ -326,6 +333,8 @@ Populated snapshots and classifications are verified through the vector-driven t
 | `packages/persistence/src/classification-staleness.ts` | Defines `emitStale`; re-runs `deriveClassification` for staleness. |
 | `packages/persistence/src/ranking-lanes.ts`, `ranking-api-reader.ts`, `index.ts` | The lane re-exports, the fixture read lane, and the package-root exports. |
 | `packages/rankings/src/`, `packages/rankings/scripts/` | The pure engines and the vector generators. |
+| `packages/persistence/src/cli/seed-rankings.ts` (Step 14) | Use `RankingDefinitionStore` (definitions only). No `RankingService`, lane writer or fixture lane. |
+| `apps/api/src/cli/demo-rankings.ts` (Step 14) | Use `RankingService` (Part A, development database), `RankingDefinitionStore`, the lane writers, `rebuildRankingReadModels` and the fixture lanes (Part B, throwaway `br_rkfx_` database only). Raw SQL writes, projection refreshes, `emitStale` and the pure engines stay forbidden. |
 
 ### Relationship with the achievement and record guards
 
@@ -362,9 +371,104 @@ Ranking run evaluations are not counted. The approved worker may evaluate runs f
 - one planted violation per rule class: manual setters / publication, shortcut fields, raw / multi-line / query-builder / TRUNCATE / projection / classification writes, entry-point bypasses, re-ranking, fixture imports and fixture databases, ranking → QUALIFIED / prize / record leapfrogs, a write route, web database access, and the migration rules;
 - the new achievement- and record-guard rules.
 
+## Seed and demo (Step 14)
+
+Two lanes that are never mixed:
+
+| | A. Canonical production-assembly lane | B. Reference fixture lane |
+|---|---|---|
+| Database | the development database | a throwaway `br_rkfx_<12hex>` database (normal migrations + test-only overlay), dropped at the end |
+| Writers / roles | the real ones: `RankingDefinitionStore` (`br_ranking_operator_app` → `br_ranking_rules`), `RankingService` (`br_ranking_worker_app` → `br_rankings`) | the same validated writers, reached through `@br/persistence/ranking-lanes` |
+| Facts | canonical only; nothing synthesized | synthetic FINAL / V2 / hold facts held in memory, provenance `REFERENCE_FIXTURE` |
+| Outcome today | runs BLOCKED, zero snapshots (the honest ceiling) | positive snapshots, lineage, history, leaderboards |
+| Publicly visible | yes (the system card; no snapshot exists) | never: the production reader serves `CANONICAL_ASSEMBLY` only |
+
+### `pnpm db:seed:rankings`
+
+`packages/persistence/src/cli/seed-rankings.ts`. Prerequisite: `pnpm db:seed:competition`, which publishes the `running.5k` DisciplineVersion. Without it, the seed fails with that instruction. The seed refuses `NODE_ENV=production`. All of its data is fictional.
+
+- Through `RankingDefinitionStore` (operator account `seed:ranking-operator`, `IdentityStore`) it creates and publishes **one** fictional development reference definition. It is not a universal standard:
+
+  | Code | Kind | Method | Universe | Comparator | Floor |
+  |---|---|---|---|---|---|
+  | `br-dev-5k-best-marks` | PLATFORM (label computed: "Bragging Rights platform ranking") | `BEST_MARK` | `running.5k` · `elapsedTimeMs` (`running.elapsed_time_ms`) · ATHLETE · CONTEST · unrestricted competitions / window · no population | the DisciplineVersion's own key (`LOWER_IS_BETTER`), copied, never declared | FINAL · V2 · hold blocks (the platform floor, not raised) |
+
+- **No OFFICIAL system.** The development seeds anchor only PLATFORM-level principals, and the platform never manufactures an owner, trust anchor or publication authority (ADR-0048 §6). Even a legitimately anchored OFFICIAL system could never publish (`OWNER_PUBLICATION_UNAVAILABLE`).
+- **Idempotent.** The code, provider subject and idempotency keys are fixed. An existing version is reused (never re-created with a new `effectiveFrom`), and a PUBLISHED version is left as it is. A second run prints the same JSON and writes nothing: one system, one version, one PUBLISHED transition, three definition events and three audit rows.
+- **Never:** a run, snapshot, classification, QUALIFIED Achievement, prize, trophy, payout, entry, seeding or advancement; a fixture lane; a raw ranking write; or any FINAL, verification, hold or authority fact.
+- It prints structured JSON: `fictionalDataOnly`, the lane, the definition (with spec and universe hashes), why no OFFICIAL system exists, the run / snapshot / fixture-row counts and the honest production ceiling.
+
+### `pnpm demo:rankings`
+
+`apps/api/src/cli/demo-rankings.ts` (about 40 s). Development only, fictional data, a random dev-token secret (never printed). It has deterministic assertions, prints `✔` / `✘` per check, exits 1 on any failure and always cleans up in `finally` blocks.
+
+**Part A — canonical lane (development database).**
+
+1. Reads the seeded system through the real `/v1` surface and its pinned version, then checks:
+   - PLATFORM, `BEST_MARK`, PUBLISHED, FINAL / V2;
+   - the computed label;
+   - the comparator equals the DisciplineVersion's key.
+2. Evaluates it twice with `RankingService.evaluate` (trigger `STAFF_REQUEST`, sporting cutoff = database time) and checks:
+   - the same run both times (natural key; the repeat creates nothing);
+   - the stored run equals the report.
+3. Reports what the run actually produced: provenance, candidate count, ranked entry count, publication state, exact blockers.
+   - Today that is **BLOCKED, `NO_RANKED_ENTRIES` only, 0 candidates**: `running.5k` is a catalog-only discipline (no heat format, so no event exists).
+   - If candidates exist, each must be excluded and carry at least `HOLD_STATE_UNAVAILABLE`.
+4. Reads the run through the INTERNAL staff route, has the validated writer refuse to publish it (`RUN_NOT_PUBLISHABLE`), and checks:
+   - both public history views are empty;
+   - zero snapshots exist;
+   - no `REFERENCE_FIXTURE` row exists.
+5. **Footprint:** the only change is the canonical run itself (plus its dependency row, run projection and `RankingRunEvaluated` event). No definition, snapshot, classification, QUALIFIED, qualification link or consequence event (`brt10ConsequenceFootprint`). Re-running the demo adds one run per invocation (a new cutoff).
+
+**Part B — fixture lane (throwaway database).** One small scenario, LOWER_IS_BETTER, exact milliseconds, fictional athletes A–D:
+
+| Snapshot | Inputs | Ranks | Proves |
+|---|---|---|---|
+| 1 INITIAL | A 1140000 + 1140000 + 1152000, B 1140000, C 1155000, D 1130000 PROVISIONAL | A 1=, B 1=, C 3 | holder best (both equal A marks pinned, `basisCount` 2; the slower run is `NOT_HOLDER_BEST`); shared tie 1, 1, 3 with no hidden tie-break; D's faster but non-FINAL mark is excluded with `RESULT_STATUS_BELOW_REQUIRED` |
+| (replay) | the same input | — | same run, same snapshot, no new run / snapshot / entry / event |
+| 2 FOLLOWS 1 | + C 1135000 | C 1, A 2=, B 2= | a new admissible input |
+| 3 CORRECTS 2 | C 1135000 superseded | A 1=, B 1=, C 3 | the correction lineage (reason `RESULT_SUPERSEDED`) |
+
+It then checks:
+
+- as-published (1, 2 corrected by 3, 3) and as-corrected (1, 3 corrects 2) through the Step 11 reader on the fixture lane;
+- the public leaderboard DTO (rank order, exact values, `basisCount`);
+- read-time staleness STALE, because the synthetic pins are unknown to the canonical tables (fail closed);
+- `ranking_read.*` rebuild equality (maintenance login);
+- every run and snapshot is `REFERENCE_FIXTURE`;
+- the fixture snapshots are invisible to the production `RankingPublicReader` **and** to the real `/v1` server (empty history, 404).
+
+Finally the database is dropped and its absence is checked in `pg_database`. The development database is then verified unchanged since Part A.
+
+### What the demo proves, and what it cannot
+
+- The canonical lane is honest. The run is evaluated and persisted from canonical facts only and stays BLOCKED with its exact blockers. Nothing is published, and no FINAL result, V2 verification, hold clearance, owner or authority is invented to make it look better.
+- **Positive snapshots are fixture-only until legitimate canonical producers exist.** A canonical PLATFORM snapshot needs:
+  - a FINAL producer (T5 / T6);
+  - a V2+ producer (`RESULT_OFFICIAL`);
+  - a hold-state producer;
+  - for this seeded universe, a heat format that can hold `running.5k` events.
+
+  Until then, only the throwaway fixture lane demonstrates ranking, ties, lineage, corrections and leaderboards.
+- The demo is an acceptance walkthrough, not a second test suite. Edge cases, and the stored lineage / immutability details, stay in the engine vectors and the writer / staleness / API integration tests.
+
+### Guards and tests
+
+- `check-no-manual-ranking.mjs` names each Step 14 file exactly ([canonical writer exceptions](#canonical-writer-exceptions-exact-files)). There is no CLI-wide, `apps/api`-wide or test-wide exemption.
+  - The seed may use only `RankingDefinitionStore`.
+  - The demo additionally gets `RankingService`, the lane writers, `rebuildRankingReadModels` and the fixture lanes.
+- `tooling/guards.test.ts` copies both real files into the clean tree, and plants a violation for each widened rule:
+  - the seed using `RankingService`, a lane writer or a fixture lane;
+  - another seed using `RankingDefinitionStore`;
+  - another demo using a fixture lane or `RankingService`;
+  - the ranking demo writing raw SQL, refreshing a projection, re-ranking or emitting `ClassificationStale`.
+- `apps/api/src/cli/demo-rankings.int.test.ts` runs the **real commands** as child processes against the integration database. Its only prerequisite is the `running.5k` DisciplineVersion, created through the catalog writer with `db:seed:competition`'s keys and spec. It checks:
+  - **Seed, run twice:** identical output, fixed code, fictional / reference labelling, exactly one system / version / PUBLISHED transition, only the writer's three events and three audit rows, no run / snapshot / fixture row.
+  - **Demo:** exit 0, no `✘`, the honest BLOCKED canonical outcome, the fixture-lane checks (tie, holder best, INITIAL / FOLLOWS / CORRECTS, replay, history, rebuild, provenance, invisibility), the throwaway database gone (and no other left behind), exactly one new `CANONICAL_ASSEMBLY` BLOCKED run, and an unchanged consequence footprint.
+
 ## Fixture lanes
 
-`@br/rankings/fixtures` (in memory; exported for tests only) and `@br/testkit/rankings` (throwaway `br_rkfx_<12hex>` databases, created dynamically, migrated with the normal migrations, given the provenance-only overlay, dropped afterwards; the API, worker and seeds never connect to them).
+`@br/rankings/fixtures` (in memory; exported for tests only) and `@br/testkit/rankings` (throwaway `br_rkfx_<12hex>` databases, created dynamically, migrated with the normal migrations, given the provenance-only overlay, dropped afterwards; the API, worker and seeds never connect to them; `demo:rankings` Part B creates and destroys its own).
 
 The validated writer is the same code in both lanes. The lane entry points (`persistRankingRun`, `publishRankingSnapshot`) are exported only from `@br/persistence/ranking-lanes`, not from the package root. A REFERENCE_FIXTURE run is accepted without canonical re-assembly (its synthetic FINAL / V2+ / hold facts cannot be re-assembled), but its outcome is still re-evaluated, and the normal schema's provenance CHECKs refuse it. Only the overlay database accepts it. Fixture runs index only their SYSTEM_VERSION dependency, because their candidate pins are synthetic and BR176 would refuse them. A CORRECTS lineage is accepted only for REFERENCE_FIXTURE runs: there is no correction producer.
 

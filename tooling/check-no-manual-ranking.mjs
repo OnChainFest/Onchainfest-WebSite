@@ -7,7 +7,9 @@
 //   ranking-projection.ts        ranking_read.* projections (refreshed by the writer of the fact)
 //   result-ledger.ts             results.classification_derivation / classification_input
 // The canonical runtime is RankingService, reached by application code only through the approved
-// worker (RankingWorkerService); the lane entry points live in @br/persistence/ranking-lanes.
+// worker (RankingWorkerService) and the Step 14 demo (demo:rankings); definitions are written only by
+// RankingDefinitionStore (plus the Step 14 seed, db:seed:rankings); the lane entry points live in
+// @br/persistence/ranking-lanes.
 // This scan fails on:
 //   · manual ranking / classification functions (declared or called): setRanking, forceRanking,
 //     overrideRank, setStanding, forcePublish, makeOfficial, insertSnapshot, setSnapshotLineage, …;
@@ -24,9 +26,10 @@
 //   · consequence leapfrogging in ranking code: QUALIFIED derivation, Achievement / RecordMark
 //     writers, prizes / payouts / trophies / NFTs, entries / seeding / advancement, and SQL writes
 //     into any non-ranking schema;
-//   · fixture lanes outside tests, the throwaway-DB harness (packages/testkit) and the vector
-//     generators (packages/rankings/scripts): @br/rankings/fixtures, @br/persistence/ranking-lanes,
-//     @br/testkit/rankings, br_rkfx_ databases, the ranking fixture overlay;
+//   · fixture lanes outside tests, the throwaway-DB harness (packages/testkit), the vector
+//     generators (packages/rankings/scripts) and the demo:rankings Part B walkthrough:
+//     @br/rankings/fixtures, @br/persistence/ranking-lanes, @br/testkit/rankings, br_rkfx_ databases,
+//     the ranking fixture overlay;
 //   · write surfaces: a non-GET ranking / classification route in the API other than the approved
 //     COMP_STAFF proposal (which writes nothing), and database access from the web;
 //   · migrations: DML into ranking / classification tables, write grants on them beyond the writer
@@ -54,6 +57,12 @@ const WORKER = `${P}ranking-worker.ts`;
 const STALENESS = `${P}classification-staleness.ts`;
 const API_READER = `${P}ranking-api-reader.ts`;
 const INDEX = `${P}index.ts`;
+// Step 14 (seed + demo), each exactly one file:
+//   SEED  canonical development definitions through RankingDefinitionStore only (no run, no lane);
+//   DEMO  Part A evaluates the seeded system through RankingService on the development database;
+//         Part B drives the REFERENCE FIXTURE lane in a throwaway br_rkfx_ database it destroys.
+const SEED = `${P}cli/seed-rankings.ts`;
+const DEMO = 'apps/api/src/cli/demo-rankings.ts';
 
 // ── writers: exact file → canonical ranking tables it may INSERT into ──
 const RANKING_INSERTS = new Map([
@@ -74,17 +83,25 @@ const RANKING_INSERTS = new Map([
 const ENTRY_POINTS = [
   [
     /\b(persistRankingRun|publishRankingSnapshot)\b/,
-    [STORE, LANES],
+    [STORE, LANES, DEMO],
     'ranking lane writer outside ranking-store / ranking-lanes',
   ],
-  [/\bRankingService\b/, [STORE, WORKER, INDEX], 'canonical ranking runtime outside the worker'],
-  [/\bRankingDefinitionStore\b/, [DEFINITIONS], 'ranking definition writer used directly'],
+  [
+    /\bRankingService\b/,
+    [STORE, WORKER, INDEX, DEMO],
+    'canonical ranking runtime outside the worker',
+  ],
+  [
+    /\bRankingDefinitionStore\b/,
+    [DEFINITIONS, SEED, DEMO],
+    'ranking definition writer used directly',
+  ],
   [
     /\brefresh(System|Run|Snapshot|Classification)Card\b/,
     [PROJECTION, STORE, DEFINITIONS, LEDGER],
     'ranking read-model refresh outside the writer of the projected fact',
   ],
-  [/\brebuildRankingReadModels\b/, [PROJECTION, INDEX], 'ranking read-model rebuild'],
+  [/\brebuildRankingReadModels\b/, [PROJECTION, INDEX, DEMO], 'ranking read-model rebuild'],
   [/\bemitStale\b/, [STALENESS, WORKER], 'ClassificationStale emission outside the worker'],
   [
     /\bRANKING_FIXTURE_READ_LANE\b/,
@@ -114,7 +131,7 @@ const relativeFixtureImport = [
   ['packages/rankings/src/', /(?:from\s+|import\s*\(\s*)['"]\.\/fixtures['"]/],
   [P, /(?:from\s+|import\s*\(\s*)['"]\.\/ranking-lanes['"]/],
 ];
-const FIXTURE_HOSTS = ['packages/testkit/', 'packages/rankings/scripts/'];
+const FIXTURE_HOSTS = ['packages/testkit/', 'packages/rankings/scripts/', DEMO];
 const fixtureDatabase = /\bbr_rkfx_|ranking-fixture-overlay/;
 const triggerBypass =
   /\b(ALTER\s+TABLE\s+(ONLY\s+)?(ranking|ranking_read)\.|session_replication_role)\b/i;
