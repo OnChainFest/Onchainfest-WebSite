@@ -1,6 +1,6 @@
 # BRT-10 — Development
 
-Status: Steps 1–14 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces, repository guards, development seed + demo). Next: Step 15 (integration tests).
+Status: Steps 1–14 implemented (engine, vectors, persistence foundation, canonical loader / store / writer, staleness / dependency index / `ClassificationStale`, `ranking_read.*` read models, QUALIFIED Achievement, worker reaction `rankings.react`, `/v1` read API, public web surfaces, repository guards, development seed + demo, integrated-system tests). Next: Step 16 (acceptance gates).
 
 Numbering note: the table below counts migrations / roles as Step 5, so the writer layer is Step 6 here; the execution checkpoints call the same work "BRT-10 Step 5 (writer)".
 
@@ -22,7 +22,7 @@ Numbering note: the table below counts migrations / roles as Step 5, so the writ
 | 12 | Web surfaces (public read pages over the Step 11 API) — **implemented** ([web](#web-step-12)) |
 | 13 | Guards (`check-no-manual-ranking.mjs`; deliberate updates to record/achievement guards and demos) — **implemented** ([guards](#guards-step-13)) |
 | 14 | Seed + demo (`db:seed:rankings`, `demo:rankings`) — **implemented** ([seed and demo](#seed-and-demo-step-14)) |
-| 15 | Integration tests |
+| 15 | Integration tests (integrated-system validation; tests and documentation only) — **implemented** ([integration tests](#integration-tests-step-15)) |
 | 16 | Acceptance gates |
 
 ## Commands
@@ -465,6 +465,53 @@ Finally the database is dropped and its absence is checked in `pg_database`. The
 - `apps/api/src/cli/demo-rankings.int.test.ts` runs the **real commands** as child processes against the integration database. Its only prerequisite is the `running.5k` DisciplineVersion, created through the catalog writer with `db:seed:competition`'s keys and spec. It checks:
   - **Seed, run twice:** identical output, fixed code, fictional / reference labelling, exactly one system / version / PUBLISHED transition, only the writer's three events and three audit rows, no run / snapshot / fixture row.
   - **Demo:** exit 0, no `✘`, the honest BLOCKED canonical outcome, the fixture-lane checks (tie, holder best, INITIAL / FOLLOWS / CORRECTS, replay, history, rebuild, provenance, invisibility), the throwaway database gone (and no other left behind), exactly one new `CANONICAL_ASSEMBLY` BLOCKED run, and an unchanged consequence footprint.
+
+## Integration tests (Step 15)
+
+Step 15 adds no production code, migration or guard change. It proves that the Step 5–14 pieces work **together**, through their real persistence, roles, outbox, worker, API and read-model boundaries. Before adding anything, a read-only audit mapped the existing coverage (areas A–Y of the step brief). Most areas were already covered by their owning files. Tests were added only for genuine gaps:
+
+| File | Added | Closes |
+|---|---|---|
+| `apps/api/src/rankings-flow.int.test.ts` (new) | One canonical story: `RankingDefinitionStore` → ResultLedger contest → `@2` classification (T2 + T3) → second accepted contest → the real `consumeOutbox` + `RankingWorkerService` → `/v1` → rebuild | No test chained the worker into the API. The API previously read runs created by `RankingService` directly and computed staleness on its own. |
+| `packages/persistence/src/rankings-worker.int.test.ts` | Real `ResultRejected`, real `VerificationEvaluated` + `CurrentVerificationChanged` (`VerificationService` with a bound BRT-07 policy); concurrent FIRST delivery (reactions and real consumer rounds); every identity rule for every consumed type | Runs were driven only by `ResultSubmitted` / `ResultProvisional`. The concurrency tests replayed already-processed events. Some identity cases were untested. |
+| `packages/persistence/src/rankings-writer.int.test.ts` | Definitions against the real catalog (`DISCIPLINE_VERSION_UNKNOWN`, `DISCIPLINE_VERSION_NOT_PUBLISHED`, `COMPARATOR_MISMATCH`, `METRIC_UNKNOWN`, `COMPETITION_UNKNOWN`, `DISPLAY_NAME_CLAIMS_RECOGNITION`, each writing nothing); command replay, `IDEMPOTENCY_KEY_REUSED`, concurrent identical commands | These validations were unit-only. Definition command idempotency was proven only indirectly, by the seed. |
+| `packages/persistence/src/rankings-foundation.int.test.ts` | The complete effective write authority (INSERT / UPDATE / DELETE / TRUNCATE, table and column level, every schema) of `br_rankings`, `br_ranking_rules`, `br_ranking_staff_reader` and both logins, equal to the migration grants | Least privilege was proven by spot probes and a `platform`-only inventory, which cannot catch an unexpected cross-domain grant. |
+| `apps/api/src/cli/demo-rankings.int.test.ts` | `demo:rankings` runs twice; exact `publication_reasons = ['NO_RANKED_ENTRIES']` and `candidate_count = 0` on the run row | The blocker was checked only through stdout; re-run safety was untested. |
+
+### What the end-to-end story proves
+
+- **Worker output.** The real consumer delivers the story's six events (both contests and the classification: submitted, accepted). The worker writes exactly:
+  - one `ClassificationStale` for the classification (`ADMISSIBLE_INPUT_SET_CHANGED`, `added` = the second contest);
+  - one canonical BLOCKED run (`NO_RANKED_ENTRIES`, trigger `UPSTREAM_FACT_CHANGED`) per contest-event cutoff.
+
+  The classification's own events select no ranking system. Nothing else is written: no ResultLedger, verification, classification, snapshot, QUALIFIED, record or audit row (content fingerprint), and the consequence footprint is unchanged.
+- **No loop, idempotent replay.**
+  - A second round of the same consumer redelivers only the worker's own `ClassificationStale`, which the worker does not consume.
+  - Replaying the whole story through another consumer writes nothing.
+- **Public API.**
+  - `/v1` serves the operator's system with the computed PLATFORM label and empty as-published / as-corrected histories.
+  - The classification is STALE at read time with its stored facts unchanged. The body contains neither the real staleDigest nor any pinned ResultVersion id.
+- **Staff route.**
+  - The INTERNAL route serves the worker-created run (401 / 403 / 200, `no-store`, equal to `RankingStaffReader`) with every candidate blocker.
+  - The run is never public (404, and no run id in any public body).
+- **Read models.** Incremental == full rebuild == second rebuild, and the rebuild changes no canonical fact.
+
+Run the Step 15 files individually:
+
+```sh
+pnpm vitest run --project integration apps/api/src/rankings-flow.int.test.ts
+pnpm vitest run --project integration packages/persistence/src/rankings-worker.int.test.ts
+pnpm vitest run --project integration packages/persistence/src/rankings-writer.int.test.ts
+pnpm vitest run --project integration packages/persistence/src/rankings-foundation.int.test.ts
+pnpm vitest run --project integration apps/api/src/cli/demo-rankings.int.test.ts
+```
+
+### Open notes for Step 16 (recorded by decision; not changed in Step 15)
+
+1. **An old event redelivered after a fact change.** The run's `asOf` is a *sporting-time* cutoff (ADR-0048 §5). The canonical assembly reads the facts as they are at evaluation time: current statuses, versions and verification. So if an event is redelivered after a later fact change, it produces one new, distinct, honest run at the old cutoff, built from the newer facts. It is not a duplicate, because its input hash differs, and every later redelivery collapses onto it. This matches the Step 10 wording ("a redelivered event reproduces the same input *while the facts are unchanged*"). By decision, Step 15 adds no characterization test for it.
+2. **Worker run selection keys on the triggering version.** A system version is evaluated when the event's own ResultVersion carries the universe Mark metric. A superseding version without that metric would therefore not re-evaluate the candidate it supersedes. This is unreachable today, because no T7 supersession producer exists.
+3. The threat review still carries the pre-Step-15 placeholders `_Step 3/4_` (hidden tie-break) and `_Step 3/9_` (manufactured eligibility). They are outside the Step 15 integration scope.
+4. By decision, there is no suite-wide leftover-database assertion; the shared vitest setup is unchanged. Throwaway `br_rkfx_` / `br_achfx_` / `br_recfx_` databases are inspected manually after the full run.
 
 ## Fixture lanes
 
