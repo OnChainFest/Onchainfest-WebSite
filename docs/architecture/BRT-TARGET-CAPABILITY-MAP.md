@@ -1,5 +1,7 @@
 # Bragging Rights — Target Capability Map
 
+> **Superseded framing (ONCF-00R).** This map describes the platform under the historical "Bragging Rights" name. Ownership is now defined by [ADR-0051](../adr/ADR-0051-onchainfest-owns-the-sports-domain.md): the sports domain belongs to OnChainFest; Bragging Rights is re-scoped to digital artifacts only. The capability content is preserved unchanged as design history.
+
 | Field | Value |
 |---|---|
 | Origin | BRT-00 (repository archaeology) |

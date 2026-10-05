@@ -1,3 +1,10 @@
+> **OnChainFest repository (ONCF-00R).** This repository is the canonical home of the OnChainFest
+> platform: the public static website (`index.html`, `contact.html`, `img/`, deployed by Vercel)
+> and the sports-platform core below, consolidated from `OnChainFest/bragging-rights` with its
+> full Git history. Despite the historical "Bragging Rights" / `@br/*` / BRT naming, the
+> sports-domain code here belongs to OnChainFest. See
+> [`docs/audits/ONCF-00R-PLATFORM-CORE-CONSOLIDATION.md`](./docs/audits/ONCF-00R-PLATFORM-CORE-CONSOLIDATION.md).
+
 # Bragging Rights
 
 Bragging Rights is being built as infrastructure for **verified sports achievement**. The core is a trust chain that answers _"why should anyone trust that this athlete achieved this result?"_:
