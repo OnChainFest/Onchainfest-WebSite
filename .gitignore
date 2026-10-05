@@ -12,3 +12,6 @@ next-env.d.ts
 *.log
 __pycache__/
 .turbo/
+
+# Vercel project link for the public website (carried over from the website's local .gitignore, ONCF-00R).
+.vercel

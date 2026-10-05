@@ -1,0 +1,16 @@
+# ONCF-00R · Public website deploy compatibility.
+#
+# The Vercel project deploys the repository root as a static site (no build step). Since the
+# platform core was consolidated into this repository, the root also holds a pnpm workspace
+# (package.json, apps/, packages/, db/, docs/ …). This allowlist uploads ONLY the public
+# website files, so the deployment stays exactly what it was before the consolidation:
+# no package install, no framework detection, and no platform source served publicly.
+#
+# When a website file is added at the root, allowlist it here.
+/*
+!index.html
+!contact.html
+!favicon.ico
+!logo.png
+!img
+!vercel.json
