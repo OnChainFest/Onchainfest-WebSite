@@ -1,72 +1,180 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Contact OnChainFest</title>
+  <title>Talk to us – OnChainFest</title>
+  <meta name="description" content="Tell OnChainFest about your next tournament, league, club competition or academy event." />
+  <link rel="canonical" href="https://www.onchainfest.xyz/contact.html" />
+  <meta name="theme-color" content="#070b14" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
   <style>
+    :root {
+      --bg: #070b14;
+      --surface: #0f172a;
+      --field: #0b1120;
+      --line: rgba(148, 163, 184, 0.16);
+      --line-strong: rgba(148, 163, 184, 0.32);
+      --text: #f1f5f9;
+      --text-2: #cbd5e1;
+      --muted: #94a3b8;
+      --accent: #22d3ee;
+      --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      background: #0d0d0d;
-      color: white;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(ellipse at 15% 0%, rgba(236, 72, 153, 0.16), transparent 50%),
+        radial-gradient(ellipse at 85% 100%, rgba(34, 211, 238, 0.12), transparent 50%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.6;
       min-height: 100vh;
-      margin: 0;
-    }
-    h1 {
-      margin-bottom: 1rem;
-    }
-    form {
-      background: #1a1a1a;
-      padding: 2rem;
-      border-radius: 10px;
-      max-width: 400px;
-      width: 100%;
       display: flex;
       flex-direction: column;
+      -webkit-font-smoothing: antialiased;
     }
-    input, textarea {
-      margin-bottom: 1rem;
-      padding: 1rem;
-      border-radius: 6px;
-      border: none;
-      background: #2a2a2a;
-      color: white;
+
+    a { color: inherit; text-decoration: none; }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+    header, main, footer { width: 100%; max-width: 640px; margin: 0 auto; padding: 0 1.25rem; }
+
+    header { padding-top: 1.5rem; }
+
+    .brand { display: inline-flex; align-items: center; gap: 0.55rem; }
+    .brand-mark { width: 40px; height: 40px; overflow: hidden; }
+    .brand-mark img { width: 100%; height: 100%; transform: scale(1.7); display: block; }
+    .brand-name { display: flex; flex-direction: column; line-height: 1.15; }
+    .brand-name strong { font-size: 1.05rem; font-weight: 800; }
+    .brand-name span { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+
+    main { flex: 1; padding-top: 3rem; padding-bottom: 3rem; }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
     }
-    button {
-      background-color: #ff0080;
-      color: white;
-      border: none;
-      padding: 1rem;
-      border-radius: 6px;
-      cursor: pointer;
+
+    h1 { font-size: clamp(1.9rem, 5vw, 2.5rem); line-height: 1.12; letter-spacing: -0.02em; margin-bottom: 0.75rem; }
+
+    .lead { color: var(--text-2); margin-bottom: 2rem; }
+
+    form {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1.75rem;
+      display: grid;
+      gap: 1.1rem;
+    }
+
+    label { display: grid; gap: 0.4rem; font-size: 0.9rem; font-weight: 600; color: var(--text-2); }
+    label .opt { font-weight: 400; color: var(--muted); }
+
+    input, select, textarea {
+      font: inherit;
       font-size: 1rem;
+      color: var(--text);
+      background: var(--field);
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      padding: 0.8rem 0.9rem;
+      width: 100%;
     }
-    a {
-      margin-top: 1rem;
-      color: #00ccff;
-      text-decoration: none;
+
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    textarea { resize: vertical; min-height: 130px; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+
+    button {
+      font: inherit;
+      font-weight: 650;
+      color: #fff;
+      background: linear-gradient(135deg, #db2777, #9333ea);
+      border: none;
+      border-radius: 10px;
+      padding: 0.95rem 1.4rem;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(168, 85, 247, 0.3);
     }
-    footer {
-      text-align: center;
-      padding: 2rem 0 1rem;
-      color: #aaa;
-      font-size: 0.9rem;
+
+    button:hover { box-shadow: 0 14px 38px rgba(168, 85, 247, 0.48); }
+
+    .hint { font-size: 0.85rem; color: var(--muted); }
+    .hint a, .back { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+
+    .back { display: inline-block; margin-top: 1.5rem; font-size: 0.9rem; }
+
+    footer { padding-bottom: 2rem; font-size: 0.82rem; color: var(--muted); }
+
+    @media (max-width: 540px) {
+      .row { grid-template-columns: 1fr; }
+      form { padding: 1.25rem; }
     }
   </style>
 </head>
 <body>
-  <h1>Contact Us</h1>
-  <form action="mailto:vicvalch@onchainfest.xyz" method="POST" enctype="text/plain">
-    <input type="text" name="name" placeholder="Your Name" required />
-    <input type="email" name="email" placeholder="Your Email" required />
-    <textarea name="message" rows="5" placeholder="Your Message" required></textarea>
-    <button type="submit">Send Message</button>
-  </form>
-  <a href="index.html">← Back to Home</a>
-  <footer>© 2025 OnChainFest. All rights reserved.</footer>
+  <header>
+    <a href="index.html" class="brand" aria-label="OnChainFest – home">
+      <span class="brand-mark"><img src="img/logo.png" alt="" width="40" height="40" /></span>
+      <span class="brand-name"><strong>OnChainFest</strong><span>Sports Tournament Solutions</span></span>
+    </a>
+  </header>
+
+  <main>
+    <p class="eyebrow">Talk to us</p>
+    <h1>Tell us about your competition.</h1>
+    <p class="lead">
+      Club competition, tournament series, academy or league — share what you're running and
+      we'll show you how OnChainFest makes it simpler to run and more valuable for your athletes.
+    </p>
+
+    <form action="mailto:vicvalch@onchainfest.xyz" method="POST" enctype="text/plain">
+      <div class="row">
+        <label>Your name
+          <input type="text" name="name" autocomplete="name" required />
+        </label>
+        <label>Email
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+      </div>
+      <div class="row">
+        <label>Organization <span class="opt">(optional)</span>
+          <input type="text" name="organization" autocomplete="organization" />
+        </label>
+        <label>What are you running?
+          <select name="type">
+            <option>Club competition</option>
+            <option>Tournament</option>
+            <option>Tournament series</option>
+            <option>League</option>
+            <option>Academy event</option>
+            <option>Federation or championship</option>
+            <option>I'm an athlete</option>
+            <option>Something else</option>
+          </select>
+        </label>
+      </div>
+      <label>Message
+        <textarea name="message" rows="5" placeholder="Sport, format, expected size, dates…" required></textarea>
+      </label>
+      <button type="submit">Send message</button>
+      <p class="hint">This opens your email app. You can also write directly to <a href="mailto:vicvalch@onchainfest.xyz">vicvalch@onchainfest.xyz</a>.</p>
+    </form>
+
+    <a class="back" href="index.html">← Back to OnChainFest</a>
+  </main>
+
+  <footer>© 2026 OnChainFest. All rights reserved.</footer>
 </body>
 </html>
