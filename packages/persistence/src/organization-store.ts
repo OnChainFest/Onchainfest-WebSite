@@ -736,6 +736,43 @@ export class OrganizationStore {
     });
   }
 
+  /**
+   * ONCF-01: the caller's own ACTIVE memberships in ACTIVE organizations (onboarding state and the
+   * signed-in navigation). Scoped to the account's SELF person; dependants' memberships are not
+   * included. Ids, role, slug, type and public display name only (no PII).
+   */
+  myOrganizations(accountId: string) {
+    return this.tx(async (ctx) => {
+      const facts = await loadControlFacts(ctx, accountId);
+      if (!facts.accountActive || facts.selfPersonId === undefined) return [];
+      const { rows } = await sql<{
+        membership_id: string;
+        organization_id: string;
+        membership_role: MembershipRole;
+        org_type: string;
+        slug: string;
+        display_name: string;
+      }>`
+        SELECT m.id AS membership_id, m.organization_id, m.membership_role, o.org_type, s.slug, p.display_name
+        FROM organizations.membership m
+        JOIN organizations.v_membership_current mc ON mc.membership_id = m.id AND mc.status = 'ACTIVE'
+        JOIN organizations.organization o ON o.id = m.organization_id
+        JOIN organizations.v_organization_current oc ON oc.organization_id = o.id AND oc.status = 'ACTIVE'
+        JOIN organizations.v_organization_slug_current s ON s.organization_id = o.id
+        JOIN organizations.organization_profile p ON p.organization_id = o.id
+        WHERE m.person_id = ${facts.selfPersonId}
+        ORDER BY m.recorded_at, m.id`.execute(ctx.trx);
+      return rows.map((r) => ({
+        membershipId: r.membership_id,
+        organizationId: r.organization_id,
+        role: r.membership_role,
+        orgType: r.org_type,
+        slug: r.slug,
+        displayName: r.display_name,
+      }));
+    });
+  }
+
   /** Organization id + principal id for internal callers (e.g. authority seeding). */
   principalOf(organizationId: string): Promise<string | undefined> {
     return this.tx(async (ctx) => {

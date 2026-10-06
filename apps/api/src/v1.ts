@@ -345,6 +345,12 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     return deps.identity.me(ctx.accountId);
   });
 
+  // ONCF-01: the caller's own active organization memberships (onboarding state, signed-in nav).
+  route('GET', '/v1/me/organizations', 'AUTHENTICATED', {}, async (request) => {
+    const ctx = requireAuth(request);
+    return { items: await deps.organizations.myOrganizations(ctx.accountId) };
+  });
+
   route(
     'POST',
     '/v1/persons',

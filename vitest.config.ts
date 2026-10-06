@@ -13,6 +13,8 @@ export default defineConfig({
             'apps/*/src/**/*.test.ts',
             // The web has no src/: its server-component tests live next to the pages (BRT-10 Step 12).
             'apps/web/app/**/*.test.tsx',
+            // ONCF-01: web auth wiring (pure route policy, continuation and onboarding modules).
+            'apps/web/app/**/*.test.ts',
             // BRT-10 Step 13: the repository guard scripts (tooling/check-no-manual-*.mjs).
             'tooling/**/*.test.ts',
           ],

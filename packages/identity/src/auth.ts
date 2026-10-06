@@ -1,9 +1,10 @@
 /**
  * Authentication boundary (BRT-04 §4, §34). HTTP handlers depend on AuthContext, never on a
- * vendor SDK. No production authentication vendor is selected in BRT-04; production mode fails
- * closed (no adapter ⇒ every authenticated route answers 401).
+ * vendor SDK. The identity provider is Supabase Auth behind the API's AuthAdapter (ADR-0052);
+ * without a configured provider, production fails closed (every authenticated route answers 401).
  */
-export type AuthenticationMethod = 'OIDC' | 'PASSKEY' | 'EMAIL_LINK' | 'WALLET' | 'TEST';
+export type AuthenticationMethod =
+  'OIDC' | 'PASSKEY' | 'EMAIL_LINK' | 'PASSWORD' | 'WALLET' | 'TEST';
 
 export interface AuthContext {
   readonly accountId: string;

@@ -3,11 +3,11 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE, getPublic } from '../_lib/api';
-import RankingSnapshotPage from '../ranking-snapshots/[id]/page';
-import RankingSystemPage from '../ranking-systems/[system]/page';
-import SnapshotHistoryPage from '../ranking-systems/[system]/snapshots/page';
-import RankingSystemsPage from '../ranking-systems/page';
-import ClassificationPage from '../result-versions/[id]/classification/page';
+import RankingSnapshotPage from '../(explorer)/ranking-snapshots/[id]/page';
+import RankingSystemPage from '../(explorer)/ranking-systems/[system]/page';
+import SnapshotHistoryPage from '../(explorer)/ranking-systems/[system]/snapshots/page';
+import RankingSystemsPage from '../(explorer)/ranking-systems/page';
+import ClassificationPage from '../(explorer)/result-versions/[id]/classification/page';
 
 /**
  * BRT-10 Step 12 web surfaces, rendered server-side exactly as Next renders them, against the PUBLIC

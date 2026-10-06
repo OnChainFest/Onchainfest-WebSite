@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { AuthContext } from '@br/identity';
 import type { IdentityStore } from '@br/persistence';
 import type { FastifyRequest } from 'fastify';
+import { createSupabaseJwtAuth, supabaseAuthConfigFromEnvironment } from './supabase-auth';
 
 /**
  * Authentication boundary (BRT-04). An adapter turns a request into an AuthContext or null.
@@ -14,7 +15,7 @@ export interface AuthAdapter {
 }
 
 /**
- * Production default until a real identity provider (OIDC/passkeys) is integrated: nobody is
+ * Default when no identity provider is configured (BR_AUTH_PROVIDER unset): nobody is
  * authenticated, so every non-PUBLIC endpoint answers 401. Fails closed by construction.
  */
 export const failClosedAuth: AuthAdapter = {
@@ -140,10 +141,19 @@ export function createDevTokenAuth(
 }
 
 /**
- * Production → fail closed. Development → dev tokens only when BR_DEV_AUTH=1, and then
+ * BR_AUTH_PROVIDER=supabase → Supabase access tokens (any environment; ADR-0052). Otherwise:
+ * production → fail closed; development → dev tokens only when BR_DEV_AUTH=1, and then
  * BR_DEV_AUTH_SECRET is mandatory (startup fails with an actionable error otherwise).
+ * An unknown provider name refuses to start rather than silently failing open or closed.
  */
 export function authFromEnvironment(identity: IdentityStore): AuthAdapter {
+  const provider = process.env.BR_AUTH_PROVIDER;
+  if (provider === 'supabase') {
+    return createSupabaseJwtAuth(identity, supabaseAuthConfigFromEnvironment());
+  }
+  if (provider !== undefined && provider !== '' && provider !== 'none') {
+    throw new Error(`unknown BR_AUTH_PROVIDER "${provider}" (expected "supabase" or unset)`);
+  }
   if (process.env.NODE_ENV === 'production') return failClosedAuth;
   return process.env.BR_DEV_AUTH === '1' ? createDevTokenAuth(identity) : failClosedAuth;
 }

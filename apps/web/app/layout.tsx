@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 
 export const metadata = {
-  title: 'Bragging Rights',
-  description: 'Athlete passports and organizations (BRT-04 foundation)',
+  title: 'OnChainFest',
+  description: 'Tournament operations for organizers. A lasting sporting record for athletes.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'system-ui, sans-serif', margin: '3rem' }}>{children}</body>
+      <body style={{ margin: 0 }}>{children}</body>
     </html>
   );
 }
