@@ -115,5 +115,5 @@ export async function createOrganizationAction(form: FormData): Promise<never> {
     },
   );
   if (result.kind !== 'ok') failure('organization', result);
-  redirect('/app?notice=organization_created');
+  redirect(`/app/orgs/${result.data.slug}?notice=organization_created`);
 }

@@ -14,8 +14,9 @@ export function navItems(account: AccountState, onboarding: OnboardingState): Na
   if (onboarding !== 'active') items.push({ href: '/app/onboarding', label: 'Finish setup' });
   for (const a of account.me.athletes.slice(0, 1))
     items.push({ href: `/athletes/${a.slug}`, label: 'Athlete profile' });
-  for (const o of account.organizations.slice(0, 3))
-    items.push({ href: `/organizations/${o.slug}`, label: o.displayName });
+  const orgs = [...new Map(account.organizations.map((o) => [o.slug, o])).values()];
+  for (const o of orgs.slice(0, 3))
+    items.push({ href: `/app/orgs/${o.slug}`, label: o.displayName });
   return items;
 }
 

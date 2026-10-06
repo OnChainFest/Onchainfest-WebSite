@@ -1,5 +1,5 @@
 import { DomainError, DomainErrorCode } from '@br/domain';
-import type { AuthContext } from '@br/identity';
+import { OrgPermission, ROLE_PERMISSIONS, type AuthContext } from '@br/identity';
 import type {
   IdentityStore,
   OrganizationReader,
@@ -232,6 +232,10 @@ const orgProfileProps = {
   country: { type: ['string', 'null'], pattern: '^[A-Z]{2}$' },
   region: nullableString(10),
   publicContact: nullableString(200),
+  // ONCF-02 (0031): branding and sports.
+  logoUrl: nullableString(500),
+  accentColor: { type: ['string', 'null'], pattern: '^#[0-9a-f]{6}$' },
+  sports: { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 40 } },
 } as const;
 export const obj = (properties: Record<string, unknown>, required: string[] = []) =>
   ({ type: 'object', properties, required, additionalProperties: false }) as const;
@@ -314,6 +318,17 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       redirected: r.resolution.redirected,
     };
   });
+
+  // ONCF-02: the canonical membership roles and the organization permissions each one grants.
+  route('GET', '/v1/organization-roles', 'PUBLIC', {}, () =>
+    Promise.resolve({
+      roles: Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => ({
+        role,
+        permissions: [...permissions].sort(),
+      })),
+      permissions: [...Object.values(OrgPermission)].sort(),
+    }),
+  );
 
   route('GET', '/v1/organizations/:slug', 'PUBLIC', { params: slugParams }, async (request) => {
     const { slug } = request.params as { slug: string };
@@ -496,6 +511,20 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       },
     );
   }
+
+  // ONCF-02: the invitee previews an invitation before answering (same validity rules as accept).
+  route(
+    'POST',
+    '/v1/invitations/inspect',
+    'SELF',
+    { body: obj({ token: { type: 'string', minLength: 20, maxLength: 200 } }, ['token']) },
+    async (request, reply) => {
+      const ctx = requireAuth(request);
+      const { token } = request.body as { token: string };
+      reply.header('cache-control', 'no-store');
+      return deps.organizations.inspectInvitation({ actorAccountId: ctx.accountId, token });
+    },
+  );
 
   // ───────────────────────────── SELF (private data, wallets) ─────────────────────────────
 
@@ -800,8 +829,16 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     async (request) => {
       const ctx = requireAuth(request);
       const { organizationId } = request.params as { organizationId: string };
+      const items = await deps.organizations.members({
+        actorAccountId: ctx.accountId,
+        organizationId,
+      });
+      // ONCF-02: public athlete identity (PUBLIC/AUTHENTICATED profiles only) to name roster rows.
+      const athletes = await deps.identity.visibleAthletesForPersons([
+        ...new Set(items.map((m) => m.personId)),
+      ]);
       return {
-        items: await deps.organizations.members({ actorAccountId: ctx.accountId, organizationId }),
+        items: items.map((m) => ({ ...m, athlete: athletes.get(m.personId) ?? null })),
       };
     },
   );
@@ -823,6 +860,26 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     },
   );
 
+  // ONCF-02: change the public page address (old addresses keep redirecting; ORG_EDIT_PROFILE).
+  route(
+    'PUT',
+    '/v1/organizations/:organizationId/slug',
+    'ORG_ADMIN',
+    {
+      params: idParams('organizationId'),
+      body: obj({ slug: { type: 'string', minLength: 1, maxLength: 100 } }, ['slug']),
+    },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const { organizationId } = request.params as { organizationId: string };
+      return deps.organizations.changeSlug({
+        actorAccountId: ctx.accountId,
+        organizationId,
+        slug: (request.body as { slug: string }).slug,
+      });
+    },
+  );
+
   route(
     'POST',
     '/v1/organizations/:organizationId/invitations',
@@ -833,20 +890,44 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       body: obj(
         {
           personId: uuid,
+          // ONCF-02: or the invitee's athlete profile address (resolved server-side).
+          athleteSlug: { type: 'string', minLength: 1, maxLength: 100 },
           role: { enum: ['OWNER', 'ADMIN', 'MEMBER', 'ATHLETE', 'COACH', 'OFFICIAL', 'STAFF'] },
           visibility: { enum: ['PUBLIC', 'MEMBERS', 'PRIVATE'] },
         },
-        ['personId', 'role', 'visibility'],
+        ['role', 'visibility'],
       ),
     },
     async (request, reply) => {
       const ctx = requireAuth(request);
       const { organizationId } = request.params as { organizationId: string };
-      const body = request.body as { personId: string; role: 'MEMBER'; visibility: 'PUBLIC' };
+      const body = request.body as {
+        personId?: string;
+        athleteSlug?: string;
+        role: 'MEMBER';
+        visibility: 'PUBLIC';
+      };
+      if ((body.personId === undefined) === (body.athleteSlug === undefined))
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'exactly one of personId or athleteSlug is required',
+        );
+      let personId = body.personId;
+      if (body.athleteSlug !== undefined) {
+        // Permission first, so the address lookup is never an oracle for non-admins.
+        const { permissions } = await deps.organizations.permissions(ctx.accountId, organizationId);
+        if (!permissions.includes('ORG_INVITE_MEMBER'))
+          throw new DomainError(DomainErrorCode.FORBIDDEN, 'not permitted');
+        personId = await deps.identity.invitablePersonByAthleteSlug(body.athleteSlug);
+        if (personId === undefined)
+          throw new DomainError(DomainErrorCode.NOT_FOUND, 'athlete not found');
+      }
       const r = await deps.organizations.invite({
         actorAccountId: ctx.accountId,
         organizationId,
-        ...body,
+        personId: personId!,
+        role: body.role,
+        visibility: body.visibility,
         idempotencyKey: key(request),
       });
       reply.code(r.token === null ? 200 : 201).header('cache-control', 'no-store');

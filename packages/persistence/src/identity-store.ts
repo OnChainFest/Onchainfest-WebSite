@@ -234,6 +234,49 @@ export class IdentityStore {
     });
   }
 
+  /**
+   * ONCF-02: public athlete identity for persons on an organization roster. Only ACTIVE athletes
+   * whose profile is PUBLIC or AUTHENTICATED are returned (PRIVATE profiles stay anonymous);
+   * slug and display name only — never PII.
+   */
+  visibleAthletesForPersons(
+    personIds: readonly string[],
+  ): Promise<Map<string, { slug: string; displayName: string }>> {
+    if (personIds.length === 0) return Promise.resolve(new Map());
+    return this.tx(async (ctx) => {
+      const { rows } = await sql<{ person_id: string; slug: string; display_name: string }>`
+        SELECT a.person_id, s.slug, p.display_name
+        FROM identity.athlete a
+        JOIN identity.v_athlete_current c ON c.athlete_id = a.id AND c.status = 'ACTIVE'
+        JOIN identity.v_athlete_slug_current s ON s.athlete_id = a.id
+        JOIN identity.athlete_profile p ON p.athlete_id = a.id
+          AND p.profile_visibility IN ('PUBLIC', 'AUTHENTICATED')
+        WHERE a.person_id IN (${sql.join([...personIds])})`.execute(ctx.trx);
+      return new Map(rows.map((r) => [r.person_id, { slug: r.slug, displayName: r.display_name }]));
+    });
+  }
+
+  /**
+   * ONCF-02: the person behind an athlete profile address, for organization invitations. Only
+   * ACTIVE athletes with a PUBLIC or AUTHENTICATED profile resolve; anything else is undefined
+   * (indistinguishable from an unknown address).
+   */
+  invitablePersonByAthleteSlug(slug: string): Promise<string | undefined> {
+    const n = normalizeSlug(slug);
+    if (!n.ok) return Promise.resolve(undefined);
+    return this.tx(async (ctx) => {
+      const { rows } = await sql<{ person_id: string }>`
+        SELECT a.person_id
+        FROM identity.athlete_slug sl
+        JOIN identity.athlete a ON a.id = sl.athlete_id
+        JOIN identity.v_athlete_current c ON c.athlete_id = a.id AND c.status = 'ACTIVE'
+        JOIN identity.athlete_profile p ON p.athlete_id = a.id
+          AND p.profile_visibility IN ('PUBLIC', 'AUTHENTICATED')
+        WHERE sl.slug = ${n.slug}`.execute(ctx.trx);
+      return rows[0]?.person_id;
+    });
+  }
+
   /** Whether the account may perform `op` on a person (used to gate the PII vault). */
   canOperateOnPerson(accountId: string, personId: string, op: PersonOperation): Promise<boolean> {
     return this.tx(async (ctx) => {

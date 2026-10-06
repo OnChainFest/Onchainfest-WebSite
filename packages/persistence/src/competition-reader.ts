@@ -147,6 +147,58 @@ export class CompetitionReader {
     });
   }
 
+  /**
+   * ONCF-02: an organizer's competitions (by any of its slugs) as public cards; DRAFT is never
+   * served; newest first. undefined when the organization is unknown or CLOSED.
+   * Used by the public organization page and the organization dashboard.
+   */
+  competitionsByOrganizerSlug(organizationSlug: string): Promise<
+    | {
+        id: string;
+        slug: string;
+        name: string;
+        status: PublicCompetitionV1['competition']['status'];
+        startsAt: string | null;
+        endsAt: string | null;
+        locationLabel: string | null;
+      }[]
+    | undefined
+  > {
+    const key = slugLookupKey(organizationSlug);
+    if (key === undefined) return Promise.resolve(undefined);
+    return this.tx(async (ctx) => {
+      const { rows: org } = await sql<{ organization_id: string }>`
+        SELECT s.organization_id FROM organizations.organization_slug s
+        JOIN organizations.v_organization_current st ON st.organization_id = s.organization_id
+        WHERE s.slug = ${key} AND st.status <> 'CLOSED'`.execute(ctx.trx);
+      const organizationId = org[0]?.organization_id;
+      if (organizationId === undefined) return undefined;
+      const { rows } = await sql<{
+        competition_id: string;
+        slug: string;
+        name: string;
+        status: PublicCompetitionV1['competition']['status'];
+        starts_at: Date | null;
+        ends_at: Date | null;
+        location_label: string | null;
+      }>`
+        SELECT competition_id, slug, name, status, starts_at, ends_at, location_label
+        FROM competition_read.competition_card
+        WHERE organizer_organization_id = ${organizationId} AND status <> 'DRAFT'
+        ORDER BY starts_at DESC NULLS LAST, name, competition_id
+        LIMIT 100`.execute(ctx.trx);
+      return rows.map((c) => ({
+        id: c.competition_id,
+        slug: c.slug,
+        name: c.name,
+        status: c.status,
+        startsAt: iso(c.starts_at),
+        endsAt: iso(c.ends_at),
+        locationLabel: c.location_label,
+      }));
+    });
+  }
+
   private async resolveCompetition(ctx: TxContext, slug: string) {
     const key = slugLookupKey(slug);
     if (key === undefined) return undefined;

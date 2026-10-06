@@ -23,7 +23,13 @@ export const ERROR_MESSAGES = {
   profile_address_invalid: 'Use 3–50 lowercase letters, numbers and single hyphens.',
   profile_invalid: 'Check the highlighted details and try again.',
   platform_unavailable: 'OnChainFest is temporarily unavailable. Your progress is safe — retry.',
-  not_permitted: 'Your account can’t do that yet.',
+  not_permitted: 'Your role in this organization doesn’t allow that.',
+  athlete_not_found: 'No public athlete profile has that address.',
+  already_member: 'That person already has this role or a pending invitation.',
+  last_owner: 'An organization must keep at least one active owner.',
+  invalid_change: 'That change isn’t possible from the member’s current status.',
+  invitation_invalid:
+    'This invitation isn’t valid — it may be used, revoked, expired or meant for someone else.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -35,6 +41,16 @@ export const NOTICE_MESSAGES = {
   email_verified: 'Email verified. Let’s set up your profile.',
   athlete_created: 'Your athlete profile is live.',
   organization_created: 'Your organization is set up. You’re its owner.',
+  profile_saved: 'Profile saved. Your public page is updated.',
+  address_changed: 'Page address changed. The old address keeps redirecting.',
+  role_changed: 'Role updated.',
+  member_suspended: 'Member suspended.',
+  member_reactivated: 'Member reactivated.',
+  member_removed: 'Member removed.',
+  invitation_revoked: 'Invitation revoked.',
+  joined: 'You’ve joined the organization.',
+  invitation_declined: 'Invitation declined.',
+  left_organization: 'You’ve left the organization.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

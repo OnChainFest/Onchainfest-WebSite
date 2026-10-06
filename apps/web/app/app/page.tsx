@@ -86,14 +86,19 @@ export default async function AppHome({ searchParams }: { searchParams: SearchPa
             </p>
           ) : (
             <ul className="list">
-              {account.organizations.map((o) => (
+              {[...new Map(account.organizations.map((o) => [o.slug, o])).values()].map((o) => (
                 <li key={o.membershipId}>
                   <span>
                     <strong>{o.displayName}</strong>{' '}
-                    <span className="tag mono">{ROLE_LABEL[o.role] ?? o.role}</span>
+                    <span className="tag mono">
+                      {account.organizations
+                        .filter((x) => x.slug === o.slug)
+                        .map((x) => ROLE_LABEL[x.role] ?? x.role)
+                        .join(' · ')}
+                    </span>
                   </span>
-                  <a className="link mono" href={`/organizations/${o.slug}`}>
-                    Public page →
+                  <a className="link mono" href={`/app/orgs/${o.slug}`}>
+                    Manage →
                   </a>
                 </li>
               ))}

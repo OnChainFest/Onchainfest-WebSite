@@ -73,6 +73,10 @@ export interface PublicOrganization {
       country: string | null;
       region: string | null;
       publicContact: string | null;
+      /** ONCF-02 branding (may be absent on older API builds). */
+      logoUrl?: string | null;
+      accentColor?: string | null;
+      sports?: string[];
       provenance: Provenance;
     };
     authority: { status: 'NOT_AVAILABLE'; reason: string };
@@ -86,6 +90,16 @@ export interface PublicOrganization {
   }>;
   canonicalSlug: string;
   redirected: boolean;
+}
+
+export interface PublicCompetitionCard {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  locationLabel: string | null;
 }
 
 export type Fetched<T> = { kind: 'ok'; data: T } | { kind: 'not_found' } | { kind: 'unavailable' };

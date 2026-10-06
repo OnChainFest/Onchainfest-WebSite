@@ -162,7 +162,7 @@ describe('/app shell', () => {
     });
     const out = html(await AppLayout({ children: <p>content</p> }));
     expect(out).toContain('href="/athletes/ana"');
-    expect(out).toContain('href="/organizations/club-uno"');
+    expect(out).toContain('href="/app/orgs/club-uno"');
     expect(out).toContain('href="/app/account"');
     expect(out).not.toContain('Finish setup');
     expect(out).toContain('action="/auth/signout" method="post"');

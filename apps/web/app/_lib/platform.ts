@@ -31,7 +31,7 @@ export type ApiResult<T> =
 
 export async function apiRequest<T>(
   token: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
   path: string,
   options: { body?: unknown; idempotencyKey?: string } = {},
 ): Promise<ApiResult<T>> {

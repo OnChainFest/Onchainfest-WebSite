@@ -648,3 +648,542 @@
     transition: none !important;
   }
 }
+
+/* ── Organization area (ONCF-02) ─────────────────────────── */
+.oc .org-area,
+.oc.pub {
+  --brand: var(--cyan);
+}
+.oc .small {
+  font-size: 0.8rem;
+}
+.oc .block {
+  display: block;
+}
+.oc .org-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 30%, #050608));
+  color: #050608;
+  font-weight: 900;
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+  border: 1px solid var(--line-strong);
+}
+.oc .org-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--white);
+}
+.oc-app .org-hero {
+  position: relative;
+  margin: 0 0 2rem;
+  padding: 1.75rem 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .org-hero::before {
+  content: '';
+  position: absolute;
+  inset: -2rem -50vw 0;
+  z-index: -1;
+  background:
+    radial-gradient(
+      circle at 85% 0%,
+      color-mix(in srgb, var(--brand) 30%, transparent),
+      transparent 45%
+    ),
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.015));
+}
+.oc-app .org-hero-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.oc-app .org-id {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.oc-app .org-id h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.oc-app .org-public {
+  margin-left: auto;
+}
+.oc .role-chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.oc .role-chip {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 60%, transparent);
+  color: var(--brand);
+  white-space: nowrap;
+}
+.oc-app .tabs {
+  display: flex;
+  gap: 1.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.oc-app .tabs a {
+  padding: 0.85rem 0;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+.oc-app .tabs a:hover {
+  color: var(--white);
+  border-color: var(--brand);
+}
+.oc-app .section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.oc-app .stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2.5rem;
+}
+.oc-app .stat {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  padding: 1.4rem 1.4rem 1.4rem 0;
+}
+.oc-app .stat + .stat {
+  padding-left: 1.4rem;
+  border-left: 1px solid var(--line);
+}
+.oc-app .stat > strong {
+  font-size: 2.6rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+.oc-app .role-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  max-width: 220px;
+}
+.oc-app .role-bar span {
+  background: color-mix(in srgb, var(--brand) 55%, transparent);
+}
+.oc-app .role-bar span[data-role='OWNER'],
+.oc-app .role-bar span[data-role='ADMIN'] {
+  background: var(--brand);
+}
+.oc-app .ring {
+  --pct: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(closest-side, var(--ink) 78%, transparent 80% 100%),
+    conic-gradient(var(--brand) calc(var(--pct) * 1%), rgba(255, 255, 255, 0.1) 0);
+}
+.oc-app .ring strong {
+  font-size: 0.95rem;
+}
+.oc-app .empty {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--line);
+}
+.oc-app .empty-mark {
+  width: 44px;
+  height: 44px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--brand) 35%, transparent),
+    transparent 65%
+  );
+}
+.oc-app .roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.oc-app .roster li {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) auto auto minmax(110px, auto) minmax(0, 2fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .roster li[data-status='SUSPENDED'] .who {
+  opacity: 0.55;
+}
+.oc-app .who {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+}
+.oc-app .who > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+.oc-app .who a {
+  color: var(--muted);
+}
+.oc-app .status.active {
+  color: var(--green);
+}
+.oc-app .status.suspended {
+  color: var(--gold);
+}
+.oc-app .status.invited {
+  color: var(--cyan);
+}
+.oc-app .row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  align-items: center;
+}
+.oc .btn-sm {
+  min-height: 36px;
+  padding: 0 0.8rem;
+  font-size: 0.68rem;
+}
+.oc .btn-danger {
+  background: var(--danger);
+  color: #1a0207;
+}
+.oc .inline-form {
+  display: flex;
+  gap: 0.4rem;
+}
+.oc .inline-form select,
+.oc .field textarea {
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #07090d;
+  color: var(--white);
+  padding: 0 0.6rem;
+}
+.oc .field textarea {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  resize: vertical;
+  font: inherit;
+}
+.oc .confirm > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.oc .confirm > summary::-webkit-details-marker {
+  display: none;
+}
+.oc .confirm[open] > summary {
+  display: none;
+}
+.oc .field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+.oc .swatches {
+  border: 0;
+  padding: 0;
+}
+.oc .swatches > div {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.oc .swatch {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+}
+.oc .swatch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.oc .swatch:has(input:checked) {
+  outline: 2px solid var(--white);
+  outline-offset: 3px;
+}
+.oc .swatch:has(input:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+.oc .preview-card {
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  overflow: hidden;
+}
+.oc .preview-band {
+  height: 84px;
+  background:
+    radial-gradient(
+      circle at 80% 10%,
+      color-mix(in srgb, var(--brand) 70%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(120deg, color-mix(in srgb, var(--brand) 25%, #050608), #050608);
+}
+.oc .preview-body {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0 1.4rem 1.4rem;
+  margin-top: -36px;
+}
+.oc .preview-body h3 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+.oc .invite .one-time {
+  margin-top: 1.5rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--green);
+  background: rgba(82, 240, 176, 0.06);
+}
+.oc .copy-field {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.oc .copy-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #07090d;
+  color: var(--white);
+  padding: 0 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.oc-app .matrix-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+}
+.oc-app .matrix {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+.oc-app .matrix th,
+.oc-app .matrix td {
+  padding: 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  font-weight: 500;
+}
+.oc-app .matrix thead th {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.oc-app .matrix tbody th {
+  text-align: left;
+  display: grid;
+  gap: 0.2rem;
+}
+.oc-app .matrix code {
+  font-size: 0.68rem;
+}
+.oc-app .matrix .mine {
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+  color: var(--white);
+}
+.oc-app .matrix .yes {
+  color: var(--brand);
+}
+.oc-app .matrix .no {
+  color: var(--faint);
+}
+.oc-app .address {
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  margin: 0 0 1.25rem;
+}
+.oc-app .invite-card {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.4rem;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  max-width: 640px;
+}
+.oc-app .invite-card > div {
+  display: grid;
+  gap: 0.3rem;
+}
+.oc-app .invite-card strong {
+  font-size: 1.4rem;
+  letter-spacing: -0.03em;
+}
+.oc-app .invite-card .link {
+  margin-left: auto;
+}
+
+/* Public organization page */
+.oc .pub-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(
+      circle at 82% 18%,
+      color-mix(in srgb, var(--brand) 38%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(circle at 10% 90%, rgba(124, 60, 255, 0.18), transparent 35%),
+    linear-gradient(180deg, #090b10, #050608);
+}
+.oc .pub-hero::after {
+  content: '';
+  position: absolute;
+  right: -8%;
+  bottom: -40%;
+  width: 46%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  box-shadow: 0 0 0 60px rgba(255, 255, 255, 0.015);
+  pointer-events: none;
+}
+.oc .pub-hero-inner,
+.oc .pub-facts {
+  position: relative;
+  z-index: 1;
+  width: min(calc(100% - 2rem), var(--max));
+  margin-inline: auto;
+}
+.oc .pub-hero-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.75rem;
+  padding: clamp(3rem, 8vw, 6rem) 0 2rem;
+}
+.oc .pub-kicker {
+  color: var(--brand);
+}
+.oc .pub-title {
+  margin: 0.4rem 0 0.9rem;
+  font-size: clamp(2.8rem, 8vw, 6.5rem);
+  line-height: 0.86;
+  letter-spacing: -0.07em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.oc .pub-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-block: 0;
+  border-top: 1px solid var(--line);
+}
+.oc .pub-facts > div {
+  padding: 1.1rem 1.25rem 1.3rem 0;
+}
+.oc .pub-facts dt {
+  color: var(--faint);
+}
+.oc .pub-facts dd {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+  word-break: break-word;
+}
+.oc .pub-about {
+  font-size: 1.15rem;
+  color: #d4d9e0;
+  max-width: 40rem;
+}
+.oc .pub-cta {
+  margin-left: auto;
+}
+.oc .athlete-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.oc .athlete-grid a {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+}
+.oc .athlete-grid a:hover {
+  border-color: var(--brand);
+}
+.oc-app .avatar {
+  text-transform: uppercase;
+}
+@media (max-width: 900px) {
+  .oc-app .roster li {
+    grid-template-columns: 1fr auto;
+  }
+  .oc-app .roster li > .muted,
+  .oc-app .roster .status {
+    grid-column: 1;
+  }
+  .oc-app .row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .oc-app .stat + .stat {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .oc-app .org-hero-inner {
+    flex-wrap: wrap;
+  }
+  .oc-app .org-public {
+    margin-left: 0;
+  }
+  .oc .pub-hero-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .oc .field-row {
+    grid-template-columns: 1fr;
+  }
+  .oc-app .invite-card {
+    flex-wrap: wrap;
+  }
+}

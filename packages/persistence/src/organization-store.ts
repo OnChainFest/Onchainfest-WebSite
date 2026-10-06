@@ -35,6 +35,12 @@ export interface OrganizationProfileInput {
   readonly country?: string | null;
   readonly region?: string | null;
   readonly publicContact?: string | null;
+  /** ONCF-02 (0031): https image URL; no upload until a production object store exists. */
+  readonly logoUrl?: string | null;
+  /** ONCF-02 (0031): brand colour, `#rrggbb`. */
+  readonly accentColor?: string | null;
+  /** ONCF-02 (0031): sports the organization runs (free text, like athlete preferredSports). */
+  readonly sports?: readonly string[];
 }
 
 /** Invitation secrets: 256-bit random, shown once; only `sha256:<hex>` is stored. */
@@ -85,6 +91,20 @@ function validateProfile(
   if (p.publicContact !== undefined)
     out.publicContact =
       p.publicContact === null ? null : text(p.publicContact, 200, 'publicContact');
+  if (p.logoUrl !== undefined) {
+    if (p.logoUrl !== null && !/^https:\/\/[^\s<>"]{3,490}$/.test(p.logoUrl)) throw bad('logoUrl');
+    out.logoUrl = p.logoUrl;
+  }
+  if (p.accentColor !== undefined) {
+    if (p.accentColor !== null && !/^#[0-9a-f]{6}$/.test(p.accentColor)) throw bad('accentColor');
+    out.accentColor = p.accentColor;
+  }
+  if (p.sports !== undefined) {
+    if (!Array.isArray(p.sports) || p.sports.length > 10) throw bad('sports');
+    const sports = p.sports.map((x) => text(x, 40, 'sports'));
+    if (new Set(sports.map((x) => x.toLowerCase())).size !== sports.length) throw bad('sports');
+    out.sports = sports;
+  }
   return out;
 }
 
@@ -285,7 +305,9 @@ export class OrganizationStore {
       await sql`UPDATE organizations.organization_profile SET
           display_name = ${set('displayName', 'display_name')}, description = ${set('description', 'description')},
           website = ${set('website', 'website')}, country = ${set('country', 'country')}, region = ${set('region', 'region')},
-          public_contact = ${set('publicContact', 'public_contact')}, updated_at = ${ctx.txTime}, updated_by_account_id = ${input.actorAccountId}
+          public_contact = ${set('publicContact', 'public_contact')}, logo_url = ${set('logoUrl', 'logo_url')},
+          accent_color = ${set('accentColor', 'accent_color')},
+          sports = ${patch.sports === undefined ? sql.ref('sports') : sql`${[...patch.sports]}::text[]`}, updated_at = ${ctx.txTime}, updated_by_account_id = ${input.actorAccountId}
         WHERE organization_id = ${input.organizationId}`.execute(ctx.trx);
       await emitEvent(ctx, {
         eventType: 'OrganizationProfileUpdated',
@@ -539,6 +561,70 @@ export class OrganizationStore {
     });
   }
 
+  /**
+   * ONCF-02: read-only preview of an invitation for its invitee (or their guardian) before they
+   * answer. Unknown, used, expired, foreign and closed-organization tokens are indistinguishable.
+   */
+  inspectInvitation(input: { actorAccountId: string; token: string }): Promise<{
+    membershipId: string;
+    role: MembershipRole;
+    expiresAt: string;
+    organization: { organizationId: string; slug: string; displayName: string; orgType: string };
+  }> {
+    const tokenHash = hashInvitationToken(input.token);
+    const invalid = () =>
+      new DomainError(DomainErrorCode.INVITATION_INVALID, 'invitation is not valid');
+    return this.tx(async (ctx) => {
+      const { rows } = await sql<{ id: string; membership_id: string; expires_at: Date }>`
+        SELECT id, membership_id, expires_at FROM organizations.invitation WHERE token_hash = ${tokenHash}`.execute(
+        ctx.trx,
+      );
+      const inv = rows[0];
+      if (inv === undefined) throw invalid();
+      const m = await loadMembership(ctx, inv.membership_id);
+      try {
+        await assertPersonOperation(ctx, input.actorAccountId, m.person_id, 'ACCEPT_MEMBERSHIP');
+      } catch {
+        throw invalid();
+      }
+      const { rows: used } = await sql<{
+        n: number;
+      }>`SELECT count(*)::int AS n FROM organizations.invitation_consumption WHERE invitation_id = ${inv.id}`.execute(
+        ctx.trx,
+      );
+      if (
+        (used[0]?.n ?? 0) > 0 ||
+        ctx.txTime.getTime() >= inv.expires_at.getTime() ||
+        (await membershipStatus(ctx, m.id)) !== 'INVITED'
+      )
+        throw invalid();
+      const { rows: org } = await sql<{
+        status: string;
+        slug: string;
+        display_name: string;
+        org_type: string;
+      }>`SELECT st.status, s.slug, p.display_name, o.org_type
+         FROM organizations.organization o
+         JOIN organizations.v_organization_current st ON st.organization_id = o.id
+         JOIN organizations.v_organization_slug_current s ON s.organization_id = o.id
+         JOIN organizations.organization_profile p ON p.organization_id = o.id
+         WHERE o.id = ${m.organization_id}`.execute(ctx.trx);
+      const o = org[0];
+      if (o === undefined || o.status !== 'ACTIVE') throw invalid();
+      return {
+        membershipId: m.id,
+        role: m.membership_role,
+        expiresAt: inv.expires_at.toISOString(),
+        organization: {
+          organizationId: m.organization_id,
+          slug: o.slug,
+          displayName: o.display_name,
+          orgType: o.org_type,
+        },
+      };
+    });
+  }
+
   /** Ends (member leaves / admin removes) or suspends/reactivates a membership. Keeps ≥ 1 OWNER. */
   setMembershipStatus(input: {
     actorAccountId: string;
@@ -719,9 +805,12 @@ export class OrganizationStore {
         visibility: MembershipVisibility;
         status: string;
         since: Date;
+        expires_at: Date | null;
       }>`
-        SELECT m.id, m.person_id, m.membership_role, m.visibility, c.status, c.recorded_at AS since
+        SELECT m.id, m.person_id, m.membership_role, m.visibility, c.status, c.recorded_at AS since,
+               i.expires_at
         FROM organizations.membership m JOIN organizations.v_membership_current c ON c.membership_id = m.id
+        LEFT JOIN organizations.invitation i ON i.membership_id = m.id
         WHERE m.organization_id = ${input.organizationId}
           AND (${full} OR (c.status = 'ACTIVE' AND m.visibility IN ('PUBLIC', 'MEMBERS')))
         ORDER BY c.recorded_at, m.id`.execute(ctx.trx);
@@ -732,6 +821,9 @@ export class OrganizationStore {
         visibility: r.visibility,
         status: r.status,
         since: r.since.toISOString(),
+        // ONCF-02: pending invitations show when they lapse (an expired one can only be revoked).
+        invitationExpiresAt:
+          r.status === 'INVITED' && r.expires_at !== null ? r.expires_at.toISOString() : null,
       }));
     });
   }
@@ -798,6 +890,9 @@ export interface PublicOrganization {
     readonly country: string | null;
     readonly region: string | null;
     readonly publicContact: string | null;
+    readonly logoUrl: string | null;
+    readonly accentColor: string | null;
+    readonly sports: readonly string[];
   };
 }
 
@@ -828,9 +923,13 @@ export class OrganizationReader {
         country: string | null;
         region: string | null;
         public_contact: string | null;
+        logo_url: string | null;
+        accent_color: string | null;
+        sports: string[];
       }>`
         SELECT o.id AS organization_id, o.org_type, st.status, cur.slug AS current_slug,
-               p.display_name, p.description, p.website, p.country, p.region, p.public_contact
+               p.display_name, p.description, p.website, p.country, p.region, p.public_contact,
+               p.logo_url, p.accent_color, p.sports
         FROM organizations.organization_slug s
         JOIN organizations.organization o ON o.id = s.organization_id
         JOIN organizations.v_organization_current st ON st.organization_id = o.id
@@ -852,6 +951,9 @@ export class OrganizationReader {
             country: r.country,
             region: r.region,
             publicContact: r.public_contact,
+            logoUrl: r.logo_url,
+            accentColor: r.accent_color,
+            sports: r.sports,
           },
         },
         currentSlug: r.current_slug,

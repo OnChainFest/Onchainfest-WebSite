@@ -110,6 +110,21 @@ export function registerCompetitionV1(t: V1Toolkit, deps: CompetitionV1Deps): vo
 
   route('GET', '/v1/catalog', 'PUBLIC', {}, async () => deps.reader.catalog());
 
+  // ONCF-02: an organization's public (non-DRAFT) competitions, for its page and dashboard.
+  route(
+    'GET',
+    '/v1/organizations/:slug/competitions',
+    'PUBLIC',
+    { params: compSlugParams },
+    async (request) => {
+      const items = await deps.reader.competitionsByOrganizerSlug(
+        params<{ slug: string }>(request).slug,
+      );
+      if (items === undefined) throw notFound('organization');
+      return { items };
+    },
+  );
+
   route('GET', '/v1/competitions/:slug', 'PUBLIC', { params: compSlugParams }, async (request) => {
     const r = await deps.reader.competitionBySlug(params<{ slug: string }>(request).slug);
     if (r === undefined) throw notFound('competition');
