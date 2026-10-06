@@ -64,9 +64,10 @@ jobs:
           find "$out/static" -type f | sed "s|^$out/static/||" | sort
       - name: Deploy (preview)
         id: deploy
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-          url=$(vercel deploy --prebuilt --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          url=$(vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Preview deployment: $url"
           echo "### Vercel preview deployment" >> "$GITHUB_STEP_SUMMARY"
@@ -105,9 +106,10 @@ jobs:
           find "$out/static" -type f | sed "s|^$out/static/||" | sort
       - name: Deploy (production)
         id: deploy
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-          url=$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          url=$(vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Production deployment: $url"
           echo "### Vercel production deployment" >> "$GITHUB_STEP_SUMMARY"
