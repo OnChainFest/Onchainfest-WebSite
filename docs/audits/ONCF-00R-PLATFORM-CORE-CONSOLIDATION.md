@@ -194,6 +194,18 @@ Verified locally:
 
 Fallback if needed: set `"installCommand": ""`, `"buildCommand": ""` and `"framework": null` in `vercel.json`. Alternatively, follow the ONCF-00 `legacy-site/` plus root-directory route as a separately reviewed step.
 
+### 7.2 Remediation (ONCF-00R-V): deployment via GitHub Actions + Vercel CLI
+
+- The GitHub repository **stays private**, and the Vercel project stays on **Hobby**.
+- The Vercel Hobby Git integration cannot deploy a private GitHub **organization** repository. On PR #5 it reported a failed check (`Vercel — Cannot deploy from a private GitHub organization repository…`).
+- Deployment ownership moves to `.github/workflows/vercel-deploy.yml`, which uses Vercel CLI `62.4.0` (pinned) with explicit `--token`, `--scope victor-valverdes-projects` and `--project` (secret `VERCEL_PROJECT_ID`):
+  - pull request → `vercel pull --environment=preview` → `vercel build` → `vercel deploy --prebuilt` (preview);
+  - push to `main` → `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` (production).
+- `vercel.json` sets `"git": { "deploymentEnabled": false }`, so the legacy Git integration no longer deploys. If the integration still posts a failed check, disconnect the repository under **Project Settings → Git**. This does not affect domains, aliases or existing deployments.
+- The project is still `onchainfest-web-site` (`prj_XF3o725RF02QpX4f7MMkhdraLMj4`), with the same settings: preset Other, root `.`, Node 22.x.
+- **Deploy boundary.** `vercel build` honors `.vercelignore` (verified locally with CLI 62.4.0). It uses `@vercel/static`, runs no install or framework build, and its `.vercel/output/static` contains only `index.html`, `contact.html`, `favicon.ico`, `logo.png` and `img/*.png`. The CSP header from `vercel.json` is preserved. Before deploying, the workflow's *Verify artifact* step fails the job if the output contains any other file or any serverless function.
+- No product, domain or database behavior changed.
+
 ## 8. Database migration handling
 
 - **Preserved:** all 30 migrations `db/migrations/0001_platform.sql` … `0030_ranking_staff_reader.sql`, plus `db/bootstrap/{roles,database}.sql` and `db/docker/init/01-create-test-db.sql`. They are byte-identical to the source and keep their full per-file history.
@@ -359,3 +371,4 @@ The only local side effects there are the ignored test runner and TypeScript cac
   1. `chore(oncf-00r): import bragging-rights platform core with full history`: the unrelated-histories merge.
   2. The follow-up commit with the deploy compatibility, ignore files, root package metadata and ownership docs (§7), plus this audit.
 - Not pushed. Not merged. Local `main` untouched. No production deployment touched. No database touched.
+- ONCF-00R-V: the deploy mechanism is replaced by GitHub Actions + Vercel CLI (§7.2).

@@ -1,0 +1,114 @@
+name: vercel-deploy
+
+# ONCF-00R-V · Public website deployment through GitHub Actions + Vercel CLI.
+#
+# The repository is private and owned by a GitHub organization, which the Vercel Hobby Git
+# integration cannot deploy. Deployment is owned by this workflow instead
+# (`vercel.json` sets `git.deploymentEnabled: false`).
+#
+#   pull_request   -> vercel pull (preview)    -> vercel build        -> vercel deploy --prebuilt
+#   push to main   -> vercel pull (production) -> vercel build --prod -> vercel deploy --prebuilt --prod
+#
+# Scope: the Vercel project `onchainfest-web-site` serves ONLY the static public website at the
+# repository root. `vercel build` honors `.vercelignore` (website allowlist); the "Verify
+# artifact" step fails the job before deploying if anything else would be published.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_CLI_VERSION: '62.4.0'
+  VERCEL_SCOPE: victor-valverdes-projects
+  # Not named VERCEL_PROJECT_ID on purpose: the CLI would then also require VERCEL_ORG_ID.
+  # The project is passed explicitly with --project instead.
+  VC_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_TELEMETRY_DISABLED: '1'
+
+jobs:
+  preview:
+    name: vercel preview
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vercel-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install Vercel CLI
+        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+      - name: Pull Vercel project settings (preview)
+        run: >-
+          vercel pull --yes --environment=preview
+          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Build (preview)
+        run: vercel build --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Verify artifact contains only the public website
+        run: |
+          set -euo pipefail
+          out=.vercel/output
+          test -d "$out/static"
+          if [ -e "$out/functions" ]; then echo "::error::Unexpected serverless functions in build output"; exit 1; fi
+          unexpected=$(cd "$out/static" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' \
+            | grep -Ev '^(index\.html|contact\.html|favicon\.ico|logo\.png|img/[^/]+\.(png|jpe?g|gif|svg|webp|ico))$' || true)
+          if [ -n "$unexpected" ]; then echo "::error::Non-website files in build output:"; echo "$unexpected"; exit 1; fi
+          for f in index.html contact.html favicon.ico logo.png; do test -f "$out/static/$f"; done
+          find "$out/static" -type f | sed "s|^$out/static/||" | sort
+      - name: Deploy (preview)
+        id: deploy
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview deployment: $url"
+          echo "### Vercel preview deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    name: vercel production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install Vercel CLI
+        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+      - name: Pull Vercel project settings (production)
+        run: >-
+          vercel pull --yes --environment=production
+          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Build (production)
+        run: vercel build --prod --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Verify artifact contains only the public website
+        run: |
+          set -euo pipefail
+          out=.vercel/output
+          test -d "$out/static"
+          if [ -e "$out/functions" ]; then echo "::error::Unexpected serverless functions in build output"; exit 1; fi
+          unexpected=$(cd "$out/static" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' \
+            | grep -Ev '^(index\.html|contact\.html|favicon\.ico|logo\.png|img/[^/]+\.(png|jpe?g|gif|svg|webp|ico))$' || true)
+          if [ -n "$unexpected" ]; then echo "::error::Non-website files in build output:"; echo "$unexpected"; exit 1; fi
+          for f in index.html contact.html favicon.ico logo.png; do test -f "$out/static/$f"; done
+          find "$out/static" -type f | sed "s|^$out/static/||" | sort
+      - name: Deploy (production)
+        id: deploy
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Production deployment: $url"
+          echo "### Vercel production deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
