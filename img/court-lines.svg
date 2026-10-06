@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" fill="none">
+  <g stroke="white" stroke-opacity=".26" stroke-width="2">
+    <path d="M180 1000 650 0M1420 1000 950 0"/>
+    <path d="M0 825h1600M70 680h1460M145 545h1310M220 420h1160M300 305h1000M380 200h840"/>
+    <path d="M800 1000V0"/>
+    <path d="M475 1000 725 0M1125 1000 875 0"/>
+  </g>
+  <g stroke="white" stroke-opacity=".5" stroke-width="3">
+    <path d="M40 930h1520M235 470h1130"/>
+    <path d="M530 1000 742 0M1070 1000 858 0"/>
+  </g>
+</svg>
