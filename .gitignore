@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env*
+!.env.example
+public/home.html
+public/contact.html
+public/favicon.ico
+public/logo.png
+public/img/
