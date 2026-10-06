@@ -1,1665 +1,578 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OnChainFest – Sports Tournament Solutions</title>
-  <meta name="description" content="OnChainFest helps clubs and organizers manage registrations, competition, results and rankings in one simple experience — while giving athletes a lasting record of what they accomplish." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OnChainFest — Sports Tournament Solutions</title>
+  <meta name="description" content="Run tournaments with less administration and give every athlete a lasting record of what they accomplish." />
   <link rel="canonical" href="https://www.onchainfest.xyz/" />
-  <meta name="theme-color" content="#070b14" />
+  <meta name="theme-color" content="#050608" />
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
-
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="OnChainFest" />
   <meta property="og:url" content="https://www.onchainfest.xyz/" />
-  <meta property="og:title" content="OnChainFest – Run better tournaments. Give every result a place in the athlete's story." />
-  <meta property="og:description" content="Registrations, competition, results and rankings in one simple tournament experience — and a lasting record of what every athlete accomplishes." />
+  <meta property="og:title" content="OnChainFest — Run better tournaments. Make every result matter." />
+  <meta property="og:description" content="Tournament operations for organizers. A lasting sporting record for athletes." />
   <meta property="og:image" content="https://www.onchainfest.xyz/img/sports1.png" />
   <meta name="twitter:card" content="summary_large_image" />
 
   <script type="application/ld+json">
   {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": "OnChainFest",
-    "url": "https://www.onchainfest.xyz/",
-    "logo": "https://www.onchainfest.xyz/img/logo.png",
-    "description": "Sports tournament solutions for clubs, organizers and the athletes who play in their tournaments.",
-    "email": "vicvalch@onchainfest.xyz"
+    "@context":"https://schema.org",
+    "@type":"Organization",
+    "name":"OnChainFest",
+    "url":"https://www.onchainfest.xyz/",
+    "logo":"https://www.onchainfest.xyz/img/logo.png",
+    "description":"Sports tournament solutions for clubs, organizers and athletes.",
+    "email":"vicvalch@onchainfest.xyz"
   }
   </script>
 
   <style>
-    :root {
-      --bg: #070b14;
-      --bg-2: #0b1120;
-      --surface: #0f172a;
-      --line: rgba(148, 163, 184, 0.16);
-      --line-strong: rgba(148, 163, 184, 0.32);
-      --text: #f1f5f9;
-      --text-2: #cbd5e1;
-      --muted: #94a3b8;
-      --accent: #22d3ee;      /* results / competition */
-      --accent-2: #a855f7;    /* brand violet */
-      --accent-3: #ec4899;    /* brand magenta / organizers */
-      --verified: #34d399;    /* athletes / achievement */
-      --gold: #fbbf24;
-      --radius: 16px;
-      --max: 1180px;
-      --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
-    * { margin: 0; padding: 0; }
-
-    html { scroll-behavior: smooth; scroll-padding-top: 84px; }
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      *, *::before, *::after { transition: none !important; animation: none !important; }
-    }
-
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
-    }
-
-    img { max-width: 100%; display: block; }
-    a { color: inherit; text-decoration: none; }
-    ul, ol { list-style: none; }
-
-    :focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 3px;
-      border-radius: 6px;
-    }
-
-    .skip-link {
-      position: absolute;
-      left: 1rem;
-      top: -100px;
-      background: var(--accent);
-      color: #04121a;
-      padding: 0.6rem 1rem;
-      border-radius: 8px;
-      font-weight: 700;
-      z-index: 2000;
-    }
-    .skip-link:focus { top: 1rem; }
-
-    .container {
-      width: 100%;
-      max-width: var(--max);
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
-
-    /* ---------- HEADER ---------- */
-    .site-header {
-      position: fixed;
-      inset: 0 0 auto 0;
-      z-index: 1000;
-      background: rgba(7, 11, 20, 0.85);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .header-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1.5rem;
-      height: 68px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      flex-shrink: 0;
-    }
-
-    /* logo.png has generous built-in padding; crop it visually */
-    .brand-mark {
-      width: 40px;
-      height: 40px;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-
-    .brand-mark img {
-      width: 100%;
-      height: 100%;
-      transform: scale(1.7);
-    }
-
-    .brand-name {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.15;
-    }
-
-    .brand-name strong {
-      font-size: 1.05rem;
-      font-weight: 800;
-      letter-spacing: 0.01em;
-    }
-
-    .brand-name span {
-      font-size: 0.66rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--muted);
-    }
-
-    .desktop-nav {
-      display: flex;
-      align-items: center;
-      gap: 1.5rem;
-      font-size: 0.9rem;
-    }
-
-    .desktop-nav a:not(.btn) {
-      color: var(--text-2);
-      font-weight: 500;
-      position: relative;
-      padding: 0.25rem 0;
-      transition: color 0.2s ease;
-    }
-
-    .desktop-nav a:not(.btn):hover { color: var(--text); }
-
-    .desktop-nav a:not(.btn)::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      bottom: -2px;
-      width: 0;
-      height: 2px;
-      background: var(--accent);
-      transition: width 0.2s ease;
-    }
-
-    .desktop-nav a:not(.btn):hover::after { width: 100%; }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      padding: 0.85rem 1.4rem;
-      border-radius: 10px;
-      font-size: 0.95rem;
-      font-weight: 650;
-      line-height: 1.2;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
-      text-align: center;
-    }
-
-    .btn:hover { transform: translateY(-1px); }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #db2777, #9333ea);
-      color: #fff;
-      box-shadow: 0 10px 30px rgba(168, 85, 247, 0.3);
-    }
-
-    .btn-primary:hover { box-shadow: 0 14px 38px rgba(168, 85, 247, 0.48); }
-
-    .btn-ghost {
-      background: rgba(15, 23, 42, 0.6);
-      border-color: var(--line-strong);
-      color: var(--text);
-    }
-
-    .btn-ghost:hover { border-color: var(--accent); background: rgba(34, 211, 238, 0.08); }
-
-    .btn-athlete {
-      background: rgba(52, 211, 153, 0.1);
-      border-color: rgba(52, 211, 153, 0.5);
-      color: var(--text);
-    }
-
-    .btn-athlete:hover { background: rgba(52, 211, 153, 0.18); border-color: var(--verified); }
-
-    .btn-sm { padding: 0.55rem 1rem; font-size: 0.85rem; }
-
-    .text-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-weight: 600;
-      color: var(--text-2);
-      text-decoration: underline;
-      text-decoration-color: var(--line-strong);
-      text-underline-offset: 4px;
-      transition: color 0.2s ease, text-decoration-color 0.2s ease;
-    }
-
-    .text-link:hover { color: var(--text); text-decoration-color: var(--accent); }
-
-    .menu-toggle {
-      display: none;
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      border: 1px solid var(--line-strong);
-      background: transparent;
-      color: var(--text);
-      cursor: pointer;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .menu-toggle .bars,
-    .menu-toggle .bars::before,
-    .menu-toggle .bars::after {
-      display: block;
-      width: 20px;
-      height: 2px;
-      background: currentColor;
-      border-radius: 2px;
-      position: relative;
-      transition: transform 0.2s ease, background 0.2s ease;
-    }
-
-    .menu-toggle .bars::before,
-    .menu-toggle .bars::after {
-      content: "";
-      position: absolute;
-      left: 0;
-    }
-
-    .menu-toggle .bars::before { top: -6px; }
-    .menu-toggle .bars::after { top: 6px; }
-
-    .menu-toggle[aria-expanded="true"] .bars { background: transparent; }
-    .menu-toggle[aria-expanded="true"] .bars::before { transform: translateY(6px) rotate(45deg); }
-    .menu-toggle[aria-expanded="true"] .bars::after { transform: translateY(-6px) rotate(-45deg); }
-
-    .mobile-menu {
-      display: none;
-      border-top: 1px solid var(--line);
-      background: rgba(7, 11, 20, 0.98);
-      padding: 0.5rem 1.5rem 1.25rem;
-      max-height: calc(100vh - 68px);
-      overflow-y: auto;
-    }
-
-    .mobile-menu.open { display: block; }
-
-    .mobile-menu a:not(.btn) {
-      display: block;
-      padding: 0.9rem 0;
-      border-bottom: 1px solid var(--line);
-      color: var(--text-2);
-      font-weight: 500;
-    }
-
-    .mobile-menu .btn { margin-top: 1rem; width: 100%; }
-
-    /* ---------- SHARED SECTION STYLES ---------- */
-    main { padding-top: 68px; }
-
-    .section { padding: 6rem 0; position: relative; }
-    .section-alt { background: var(--bg-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-family: var(--mono);
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      color: var(--accent);
-      margin-bottom: 1rem;
-    }
-
-    .eyebrow::before {
-      content: "";
-      width: 18px;
-      height: 1px;
-      background: currentColor;
-    }
-
-    .eyebrow-org { color: var(--accent-3); }
-    .eyebrow-ath { color: var(--verified); }
-
-    h1, h2, h3 { line-height: 1.12; letter-spacing: -0.02em; }
-
-    .h2 {
-      font-size: clamp(1.9rem, 3.4vw, 2.75rem);
-      font-weight: 800;
-      margin-bottom: 1rem;
-      max-width: 22ch;
-    }
-
-    .h2 .line { display: block; }
-
-    .lead {
-      font-size: 1.08rem;
-      color: var(--text-2);
-      max-width: 62ch;
-    }
-
-    .lead + .lead { margin-top: 1rem; }
-
-    .section-head { margin-bottom: 3rem; }
-
-    .grad {
-      background: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-
-    .grad-ath {
-      background: linear-gradient(120deg, var(--verified) 0%, var(--accent) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-
-    .card {
-      background: linear-gradient(180deg, rgba(19, 28, 51, 0.9), rgba(15, 23, 42, 0.9));
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 1.75rem;
-    }
-
-    .check-list li {
-      position: relative;
-      padding-left: 1.7rem;
-      margin-bottom: 0.7rem;
-      color: var(--text-2);
-    }
-
-    .check-list li::before {
-      content: "";
-      position: absolute;
-      left: 0.1rem;
-      top: 0.5em;
-      width: 0.85rem;
-      height: 0.45rem;
-      border-left: 2px solid var(--c, var(--verified));
-      border-bottom: 2px solid var(--c, var(--verified));
-      transform: rotate(-45deg);
-    }
-
-    .soon {
-      display: inline-block;
-      vertical-align: middle;
-      font-family: var(--mono);
-      font-size: 0.6rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      line-height: 1.4;
-      color: var(--gold);
-      border: 1px dashed rgba(251, 191, 36, 0.55);
-      border-radius: 5px;
-      padding: 0.1rem 0.4rem;
-      margin-left: 0.4rem;
-      white-space: nowrap;
-    }
-
-    .note {
-      margin-top: 1.25rem;
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-
-    .icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      color: var(--c);
-      background: color-mix(in srgb, var(--c) 12%, transparent);
-      border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
-    }
-
-    .icon svg {
-      width: 24px;
-      height: 24px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.8;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    /* ---------- HERO ---------- */
-    .hero {
-      position: relative;
-      padding: 6.5rem 0 5.5rem;
-      overflow: hidden;
-      isolation: isolate;
-    }
-
-    .hero-bg {
-      position: absolute;
-      inset: 0;
-      z-index: -2;
-      background: url("img/sports1.png") center 35% / cover no-repeat;
-      opacity: 0.45;
-    }
-
-    .hero::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      background:
-        radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.22), transparent 55%),
-        linear-gradient(90deg, var(--bg) 0%, rgba(7, 11, 20, 0.92) 45%, rgba(7, 11, 20, 0.75) 100%),
-        linear-gradient(0deg, var(--bg) 0%, transparent 40%);
-    }
-
-    .hero-grid {
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .hero h1 {
-      font-size: clamp(2.2rem, 3.7vw, 3rem);
-      font-weight: 850;
-      margin-bottom: 1.4rem;
-    }
-
-    .hero h1 .line { display: block; }
-
-    .hero .lead { font-size: 1.15rem; margin-bottom: 2.2rem; }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.9rem;
-    }
-
-    .hero .actions { margin-bottom: 2.4rem; }
-
-    .built-for {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem 1.4rem;
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-
-    .built-for li { display: inline-flex; align-items: center; gap: 0.5rem; }
-    .built-for li:first-child { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; }
-    .built-for i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; background: var(--c); }
-
-    /* Tournament day visual */
-    .lifecycle {
-      position: relative;
-      background: rgba(11, 17, 32, 0.88);
-      border: 1px solid var(--line-strong);
-      border-radius: 20px;
-      padding: 1.5rem 1.5rem 1.25rem;
-      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
-    }
-
-    .lifecycle-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--muted);
-      padding-bottom: 1rem;
-      margin-bottom: 0.5rem;
-      border-bottom: 1px dashed var(--line-strong);
-    }
-
-    .lifecycle-head strong { color: var(--text); font-weight: 700; }
-
-    .lifecycle ol { position: relative; }
-
-    .lifecycle ol::before {
-      content: "";
-      position: absolute;
-      left: 15px;
-      top: 18px;
-      bottom: 18px;
-      width: 2px;
-      background: linear-gradient(180deg, var(--accent-3), var(--accent-2) 30%, var(--accent) 55%, var(--verified) 75%);
-      opacity: 0.7;
-    }
-
-    .lifecycle li {
-      position: relative;
-      display: grid;
-      grid-template-columns: 32px 1fr;
-      align-items: center;
-      gap: 0.9rem;
-      padding: 0.5rem 0;
-    }
-
-    .stage-dot {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      font-weight: 700;
-      background: var(--bg);
-      border: 2px solid var(--c);
-      color: var(--c);
-      z-index: 1;
-    }
-
-    .stage-name { font-weight: 650; font-size: 0.98rem; }
-    .stage-name small { display: block; font-weight: 400; font-size: 0.78rem; color: var(--muted); }
-
-    .lifecycle li.stage-final .stage-dot { background: var(--verified); color: var(--bg); }
-    .lifecycle li.stage-final .stage-name { color: var(--verified); }
-    .lifecycle li.stage-final small { color: var(--text-2); }
-
-    .s-ops { --c: var(--accent-3); }
-    .s-play { --c: var(--accent); }
-    .s-ach { --c: var(--verified); }
-
-    /* ---------- PROBLEM ---------- */
-    .problem-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .fragments {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-
-    .fragment {
-      border: 1px dashed var(--line-strong);
-      border-radius: 12px;
-      padding: 0.9rem 1rem;
-      color: var(--muted);
-      font-size: 0.88rem;
-      background: rgba(15, 23, 42, 0.5);
-    }
-
-    .fragment strong { display: block; color: var(--text-2); font-size: 0.96rem; margin-bottom: 0.15rem; }
-    .fragment-wide { grid-column: 1 / -1; }
-
-    .fragment-arrow {
-      grid-column: 1 / -1;
-      text-align: center;
-      font-family: var(--mono);
-      font-size: 0.75rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--accent);
-      padding: 0.3rem 0;
-    }
-
-    .fragment-connected {
-      grid-column: 1 / -1;
-      border: 1px solid rgba(34, 211, 238, 0.5);
-      border-radius: 12px;
-      padding: 1.1rem 1.25rem;
-      background: linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(168, 85, 247, 0.08));
-      color: var(--text);
-      font-weight: 650;
-      font-size: 1.05rem;
-    }
-
-    .fragment-connected span { display: block; font-weight: 400; color: var(--text-2); font-size: 0.9rem; margin-top: 0.2rem; }
-
-    /* ---------- ORGANIZER CAPABILITIES ---------- */
-    .caps {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.25rem;
-    }
-
-    .cap { display: flex; flex-direction: column; gap: 0.9rem; }
-    .cap h3 { font-size: 1.2rem; }
-    .cap p { color: var(--text-2); font-size: 0.95rem; }
-
-    .caps-foot {
-      margin-top: 2.5rem;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 1rem 1.5rem;
-    }
-
-    .caps-foot p { color: var(--muted); font-size: 0.95rem; }
-
-    /* ---------- HOW IT WORKS ---------- */
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--line);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .step {
-      background: var(--bg-2);
-      padding: 2rem 1.75rem;
-    }
-
-    .step-num {
-      font-family: var(--mono);
-      font-size: 0.85rem;
-      color: var(--c);
-      margin-bottom: 1.25rem;
-      display: block;
-    }
-
-    .step h3 {
-      font-size: 1.05rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      margin-bottom: 0.5rem;
-    }
-
-    .step p { color: var(--text-2); font-size: 0.95rem; }
-    .step .who {
-      display: block;
-      margin-top: 1rem;
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    /* ---------- AUDIENCE SPLITS ---------- */
-    .split {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .split-media {
-      position: relative;
-      margin: 0;
-      border-radius: 20px;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      aspect-ratio: 4 / 5;
-    }
-
-    .split-media img { width: 100%; height: 100%; object-fit: cover; }
-
-    .split-media::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, transparent 55%, rgba(7, 11, 20, 0.8));
-    }
-
-    .split-media figcaption {
-      position: absolute;
-      left: 1rem;
-      bottom: 1rem;
-      z-index: 1;
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--text-2);
-    }
-
-    .ath-list {
-      margin: 2rem 0;
-      border-top: 1px solid var(--line);
-    }
-
-    .ath-list li {
-      display: grid;
-      grid-template-columns: 10.5rem 1fr;
-      gap: 1rem;
-      padding: 0.95rem 0;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .ath-list strong { color: var(--verified); font-weight: 650; }
-    .ath-list span { color: var(--text-2); }
-
-    /* ---------- BIG IDEA ---------- */
-    .story {
-      position: relative;
-      overflow: hidden;
-      isolation: isolate;
-      padding: 7rem 0;
-    }
-
-    .story-bg {
-      position: absolute;
-      inset: 0;
-      z-index: -2;
-      background: url("img/sports1.png") center 60% / cover no-repeat;
-      opacity: 0.3;
-    }
-
-    .story::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      background:
-        radial-gradient(ellipse at 20% 50%, rgba(236, 72, 153, 0.18), transparent 55%),
-        radial-gradient(ellipse at 85% 50%, rgba(52, 211, 153, 0.14), transparent 55%),
-        linear-gradient(180deg, var(--bg) 0%, rgba(7, 11, 20, 0.82) 20%, rgba(7, 11, 20, 0.82) 80%, var(--bg) 100%);
-    }
-
-    .story-grid {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .story h2 {
-      font-size: clamp(2.2rem, 4.6vw, 3.6rem);
-      font-weight: 850;
-      margin-bottom: 1.5rem;
-    }
-
-    .story h2 .line { display: block; }
-
-    .story-beat {
-      font-size: clamp(1.15rem, 2vw, 1.4rem);
-      color: var(--text);
-      font-weight: 600;
-      margin-bottom: 1.25rem;
-    }
-
-    .story-beat span { display: block; color: var(--muted); font-weight: 500; }
-
-    .history {
-      background: rgba(11, 17, 32, 0.9);
-      border: 1px solid var(--line-strong);
-      border-radius: 20px;
-      padding: 1.5rem;
-      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
-    }
-
-    .history-head {
-      display: flex;
-      align-items: center;
-      gap: 0.9rem;
-      padding-bottom: 1.1rem;
-      margin-bottom: 0.4rem;
-      border-bottom: 1px dashed var(--line-strong);
-    }
-
-    .history-head .avatar {
-      width: 46px;
-      height: 46px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-weight: 800;
-      color: #04121a;
-      background: linear-gradient(135deg, var(--verified), var(--accent));
-      flex-shrink: 0;
-    }
-
-    .history-head strong { display: block; font-size: 1rem; color: var(--text); }
-    .history-head span { font-size: 0.8rem; color: var(--muted); }
-
-    .history-sample {
-      margin-left: auto;
-      font-family: var(--mono);
-      font-size: 0.6rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--muted);
-      border: 1px solid var(--line-strong);
-      border-radius: 5px;
-      padding: 0.15rem 0.4rem;
-    }
-
-    .history ol li {
-      display: grid;
-      grid-template-columns: 3rem 1fr auto;
-      gap: 0.75rem;
-      align-items: center;
-      padding: 0.7rem 0;
-      border-bottom: 1px solid var(--line);
-      font-size: 0.92rem;
-    }
-
-    .history ol li:last-child { border-bottom: 0; }
-    .history time { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
-    .history .event { color: var(--text-2); }
-
-    .result {
-      font-size: 0.75rem;
-      font-weight: 650;
-      padding: 0.2rem 0.55rem;
-      border-radius: 999px;
-      color: var(--c);
-      border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-      background: color-mix(in srgb, var(--c) 10%, transparent);
-      white-space: nowrap;
-    }
-
-    .r-gold { --c: var(--gold); }
-    .r-ach { --c: var(--verified); }
-    .r-play { --c: var(--accent); }
-    .r-start { --c: var(--muted); }
-
-    .history-foot {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.5rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px dashed var(--line-strong);
-      text-align: center;
-    }
-
-    .history-foot strong { display: block; font-size: 1.3rem; }
-    .history-foot span { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
-
-    /* ---------- BRAGGING RIGHTS ---------- */
-    .brt {
-      background:
-        radial-gradient(ellipse at 15% 0%, rgba(34, 211, 238, 0.12), transparent 50%),
-        radial-gradient(ellipse at 90% 100%, rgba(168, 85, 247, 0.14), transparent 50%),
-        var(--bg-2);
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .brt-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .brt-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.82rem;
-      color: var(--text-2);
-      border: 1px solid var(--line-strong);
-      border-radius: 999px;
-      padding: 0.25rem 0.8rem 0.25rem 0.3rem;
-      margin-bottom: 1.2rem;
-    }
-
-    .brt-badge .brand-mark { width: 22px; height: 22px; }
-
-    .brt .text-link { margin-top: 1.75rem; }
-
-    .stack { display: grid; gap: 0.75rem; }
-
-    .stack-layer {
-      border-radius: 14px;
-      padding: 1.25rem 1.4rem;
-      border: 1px solid var(--line);
-      background: var(--surface);
-    }
-
-    .stack-layer .label {
-      font-family: var(--mono);
-      font-size: 0.66rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .stack-layer strong { display: block; font-size: 1.15rem; margin: 0.2rem 0 0.15rem; }
-    .stack-layer p { font-size: 0.9rem; color: var(--text-2); }
-
-    .stack-top {
-      border-color: rgba(236, 72, 153, 0.45);
-      background: linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(168, 85, 247, 0.08)), var(--surface);
-    }
-
-    .stack-mid {
-      margin: 0 1.25rem;
-      border-color: rgba(34, 211, 238, 0.45);
-      background: linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(52, 211, 153, 0.06)), var(--surface);
-    }
-
-    .stack-base {
-      margin: 0 2.5rem;
-      border-style: dashed;
-      background: transparent;
-    }
-
-    .stack-base strong { font-size: 0.95rem; color: var(--text-2); }
-
-    /* ---------- $BRT ---------- */
-    .next-panel {
-      border: 1px dashed var(--line-strong);
-      border-radius: 24px;
-      padding: 3rem;
-      display: grid;
-      grid-template-columns: 0.9fr 1.1fr;
-      gap: 3rem;
-      align-items: center;
-    }
-
-    .next-panel .h2 { font-size: clamp(1.6rem, 2.8vw, 2.25rem); }
-
-    .chain {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr auto 1fr;
-      align-items: stretch;
-      gap: 0.6rem;
-    }
-
-    .chain-node {
-      border-radius: 14px;
-      border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-      background: color-mix(in srgb, var(--c) 8%, var(--surface));
-      padding: 1.1rem 1rem;
-    }
-
-    .chain-node .label {
-      display: block;
-      font-family: var(--mono);
-      font-size: 0.62rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--c);
-    }
-
-    .chain-node strong { display: block; font-size: 1.05rem; margin: 0.3rem 0 0.2rem; }
-    .chain-node p { font-size: 0.85rem; color: var(--text-2); }
-    .chain-node .soon { margin: 0.6rem 0 0; }
-    .chain-node-next { border-style: dashed; }
-
-    .chain-arrow {
-      align-self: center;
-      color: var(--muted);
-      font-size: 1.1rem;
-    }
-
-    /* ---------- TWO AUDIENCES ---------- */
-    .audiences {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
-    }
-
-    .audience {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      padding: 2.25rem;
-      border-top: 3px solid var(--c);
-    }
-
-    .audience .eyebrow { margin-bottom: 0; color: var(--c); }
-    .audience h3 { font-size: clamp(1.4rem, 2.4vw, 1.8rem); max-width: 18ch; }
-    .audience .check-list { margin: 0.5rem 0 1rem; flex: 1; }
-    .audience .btn { align-self: flex-start; }
-
-    .aud-org { --c: var(--accent-3); }
-    .aud-ath { --c: var(--verified); }
-
-    /* ---------- WHY ---------- */
-    .why {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 2rem;
-    }
-
-    .why h3 {
-      font-size: 1rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      line-height: 1.35;
-      margin-bottom: 0.6rem;
-      padding-top: 1.2rem;
-      border-top: 2px solid var(--c);
-    }
-
-    .why p { color: var(--text-2); }
-
-    /* ---------- CTA ---------- */
-    .cta-panel {
-      position: relative;
-      overflow: hidden;
-      border-radius: 24px;
-      padding: 4rem 3rem;
-      text-align: center;
-      border: 1px solid var(--line-strong);
-      background:
-        radial-gradient(ellipse at 20% 0%, rgba(236, 72, 153, 0.22), transparent 55%),
-        radial-gradient(ellipse at 80% 100%, rgba(34, 211, 238, 0.18), transparent 55%),
-        var(--surface);
-    }
-
-    .cta-panel .h2 { margin: 0 auto 1rem; }
-    .cta-panel .lead { margin: 0 auto 2rem; }
-    .cta-panel .actions { justify-content: center; margin-bottom: 1.25rem; }
-    .cta-athlete { margin-bottom: 1.25rem; }
-    .cta-mail { font-size: 0.9rem; color: var(--muted); }
-    .cta-mail a { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
-
-    /* ---------- FOOTER ---------- */
-    .site-footer {
-      border-top: 1px solid var(--line);
-      padding: 3rem 0 2.5rem;
-      font-size: 0.9rem;
-    }
-
-    .footer-inner {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 2rem;
-      align-items: center;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.6rem 1.6rem;
-      color: var(--text-2);
-    }
-
-    .footer-links a:hover { color: var(--text); }
-
-    .footer-meta {
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 0.82rem;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
-    /* ---------- RESPONSIVE ---------- */
-    @media (max-width: 1100px) {
-      .desktop-nav { gap: 1.1rem; font-size: 0.85rem; }
-      .why { grid-template-columns: 1fr 1fr; }
-      .steps { grid-template-columns: 1fr 1fr; }
-    }
-
-    @media (max-width: 980px) {
-      .desktop-nav { display: none; }
-      .menu-toggle { display: inline-flex; }
-
-      .section { padding: 4.5rem 0; }
-      .hero { padding: 4rem 0; }
-      .story { padding: 5rem 0; }
-
-      .hero-grid,
-      .problem-grid,
-      .split,
-      .story-grid,
-      .brt-grid { grid-template-columns: 1fr; gap: 2.5rem; }
-
-      .split-media { order: -1; aspect-ratio: 16 / 10; }
-
-      .caps { grid-template-columns: 1fr 1fr; }
-      .audiences { grid-template-columns: 1fr; }
-      .next-panel { grid-template-columns: 1fr; gap: 2rem; padding: 2.25rem; }
-    }
-
-    @media (max-width: 640px) {
-      .container { padding: 0 1rem; }
-      .section { padding: 3.75rem 0; }
-      .hero h1 { font-size: 2.1rem; }
-      .hero .lead { font-size: 1.02rem; }
-      .actions .btn { width: 100%; }
-      .lifecycle { padding: 1.1rem 1rem 1rem; }
-      .fragments { grid-template-columns: 1fr; }
-      .caps { grid-template-columns: 1fr; }
-      .steps { grid-template-columns: 1fr; }
-      .why { grid-template-columns: 1fr; }
-      .ath-list li { grid-template-columns: 1fr; gap: 0.15rem; }
-      .history { padding: 1.1rem; }
-      .history ol li { grid-template-columns: 2.6rem 1fr; }
-      .history ol li .result { grid-column: 2; justify-self: start; }
-      .stack-mid { margin: 0 0.75rem; }
-      .stack-base { margin: 0 1.5rem; }
-      .audience { padding: 1.5rem; }
-      .next-panel { padding: 1.5rem 1.1rem; }
-      .chain { grid-template-columns: 1fr; }
-      .chain-arrow { justify-self: center; transform: rotate(90deg); }
-      .audience .btn { align-self: stretch; }
-      .cta-panel { padding: 2.75rem 1.25rem; }
-      .header-inner .brand-name span { display: none; }
+    :root{
+      --ink:#050608;
+      --ink-2:#0a0d12;
+      --paper:#f2f0ea;
+      --paper-2:#ddd9cf;
+      --white:#f8fafc;
+      --muted:#a7b0bd;
+      --line:rgba(255,255,255,.18);
+      --line-dark:rgba(5,6,8,.16);
+      --cyan:#00d8ff;
+      --violet:#7c3cff;
+      --pink:#ff2da4;
+      --green:#52f0b0;
+      --gold:#ffd166;
+      --max:1240px;
+      --mono:ui-monospace,"SFMono-Regular","Cascadia Mono",Menlo,Consolas,monospace;
+      --sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth;scroll-padding-top:76px}
+    body{margin:0;background:var(--ink);color:var(--white);font-family:var(--sans);line-height:1.45;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+    body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:9998;background:url("img/grain.svg");opacity:.18;mix-blend-mode:soft-light}
+    img{display:block;max-width:100%}
+    a{color:inherit;text-decoration:none}
+    button{font:inherit}
+    .skip{position:absolute;left:1rem;top:-5rem;z-index:9999;padding:.75rem 1rem;background:var(--white);color:var(--ink)}
+    .skip:focus{top:1rem}
+    :focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+    .wrap{width:min(calc(100% - 3rem),var(--max));margin-inline:auto}
+    .mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;font-size:.72rem}
+    .kicker{display:flex;align-items:center;gap:.75rem;color:var(--cyan);margin:0 0 1.25rem}
+    .kicker::before{content:"";width:2.75rem;height:1px;background:currentColor}
+    .display{margin:0;font-size:clamp(3rem,7.5vw,7.1rem);line-height:.88;letter-spacing:-.07em;font-weight:900;text-transform:uppercase}
+    .section-title{font-size:clamp(2.5rem,5vw,5.4rem);line-height:.94;letter-spacing:-.055em;margin:0;font-weight:880;text-wrap:balance}
+    .lede{font-size:clamp(1.04rem,1.6vw,1.25rem);color:#d4d9e0;max-width:48rem;margin:1.5rem 0 0}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.7rem;min-height:50px;padding:.9rem 1.25rem;border:1px solid transparent;font-weight:760;text-transform:uppercase;letter-spacing:.07em;font-size:.77rem;transition:transform .2s ease,background .2s ease,border-color .2s ease}
+    .btn:hover{transform:translateY(-2px)}
+    .btn-primary{background:var(--white);color:var(--ink)}
+    .btn-outline{border-color:rgba(255,255,255,.42);background:rgba(5,6,8,.24);backdrop-filter:blur(8px)}
+    .btn-dark{background:var(--ink);color:var(--white)}
+    .arrow{font-size:1.2em}
+
+    /* Header */
+    .site-header{position:fixed;inset:0 0 auto;z-index:1000;border-bottom:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,rgba(5,6,8,.84),rgba(5,6,8,.35));backdrop-filter:blur(12px)}
+    .nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:2rem}
+    .brand{display:flex;align-items:center;gap:.72rem;min-width:max-content}
+    .brand-crop{width:38px;height:38px;overflow:hidden;display:grid;place-items:center}
+    .brand-crop img{width:38px;height:38px;transform:scale(1.68)}
+    .brand-copy{display:grid;line-height:1}
+    .brand-copy strong{font-size:.98rem;letter-spacing:.01em}
+    .brand-copy span{font-family:var(--mono);font-size:.55rem;letter-spacing:.15em;color:#a9b2bf;margin-top:.28rem}
+    .nav-links{display:flex;align-items:center;gap:1.7rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}
+    .nav-links a:not(.btn){color:#c7ced7}
+    .nav-links a:not(.btn):hover{color:#fff}
+    .menu-toggle{display:none;width:44px;height:44px;background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff}
+    .menu-toggle span,.menu-toggle span::before,.menu-toggle span::after{display:block;width:18px;height:1px;background:currentColor;position:relative;margin:auto}
+    .menu-toggle span::before,.menu-toggle span::after{content:"";position:absolute;left:0}
+    .menu-toggle span::before{top:-6px}.menu-toggle span::after{top:6px}
+    .mobile-menu{display:none;padding:1rem 1.5rem 1.4rem;border-top:1px solid rgba(255,255,255,.12);background:#07090d;max-height:calc(100vh - 72px);overflow-y:auto}
+    .mobile-menu.open{display:grid}
+    .mobile-menu a{padding:.9rem 0;border-bottom:1px solid rgba(255,255,255,.1);text-transform:uppercase;letter-spacing:.08em;font-size:.82rem}
+    .mobile-menu .btn{margin-top:1rem}
+
+    /* Hero */
+    .hero{min-height:100svh;position:relative;display:grid;align-items:end;overflow:hidden;isolation:isolate;padding:10rem 0 4rem}
+    .hero-photo{position:absolute;inset:0;z-index:-4;background:url("img/sports1.png") center 45%/cover no-repeat;filter:saturate(.82) contrast(1.06)}
+    .hero-lines{position:absolute;inset:-5% -2% 0;z-index:-2;background:url("img/court-lines.svg") center bottom/cover no-repeat;mix-blend-mode:screen;opacity:.62}
+    .hero::before{content:"";position:absolute;inset:0;z-index:-3;background:
+      radial-gradient(circle at 77% 36%,rgba(0,216,255,.17),transparent 21%),
+      radial-gradient(circle at 20% 30%,rgba(255,45,164,.2),transparent 25%),
+      linear-gradient(90deg,rgba(5,6,8,.98) 0%,rgba(5,6,8,.78) 45%,rgba(5,6,8,.18) 74%,rgba(5,6,8,.56) 100%),
+      linear-gradient(0deg,var(--ink) 0%,transparent 34%,rgba(5,6,8,.12) 80%,rgba(5,6,8,.6) 100%)}
+    .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),var(--violet),var(--pink),transparent);opacity:.8}
+    .hero-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:4rem;align-items:end}
+    .hero-copy{max-width:830px}
+    .hero .display span{display:block}
+    .hero .display .accent{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.72);text-shadow:0 0 50px rgba(124,60,255,.2)}
+    .hero-sub{max-width:690px;margin:1.8rem 0 2rem;font-size:clamp(1rem,1.5vw,1.22rem);color:#e4e7eb}
+    .hero-actions{display:flex;gap:.8rem;flex-wrap:wrap}
+    .live-rail{border-left:1px solid rgba(255,255,255,.28);padding-left:1.4rem;display:grid;gap:1rem;align-self:stretch;align-content:end}
+    .scoreline{display:grid;grid-template-columns:72px 1fr auto;gap:.85rem;align-items:center;padding:.85rem 0;border-top:1px solid rgba(255,255,255,.2)}
+    .scoreline:last-child{border-bottom:1px solid rgba(255,255,255,.2)}
+    .scoreline .tag{font-family:var(--mono);font-size:.57rem;letter-spacing:.13em;color:#aeb8c5}
+    .scoreline strong{font-size:.92rem}
+    .scoreline b{font-family:var(--mono);font-size:.77rem;color:var(--cyan);font-weight:600}
+    .hero-note{display:flex;gap:1rem;align-items:center;margin-top:2.2rem;color:#9da7b4;font-size:.72rem;text-transform:uppercase;letter-spacing:.11em}
+    .hero-note::before{content:"";width:8px;height:8px;background:var(--green);box-shadow:0 0 18px var(--green);border-radius:50%}
+
+    /* Problem / editorial */
+    .problem{background:var(--paper);color:var(--ink);padding:8rem 0;position:relative;overflow:hidden}
+    .problem::before{content:"NO MORE SPREADSHEET MARATHONS";position:absolute;left:-1rem;bottom:-.16em;font-size:clamp(5rem,14vw,13rem);font-weight:950;letter-spacing:-.08em;line-height:.72;color:transparent;-webkit-text-stroke:1px rgba(5,6,8,.08);white-space:nowrap;pointer-events:none}
+    .problem-grid{display:grid;grid-template-columns:.82fr 1.18fr;gap:7vw;align-items:start;position:relative;z-index:1}
+    .problem .kicker{color:#6a35ff}
+    .problem .lede{color:#313842}
+    .problem-quote{font-size:clamp(2.1rem,4.2vw,4.4rem);font-weight:820;line-height:1.02;letter-spacing:-.045em;margin:0;max-width:14ch}
+    .problem-list{margin-top:2rem;border-top:1px solid var(--line-dark)}
+    .problem-row{display:grid;grid-template-columns:86px 1fr auto;gap:1rem;align-items:center;padding:1rem 0;border-bottom:1px solid var(--line-dark)}
+    .problem-row .num{font-family:var(--mono);font-size:.65rem;color:#717986}
+    .problem-row strong{font-size:1rem}
+    .problem-row em{font-style:normal;font-family:var(--mono);font-size:.59rem;letter-spacing:.12em;text-transform:uppercase;color:#7c3cff}
+
+    /* Organizer */
+    .organizers{padding:8rem 0 7rem;position:relative;overflow:hidden}
+    .organizers::after{content:"";position:absolute;right:-10vw;top:18%;width:46vw;height:46vw;border:1px solid rgba(0,216,255,.12);border-radius:50%;box-shadow:0 0 0 7vw rgba(124,60,255,.035),0 0 0 14vw rgba(255,45,164,.025);pointer-events:none}
+    .organizer-head{display:grid;grid-template-columns:1fr .55fr;gap:4rem;align-items:end;position:relative;z-index:1}
+    .organizer-head .lede{margin:0 0 .4rem}
+    .ops-strip{margin-top:4.5rem;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);position:relative;z-index:1}
+    .op{min-height:210px;padding:1.45rem 1.2rem;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between}
+    .op:last-child{border-right:0}
+    .op-index{font-family:var(--mono);font-size:.62rem;color:#77818f}
+    .op svg{width:34px;height:34px;stroke:var(--cyan);fill:none;stroke-width:1.5}
+    .op:nth-child(2n) svg{stroke:var(--violet)}
+    .op:nth-child(3n) svg{stroke:var(--pink)}
+    .op strong{font-size:1.05rem}
+    .op small{display:block;color:#929ba7;font-size:.72rem;margin-top:.35rem}
+    .op .soon{color:var(--gold)}
+    .organizer-cta{display:flex;justify-content:space-between;gap:2rem;align-items:center;margin-top:2rem;color:#a7b0bd;font-size:.88rem}
+
+    /* How it works */
+    .how{background:#0c1017;padding:8rem 0;position:relative;overflow:hidden}
+    .how::before{content:"";position:absolute;inset:0;background:url("img/court-lines.svg") center/cover no-repeat;opacity:.08}
+    .how-head{max-width:900px;position:relative}
+    .journey{margin-top:5rem;position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+    .journey::before{content:"";position:absolute;left:3%;right:3%;top:44px;height:1px;background:linear-gradient(90deg,var(--pink),var(--cyan),var(--violet),var(--green))}
+    .step{position:relative;padding-right:2rem}
+    .step-dot{width:88px;height:88px;border:1px solid rgba(255,255,255,.26);border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:.72rem;background:#0c1017;position:relative;z-index:1}
+    .step:nth-child(1) .step-dot{box-shadow:inset 0 0 30px rgba(255,45,164,.14)}
+    .step:nth-child(2) .step-dot{box-shadow:inset 0 0 30px rgba(0,216,255,.14)}
+    .step:nth-child(3) .step-dot{box-shadow:inset 0 0 30px rgba(124,60,255,.14)}
+    .step:nth-child(4) .step-dot{box-shadow:inset 0 0 30px rgba(82,240,176,.14)}
+    .step h3{margin:1.4rem 0 .6rem;font-size:1.35rem}
+    .step p{margin:0;color:#aeb7c3;max-width:16rem;font-size:.9rem}
+    .step .who{display:block;margin-top:1rem;font-family:var(--mono);font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:#6f7a87}
+
+    /* Athletes */
+    .athletes{min-height:92svh;position:relative;display:grid;align-items:center;padding:8rem 0;overflow:hidden;isolation:isolate}
+    .athlete-photo{position:absolute;inset:0;z-index:-3;background:url("img/sports2.png") center 42%/cover no-repeat}
+    .athletes::before{content:"";position:absolute;inset:0;z-index:-2;background:
+      linear-gradient(90deg,rgba(5,6,8,.96) 0%,rgba(5,6,8,.72) 46%,rgba(5,6,8,.24) 75%,rgba(5,6,8,.62) 100%),
+      linear-gradient(0deg,rgba(5,6,8,.98) 0%,transparent 34%,rgba(5,6,8,.25) 100%)}
+    .athletes::after{content:"";position:absolute;inset:0;z-index:-1;background:url("img/grain.svg");opacity:.24}
+    .athlete-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:5rem;align-items:center}
+    .athlete-copy{max-width:720px}
+    .athlete-copy .section-title span{display:block}
+    .athlete-copy .section-title .outline{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.72)}
+    .athlete-ledger{align-self:end;border-top:1px solid rgba(255,255,255,.36)}
+    .ledger-head,.ledger-row{display:grid;grid-template-columns:80px 1fr auto;gap:1rem;align-items:center;border-bottom:1px solid rgba(255,255,255,.2)}
+    .ledger-head{padding:.75rem 0;color:#8994a2;font-family:var(--mono);font-size:.56rem;text-transform:uppercase;letter-spacing:.12em}
+    .ledger-row{padding:1rem 0}
+    .ledger-row time{font-family:var(--mono);font-size:.7rem;color:#a8b2bf}
+    .ledger-row strong{font-size:.92rem}
+    .ledger-row span{font-family:var(--mono);font-size:.61rem;text-transform:uppercase;letter-spacing:.1em;color:var(--green)}
+    .athlete-stat{display:flex;gap:2rem;margin-top:2rem}
+    .athlete-stat div{border-left:1px solid rgba(255,255,255,.25);padding-left:1rem}
+    .athlete-stat b{display:block;font-size:2rem;letter-spacing:-.05em}
+    .athlete-stat small{font-family:var(--mono);font-size:.55rem;text-transform:uppercase;letter-spacing:.11em;color:#9ca6b3}
+
+    /* Story */
+    .story{background:var(--paper);color:var(--ink);padding:8rem 0}
+    .story-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:7vw}
+    .story .kicker{color:#009ab8}
+    .story .lede{color:#303741}
+    .history{border-top:1px solid var(--line-dark);margin-top:.2rem}
+    .history-item{display:grid;grid-template-columns:150px 1fr auto;gap:1.4rem;align-items:center;padding:1.15rem 0;border-bottom:1px solid var(--line-dark)}
+    .history-year{font-size:clamp(1.8rem,3vw,3.2rem);font-weight:900;letter-spacing:-.05em;color:#12161c}
+    .history-event strong{display:block;font-size:1rem}
+    .history-event span{color:#68717e;font-size:.82rem}
+    .history-result{font-family:var(--mono);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;border-bottom:2px solid #6c36ff;padding-bottom:.25rem}
+    .story-note{margin-top:1.5rem;font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:#6b7480}
+
+    /* Bragging Rights */
+    .bragging{padding:9rem 0;background:
+      radial-gradient(circle at 50% 50%,rgba(124,60,255,.18),transparent 34%),
+      linear-gradient(180deg,#080a10,#050608);position:relative;overflow:hidden}
+    .bragging-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:5rem;align-items:center}
+    .bragging .lede{max-width:40rem}
+    .tech-note{margin-top:1.5rem;color:#8793a2;font-size:.83rem;max-width:40rem}
+    .orbit{aspect-ratio:1/1;position:relative;display:grid;place-items:center;max-width:620px;margin-inline:auto}
+    .orbit-ring{position:absolute;border:1px solid rgba(255,255,255,.15);border-radius:50%}
+    .orbit-ring.one{width:42%;height:42%;box-shadow:0 0 80px rgba(124,60,255,.18)}
+    .orbit-ring.two{width:70%;height:70%;border-style:dashed;animation:spin 34s linear infinite}
+    .orbit-ring.three{width:96%;height:96%;opacity:.65}
+    .orbit-core{width:150px;height:150px;border-radius:50%;background:#090b11;border:1px solid rgba(255,255,255,.18);display:grid;place-items:center;z-index:2;box-shadow:0 0 60px rgba(0,216,255,.12)}
+    .orbit-core img{width:92px;height:92px;transform:scale(1.45)}
+    .orbit-label{position:absolute;z-index:3;padding:.6rem .75rem;background:rgba(5,6,8,.7);border-left:2px solid var(--c);backdrop-filter:blur(8px)}
+    .orbit-label b{display:block;font-size:.82rem}
+    .orbit-label span{font-family:var(--mono);font-size:.54rem;text-transform:uppercase;letter-spacing:.1em;color:#8c97a4}
+    .orbit-label.a{--c:var(--pink);left:0;top:23%}
+    .orbit-label.b{--c:var(--cyan);right:0;top:22%}
+    .orbit-label.c{--c:var(--green);right:7%;bottom:18%}
+    .orbit-label.d{--c:var(--violet);left:6%;bottom:16%}
+    .orbit-caption{text-align:center;margin-top:1rem;font-family:var(--mono);font-size:.57rem;letter-spacing:.12em;text-transform:uppercase;color:#74808d}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* BRT */
+    .brt{padding:8rem 0;position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.1);border-bottom:1px solid rgba(255,255,255,.1)}
+    .brt::before{content:"$BRT";position:absolute;right:-.04em;top:.02em;font-size:clamp(8rem,26vw,28rem);line-height:.8;font-weight:950;letter-spacing:-.1em;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.08);pointer-events:none}
+    .brt-inner{max-width:780px;position:relative;z-index:1}
+    .coming{display:inline-flex;gap:.55rem;align-items:center;margin-top:1.5rem;font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.11em;color:var(--gold)}
+    .coming::before{content:"";width:7px;height:7px;background:var(--gold);border-radius:50%;box-shadow:0 0 14px rgba(255,209,102,.6)}
+
+    /* Solutions split */
+    .solutions{display:grid;grid-template-columns:1fr 1fr;min-height:760px}
+    .audience{position:relative;overflow:hidden;isolation:isolate;display:flex;align-items:flex-end;padding:5rem clamp(1.5rem,5vw,5rem)}
+    .audience::before{content:"";position:absolute;inset:0;z-index:-2;background:var(--photo) center/cover no-repeat;transition:transform .7s ease}
+    .audience::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(0deg,rgba(5,6,8,.98) 0%,rgba(5,6,8,.72) 43%,rgba(5,6,8,.18) 100%)}
+    .audience:hover::before{transform:scale(1.035)}
+    .audience.organizer{--photo:url("img/sports1.png")}
+    .audience.athlete{--photo:url("img/sports2.png")}
+    .audience-copy{max-width:520px}
+    .audience .section-title{font-size:clamp(2.7rem,5vw,5.8rem)}
+    .audience p{color:#d3d8df;max-width:34rem}
+    .micro-list{display:flex;flex-wrap:wrap;gap:0;margin:1.6rem 0 2rem;border-top:1px solid rgba(255,255,255,.25)}
+    .micro-list span{font-family:var(--mono);font-size:.57rem;text-transform:uppercase;letter-spacing:.1em;padding:.62rem .8rem .62rem 0;margin-right:.8rem;border-bottom:1px solid rgba(255,255,255,.18);color:#c1c9d3}
+
+    /* Why */
+    .about{padding:8rem 0;background:#0b0e13}
+    .why-lines{margin-top:4rem;border-top:1px solid var(--line)}
+    .why-line{display:grid;grid-template-columns:150px 1fr 2fr;gap:2rem;padding:1.35rem 0;border-bottom:1px solid var(--line);align-items:baseline}
+    .why-line .mono{color:#727d8b}
+    .why-line strong{font-size:1.1rem}
+    .why-line p{margin:0;color:#9fa9b6}
+
+    /* CTA */
+    .cta{min-height:76svh;display:grid;align-items:center;position:relative;overflow:hidden;isolation:isolate}
+    .cta::before{content:"";position:absolute;inset:0;z-index:-3;background:url("img/sports1.png") center/cover no-repeat;filter:saturate(.7)}
+    .cta::after{content:"";position:absolute;inset:0;z-index:-2;background:linear-gradient(90deg,rgba(5,6,8,.98),rgba(5,6,8,.72) 52%,rgba(5,6,8,.3))}
+    .cta-lines{position:absolute;inset:0;z-index:-1;background:url("img/court-lines.svg") center/cover no-repeat;opacity:.22}
+    .cta-inner{padding:7rem 0;max-width:850px}
+    .cta .section-title{font-size:clamp(3rem,7vw,7.2rem)}
+    .cta-actions{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:2rem}
+    .cta-mail{margin-top:1.2rem;color:#aab4bf;font-size:.84rem}
+    .cta-mail a{text-decoration:underline;text-underline-offset:4px}
+
+    /* Footer */
+    .footer{padding:2.2rem 0;border-top:1px solid var(--line);background:#050608}
+    .footer-row{display:flex;justify-content:space-between;gap:2rem;align-items:center}
+    .footer-links{display:flex;gap:1.2rem;flex-wrap:wrap;font-family:var(--mono);font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;color:#8994a1}
+    .footer-meta{font-family:var(--mono);font-size:.54rem;letter-spacing:.08em;text-transform:uppercase;color:#636e7b}
+
+    @media(max-width:1050px){
+      .nav-links{display:none}.menu-toggle{display:block}
+      .hero-grid,.organizer-head,.athlete-grid,.story-grid,.bragging-grid{grid-template-columns:1fr}
+      .hero{padding-top:9rem}.live-rail{max-width:650px;margin-top:2rem;min-height:0}
+      .ops-strip{grid-template-columns:repeat(3,1fr)}.op:nth-child(3){border-right:0}.op:nth-child(-n+3){border-bottom:1px solid var(--line)}
+      .journey{grid-template-columns:1fr 1fr;gap:2.5rem 0}.journey::before{display:none}
+      .solutions{min-height:auto}
+      .audience{min-height:680px}
+      .problem-grid{grid-template-columns:1fr;gap:3rem}
+      .bragging-grid{gap:2rem}.orbit{max-width:560px}
+    }
+    @media(max-width:760px){
+      .wrap{width:min(calc(100% - 2rem),var(--max))}
+      .site-header{background:rgba(5,6,8,.92)}
+      .brand-copy span{display:none}
+      .hero{min-height:900px;padding:8.5rem 0 3rem;align-items:end}
+      .hero::before{background:linear-gradient(0deg,var(--ink) 0%,rgba(5,6,8,.86) 52%,rgba(5,6,8,.5) 100%),linear-gradient(90deg,rgba(5,6,8,.85),rgba(5,6,8,.12))}
+      .hero-photo{background-position:58% 45%}
+      .hero-lines{opacity:.34}
+      .hero-grid{gap:1.6rem}
+      .display{font-size:clamp(3.25rem,15vw,5.4rem)}
+      .hero-sub{font-size:1rem}
+      .live-rail{padding-left:1rem}
+      .scoreline{grid-template-columns:64px 1fr auto}
+      .problem,.organizers,.how,.athletes,.story,.bragging,.brt,.about{padding:5.5rem 0}
+      .problem::before{font-size:7rem}
+      .ops-strip{grid-template-columns:1fr 1fr}
+      .op{min-height:180px}.op:nth-child(n){border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.op:nth-child(2n){border-right:0}.op:nth-last-child(-n+2){border-bottom:0}
+      .organizer-cta{align-items:flex-start;flex-direction:column}
+      .journey{grid-template-columns:1fr;gap:2rem}.step{display:grid;grid-template-columns:72px 1fr;column-gap:1rem;padding-right:0}.step-dot{width:72px;height:72px;grid-row:1/4}.step h3{margin:.3rem 0 .45rem}.step p,.step .who{grid-column:2}.step .who{margin-top:.8rem}
+      .athletes{min-height:980px;align-items:end}.athlete-photo{background-position:58% 40%}
+      .athletes::before{background:linear-gradient(0deg,rgba(5,6,8,.99) 0%,rgba(5,6,8,.9) 58%,rgba(5,6,8,.3) 100%)}
+      .athlete-grid{gap:2.5rem}
+      .ledger-head,.ledger-row{grid-template-columns:58px 1fr auto;gap:.7rem}
+      .athlete-stat{gap:1rem;flex-wrap:wrap}
+      .history-item{grid-template-columns:90px 1fr;gap:1rem}.history-result{grid-column:2;justify-self:start}
+      .orbit{max-width:100%}.orbit-core{width:110px;height:110px}.orbit-core img{width:70px;height:70px}.orbit-label{max-width:135px}.orbit-label span{display:none}
+      .solutions{grid-template-columns:1fr}.audience{min-height:660px;padding:4rem 1.2rem 3rem}
+      .why-line{grid-template-columns:72px 1fr}.why-line p{grid-column:2}
+      .cta{min-height:760px}.cta::after{background:linear-gradient(0deg,rgba(5,6,8,.98),rgba(5,6,8,.66))}
+      .footer-row{align-items:flex-start;flex-direction:column}
+    }
+    @media(prefers-reduced-motion:reduce){
+      html{scroll-behavior:auto}.orbit-ring.two{animation:none}.audience::before,.btn{transition:none}
     }
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip" href="#main">Skip to content</a>
 
   <header class="site-header">
-    <div class="container header-inner">
-      <a href="#top" class="brand" aria-label="OnChainFest – back to top">
-        <span class="brand-mark"><img src="img/logo.png" alt="" width="40" height="40" /></span>
-        <span class="brand-name">
-          <strong>OnChainFest</strong>
-          <span>Sports Tournament Solutions</span>
-        </span>
+    <div class="wrap nav">
+      <a class="brand" href="#top" aria-label="OnChainFest home">
+        <span class="brand-crop"><img src="img/logo.png" width="38" height="38" alt="" /></span>
+        <span class="brand-copy"><strong>OnChainFest</strong><span>Sports tournament systems</span></span>
       </a>
 
-      <nav class="desktop-nav" aria-label="Primary">
-        <a href="#solutions">Solutions</a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#organizers">Organizers</a>
+        <a href="#athletes">Athletes</a>
         <a href="#how-it-works">How it works</a>
-        <a href="#organizers">For Organizers</a>
-        <a href="#athletes">For Athletes</a>
-        <a href="#bragging-rights">Bragging Rights</a>
-        <a href="#about">About</a>
-        <a href="contact.html" class="btn btn-primary btn-sm">Talk to us</a>
+        <a href="#ecosystem">Ecosystem / $BRT</a>
+        <a class="btn btn-primary" href="contact.html">Talk to us <span class="arrow">↗</span></a>
       </nav>
 
-      <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
-        <span class="bars" aria-hidden="true"></span>
-      </button>
+      <button class="menu-toggle" id="menu-toggle" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu"><span></span></button>
     </div>
-
     <nav class="mobile-menu" id="mobile-menu" aria-label="Mobile">
-      <a href="#solutions">Solutions</a>
+      <a href="#organizers">Organizers</a>
+      <a href="#athletes">Athletes</a>
       <a href="#how-it-works">How it works</a>
-      <a href="#organizers">For Organizers</a>
-      <a href="#athletes">For Athletes</a>
-      <a href="#bragging-rights">Bragging Rights</a>
-      <a href="#about">About</a>
-      <a href="contact.html" class="btn btn-primary">Talk to us</a>
+      <a href="#ecosystem">Ecosystem / $BRT</a>
+            <a class="btn btn-primary" href="contact.html">Talk to us <span class="arrow">↗</span></a>
     </nav>
   </header>
 
   <main id="main">
-    <!-- ================= 1. HERO ================= -->
     <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="hero-bg" aria-hidden="true"></div>
-      <div class="container hero-grid">
-        <div>
-          <p class="eyebrow">Sports tournaments, made better</p>
-          <h1 id="hero-title">
-            <span class="line">Run better tournaments.</span>
-            <span class="line">Give every result a place in the <span class="grad">athlete's story.</span></span>
+      <div class="hero-photo" aria-hidden="true"></div>
+      <div class="hero-lines" aria-hidden="true"></div>
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="kicker mono">Tournament operations // athlete legacy</p>
+          <h1 class="display" id="hero-title">
+            <span>Run better</span>
+            <span class="accent">tournaments.</span>
           </h1>
-          <p class="lead">
-            OnChainFest helps clubs and organizers manage registrations, competition, results and
-            rankings in one simple experience — while giving athletes a lasting record of what
-            they accomplish.
-          </p>
-          <div class="actions">
-            <a href="#organizers" class="btn btn-primary">For Clubs &amp; Organizers <span aria-hidden="true">→</span></a>
-            <a href="#athletes" class="btn btn-athlete">For Athletes</a>
+          <p class="hero-sub">Registrations, competition, results and rankings in one clear experience — while every athlete builds a record of what they actually accomplished.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="contact.html">Build a better tournament <span class="arrow">→</span></a>
+            <a class="btn btn-outline" href="#athletes">See the athlete side</a>
           </div>
-          <ul class="built-for">
-            <li>Built for</li>
-            <li style="--c: var(--accent-3)"><i aria-hidden="true"></i>Padel &amp; tennis clubs</li>
-            <li style="--c: var(--accent)"><i aria-hidden="true"></i>Tournament organizers</li>
-            <li style="--c: var(--accent-2)"><i aria-hidden="true"></i>Academies &amp; leagues</li>
-            <li style="--c: var(--verified)"><i aria-hidden="true"></i>Competitive athletes</li>
-          </ul>
+          <p class="hero-note">Built for clubs, organizers, academies and tournament series</p>
         </div>
 
-        <figure class="lifecycle">
-          <figcaption class="lifecycle-head">
-            <strong>Tournament day</strong>
-            <span aria-hidden="true">One place, start to finish</span>
-          </figcaption>
-          <ol>
-            <li class="s-ops"><span class="stage-dot" aria-hidden="true">01</span><span class="stage-name">Registration<small>Players join</small></span></li>
-            <li class="s-ops"><span class="stage-dot" aria-hidden="true">02</span><span class="stage-name">Competition<small>Matches happen</small></span></li>
-            <li class="s-play"><span class="stage-dot" aria-hidden="true">03</span><span class="stage-name">Results<small>Scores are recorded</small></span></li>
-            <li class="s-play"><span class="stage-dot" aria-hidden="true">04</span><span class="stage-name">Rankings<small>Performance is updated</small></span></li>
-            <li class="s-ach"><span class="stage-dot" aria-hidden="true">05</span><span class="stage-name">Achievements <span class="soon">Coming soon</span><small>Players earn recognition</small></span></li>
-            <li class="s-ach"><span class="stage-dot" aria-hidden="true">06</span><span class="stage-name">Prizes <span class="soon">Coming soon</span><small>Awards are delivered</small></span></li>
-            <li class="s-ach stage-final"><span class="stage-dot" aria-hidden="true">07</span><span class="stage-name">History <span class="soon">Coming soon</span><small>The tournament becomes part of the athlete's record</small></span></li>
-          </ol>
-        </figure>
+        <aside class="live-rail" aria-label="Tournament experience preview">
+          <div class="scoreline"><span class="tag">ENTRY</span><strong>Registration</strong><b>OPEN</b></div>
+          <div class="scoreline"><span class="tag">DRAW</span><strong>Competition</strong><b>LIVE</b></div>
+          <div class="scoreline"><span class="tag">COURT</span><strong>Results</strong><b>SYNCED</b></div>
+          <div class="scoreline"><span class="tag">TABLE</span><strong>Rankings</strong><b>UPDATED</b></div>
+        </aside>
       </div>
     </section>
 
-    <!-- ================= 2. THE PROBLEM ================= -->
-    <section class="section" id="problem" aria-labelledby="problem-title">
-      <div class="container problem-grid">
+    <section class="problem" id="problem" aria-labelledby="problem-title">
+      <div class="wrap problem-grid">
         <div>
-          <p class="eyebrow">Sound familiar?</p>
-          <h2 class="h2" id="problem-title">Running a tournament shouldn't mean running a spreadsheet marathon.</h2>
-          <p class="lead">
-            Most tournaments are held together by a patchwork of forms, chats, spreadsheets and
-            late nights. The organizer does all the work — and when the final whistle blows, most
-            of what the players achieved simply disappears.
-          </p>
-          <p class="lead">
-            <strong>OnChainFest brings the tournament experience together</strong> — so you spend
-            less time on admin, and your players get more out of every event.
-          </p>
+          <p class="kicker mono">The problem</p>
+          <h2 class="problem-quote" id="problem-title">A tournament should feel like sport — not office work.</h2>
         </div>
-
-        <div class="fragments">
-          <div class="fragment"><strong>Registrations in one place</strong>Forms, messages, payment screenshots…</div>
-          <div class="fragment"><strong>Schedules somewhere else</strong>Re-shared every time a match moves.</div>
-          <div class="fragment"><strong>Results in spreadsheets</strong>Typed in by hand after every round.</div>
-          <div class="fragment"><strong>Rankings updated manually</strong>Late, error-prone and hard to check.</div>
-          <div class="fragment"><strong>Prizes handled separately</strong>Tracked on paper, delivered later.</div>
-          <div class="fragment"><strong>Players constantly asking for updates</strong>"When do we play? Who won? Where are we?"</div>
-          <div class="fragment"><strong>Information spread across messages</strong>Group chats, emails and DMs nobody can search.</div>
-          <div class="fragment"><strong>History disappearing after the event</strong>A week later, nobody remembers who won.</div>
-          <div class="fragment-arrow" aria-hidden="true">↓ With OnChainFest ↓</div>
-          <div class="fragment-connected">
-            One tournament. One place.
-            <span>Registration, brackets, results and rankings together — with a clear page for every player.</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================= 3. FOR ORGANIZERS ================= -->
-    <section class="section section-alt" id="organizers" aria-labelledby="org-title">
-      <div class="container">
-        <div class="section-head">
-          <p class="eyebrow eyebrow-org">For clubs &amp; organizers</p>
-          <h2 class="h2" id="org-title">Everything you need to run the tournament.</h2>
-          <p class="lead">
-            From the first sign-up to the final trophy, OnChainFest takes care of the busywork so
-            you can focus on the event — and on your players.
-          </p>
-        </div>
-
-        <div class="caps">
-          <article class="card cap" style="--c: var(--accent-3)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h4"/></svg></span>
-            <h3>Registration</h3>
-            <p>Get players and teams organized before the first match — with entry fees paid online.</p>
-          </article>
-
-          <article class="card cap" style="--c: var(--accent-3)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h6v4H3M3 15h6v4H3M9 7h3v10H9M12 12h4"/><rect x="16" y="9.5" width="5" height="5" rx="1"/></svg></span>
-            <h3>Competition</h3>
-            <p>Manage brackets and matches without juggling multiple tools. Match scheduling is coming soon.</p>
-          </article>
-
-          <article class="card cap" style="--c: var(--accent)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14M7 10v4M15.5 10h2v4h-2z"/></svg></span>
-            <h3>Results</h3>
-            <p>Capture results once and keep them organized.</p>
-          </article>
-
-          <article class="card cap" style="--c: var(--accent)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20v-7h4v7M10 20V8h4v12M16 20v-5h4v5M3 20h18"/></svg></span>
-            <h3>Rankings</h3>
-            <p>Turn tournament results into live standings — with achievements coming soon.</p>
-          </article>
-
-          <article class="card cap" style="--c: var(--verified)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0V4zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M9.5 17h5"/></svg></span>
-            <h3>Prizes <span class="soon">Coming soon</span></h3>
-            <p>Make awards and prize distribution part of the tournament experience.</p>
-          </article>
-
-          <article class="card cap" style="--c: var(--verified)">
-            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M10 7h4M10 10.5h4M10 14h2.5M11 18h2"/></svg></span>
-            <h3>Participant experience</h3>
-            <p>Give athletes a clear place to follow their tournament journey — brackets, results and their own player page.</p>
-          </article>
-        </div>
-
-        <div class="caps-foot">
-          <a href="contact.html" class="btn btn-primary">Build a better tournament <span aria-hidden="true">→</span></a>
-          <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
-          <p><strong>Live today:</strong> registration, online entry payments, brackets, results, standings and player pages. Items marked <span class="soon">Coming soon</span> are on the way.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================= HOW IT WORKS ================= -->
-    <section class="section" id="how-it-works" aria-labelledby="how-title">
-      <div class="container">
-        <div class="section-head">
-          <p class="eyebrow">How it works</p>
-          <h2 class="h2" id="how-title">Run the tournament. Record the achievement. Build the history.</h2>
-        </div>
-
-        <ol class="steps">
-          <li class="step" style="--c: var(--accent-3)"><span class="step-num" aria-hidden="true">01</span><h3>Set it up</h3><p>Create your tournament, open registration and let players and teams sign up.</p><span class="who">Organizer</span></li>
-          <li class="step" style="--c: var(--accent)"><span class="step-num" aria-hidden="true">02</span><h3>Play</h3><p>Brackets are ready and players can follow them online. Results are entered once and standings update.</p><span class="who">Organizer &amp; players</span></li>
-          <li class="step" style="--c: var(--accent-2)"><span class="step-num" aria-hidden="true">03</span><h3>Celebrate</h3><p>Winners are recognized with achievements and prizes. <span class="soon">Coming soon</span></p><span class="who">Everyone</span></li>
-          <li class="step" style="--c: var(--verified)"><span class="step-num" aria-hidden="true">04</span><h3>Remember</h3><p>Every result joins each athlete's sporting history — ready for the next tournament. <span class="soon">Coming soon</span></p><span class="who">Athletes</span></li>
-        </ol>
-      </div>
-    </section>
-
-    <!-- ================= 4. FOR ATHLETES ================= -->
-    <section class="section section-alt" id="athletes" aria-labelledby="ath-title">
-      <div class="container split">
-        <figure class="split-media">
-          <img src="img/sports2.png" alt="Runners with race numbers competing in a crowded city road race" width="1536" height="1024" loading="lazy" decoding="async" />
-          <figcaption>Every result counts</figcaption>
-        </figure>
         <div>
-          <p class="eyebrow eyebrow-ath">For athletes</p>
-          <h2 class="h2" id="ath-title">
-            <span class="line">Your tournament ends.</span>
-            <span class="line grad-ath">Your achievement doesn't.</span>
-          </h2>
-          <p class="lead">Every tournament is part of your sporting journey.</p>
-          <p class="lead">
-            OnChainFest helps turn tournament results into rankings, achievements and a sporting
-            history that can grow from competition to competition.
-          </p>
-          <ul class="ath-list">
-            <li><strong>Your results</strong><span>Keep track of what you actually accomplished, on your own player page.</span></li>
-            <li><strong>Your rankings</strong><span>See where you stand in the tournament standings — and, soon, how your performance develops over time.</span></li>
-            <li><strong>Your achievements</strong><span>Turn important wins and milestones into something you can keep. <span class="soon">Coming soon</span></span></li>
-            <li><strong>Your prizes</strong><span>Receive and keep digital awards and prizes through the platform. <span class="soon">Coming soon</span></span></li>
-            <li><strong>Your history</strong><span>Build a sporting record that grows with every tournament. <span class="soon">Coming soon</span></span></li>
-          </ul>
-          <div class="actions">
-            <a href="#story" class="btn btn-athlete">See the athlete experience <span aria-hidden="true">→</span></a>
+          <p class="lede">The event moves fast. Registration changes, brackets shift, scores arrive, people ask where they stand. OnChainFest gives the organizer one operating layer and the athlete one clear place to follow the journey.</p>
+          <div class="problem-list" aria-label="Typical tournament friction">
+            <div class="problem-row"><span class="num">01</span><strong>Sign-ups in one place</strong><em>less chasing</em></div>
+            <div class="problem-row"><span class="num">02</span><strong>Brackets and results stay connected</strong><em>less rework</em></div>
+            <div class="problem-row"><span class="num">03</span><strong>Standings update from real results</strong><em>less confusion</em></div>
+            <div class="problem-row"><span class="num">04</span><strong>Players keep what they achieved</strong><em>more value</em></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ================= 5. THE BIG IDEA ================= -->
-    <section class="story" id="story" aria-labelledby="story-title">
-      <div class="story-bg" aria-hidden="true"></div>
-      <div class="container story-grid">
-        <div>
-          <p class="eyebrow">The big idea</p>
-          <h2 id="story-title">
-            <span class="line">Every match tells a story.</span>
-            <span class="line grad">Every result adds to it.</span>
-          </h2>
-          <p class="story-beat">
-            Today it's one tournament.
-            <span>Tomorrow it's part of your sporting history.</span>
-          </p>
-          <p class="lead">
-            OnChainFest helps turn individual tournament results into a history athletes can build
-            on — a record of every match played, every ranking earned and every title won, kept
-            safe long after the weekend is over.
-          </p>
-        </div>
-
-        <figure class="history" aria-label="Example of an athlete's sporting history">
-          <figcaption class="history-head">
-            <span class="avatar" aria-hidden="true">AL</span>
-            <span><strong>Alex L.</strong><span>Padel · Club player</span></span>
-            <span class="history-sample">Example</span>
-          </figcaption>
-          <ol>
-            <li><time>2026</time><span class="event">Club Championship</span><span class="result r-gold">Champion</span></li>
-            <li><time>2026</time><span class="event">Spring Open</span><span class="result r-ach">Finalist</span></li>
-            <li><time>2025</time><span class="event">Summer Series · Stage 3</span><span class="result r-play">Semifinal</span></li>
-            <li><time>2025</time><span class="event">Autumn League</span><span class="result r-play">Ranked #4</span></li>
-            <li><time>2024</time><span class="event">First tournament</span><span class="result r-start">Round of 16</span></li>
-          </ol>
-          <div class="history-foot">
-            <div><strong>12</strong><span>Tournaments</span></div>
-            <div><strong>1</strong><span>Title</span></div>
-            <div><strong>+18</strong><span>Ranking places</span></div>
-          </div>
-        </figure>
-      </div>
-    </section>
-
-    <!-- ================= 6. BRAGGING RIGHTS ================= -->
-    <section class="section brt" id="bragging-rights" aria-labelledby="brt-title">
-      <div class="container brt-grid">
-        <div>
-          <p class="brt-badge"><span class="brand-mark"><img src="img/logo.png" alt="" width="22" height="22" /></span>Part of the OnChainFest family</p>
-          <h2 class="h2" id="brt-title">Powered by Bragging Rights.</h2>
-          <p class="lead">
-            Bragging Rights is the technology behind OnChainFest that turns verified tournament
-            results into rankings, achievements and a lasting record of sporting performance.
-          </p>
-          <p class="lead">
-            Behind the scenes, Bragging Rights helps make sure that results are properly recorded
-            and only count when they meet the tournament's rules.
-          </p>
-          <p class="note">Bragging Rights is being prepared for public launch and for connection to OnChainFest tournaments. <span class="soon">Coming soon</span></p>
-          <!-- TODO: point to the Bragging Rights product page once it is public -->
-          <a href="contact.html" class="text-link">Learn about Bragging Rights <span aria-hidden="true">→</span></a>
-        </div>
-
-        <div class="stack" role="list" aria-label="How OnChainFest and Bragging Rights fit together">
-          <div class="stack-layer stack-top" role="listitem">
-            <span class="label">What you use</span>
-            <strong>OnChainFest</strong>
-            <p>The tournament experience for organizers and athletes.</p>
-          </div>
-          <div class="stack-layer stack-mid" role="listitem">
-            <span class="label">What powers it</span>
-            <strong>Bragging Rights</strong>
-            <p>The engine behind rankings, achievements and athlete history.</p>
-          </div>
-          <div class="stack-layer stack-base" role="listitem">
-            <span class="label">Behind the scenes</span>
-            <strong>Secure technology that keeps every record safe</strong>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================= $BRT ================= -->
-    <section class="section" id="brt" aria-labelledby="brt-token-title">
-      <div class="container">
-        <div class="next-panel">
+    <section class="organizers" id="organizers" aria-labelledby="organizers-title">
+      <div class="wrap">
+        <div class="organizer-head">
           <div>
-            <p class="eyebrow">What's next <span class="soon">Coming soon</span></p>
-            <h2 class="h2" id="brt-token-title">Recognition that can go beyond the tournament.</h2>
-            <p class="lead">
-              Bragging Rights Tokens ($BRT) are part of the broader Bragging Rights ecosystem.
-            </p>
-            <p class="lead">
-              As the ecosystem develops, $BRT can become part of how achievements, recognition and
-              digital rewards connect athletes to the tournaments they participate in.
-            </p>
-            <p class="note">$BRT is still in development and is not available today. We'll share details before it launches.</p>
+            <p class="kicker mono">For organizers</p>
+            <h2 class="section-title" id="organizers-title">One operating layer for the whole tournament.</h2>
           </div>
+          <p class="lede">From the first sign-up to the final standings, keep the event moving without turning every change into another spreadsheet, message thread or manual update.</p>
+        </div>
 
-          <ol class="chain" aria-label="How OnChainFest, Bragging Rights and $BRT connect">
-            <li class="chain-node" style="--c: var(--accent-3)">
-              <span class="label">OnChainFest</span>
-              <strong>Run the tournament</strong>
-              <p>Registration, brackets, results and standings.</p>
-            </li>
-            <li class="chain-arrow" aria-hidden="true">→</li>
-            <li class="chain-node" style="--c: var(--accent)">
-              <span class="label">Bragging Rights</span>
-              <strong>Record the achievement</strong>
-              <p>Results become rankings, achievements and history.</p>
-            </li>
-            <li class="chain-arrow" aria-hidden="true">→</li>
-            <li class="chain-node chain-node-next" style="--c: var(--verified)">
-              <span class="label">$BRT</span>
-              <strong>Build the history</strong>
-              <p>Recognition that can travel with the athlete.</p>
-              <span class="soon">Coming soon</span>
-            </li>
-          </ol>
+        <div class="ops-strip" role="list" aria-label="Tournament capabilities">
+          <div class="op" role="listitem">
+            <span class="op-index">01 / ENTRY</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 5h20v22H6zM10 11h12M10 16h8M10 21h10"/></svg>
+            <div><strong>Registration</strong><small>Set up your club or tournament landing page so players can sign up in one place.</small></div>
+          </div>
+          <div class="op" role="listitem">
+            <span class="op-index">02 / DRAW</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 7h8v6H4zM4 19h8v6H4zM20 13h8v6h-8zM12 10h4v6h4M12 22h4v-6"/></svg>
+            <div><strong>Competition</strong><small>Brackets and progression stay visible.</small></div>
+          </div>
+          <div class="op" role="listitem">
+            <span class="op-index">03 / SCORE</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 7h20v18H6zM10 12h4v8h-4zM18 12h4v8h-4z"/></svg>
+            <div><strong>Results</strong><small>Enter outcomes once. Keep the event moving.</small></div>
+          </div>
+          <div class="op" role="listitem">
+            <span class="op-index">04 / TABLE</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 24V14M16 24V8M25 24V4M4 27h24"/></svg>
+            <div><strong>Rankings</strong><small>Standings reflect what happened on court.</small></div>
+          </div>
+          <div class="op" role="listitem">
+            <span class="op-index">05 / REWARD</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M10 4h12v6c0 4-2 7-6 9-4-2-6-5-6-9zM9 7H5c0 5 2 7 7 8M23 7h4c0 5-2 7-7 8M16 19v5M11 27h10"/></svg>
+            <div><strong>Prizes</strong><small class="soon">Coming soon</small></div>
+          </div>
+          <div class="op" role="listitem">
+            <span class="op-index">06 / MEMORY</span>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24V8h20v16zM10 19l4-4 3 3 5-6 4 5"/></svg>
+            <div><strong>Participant experience</strong><small>One clear place to follow the tournament.</small></div>
+          </div>
+        </div>
+
+        <div class="organizer-cta">
+          <span>Less administration. A cleaner event. More room to focus on the competition.</span>
+          <a class="btn btn-outline" href="contact.html">Talk about your tournament <span class="arrow">→</span></a>
         </div>
       </div>
     </section>
 
-    <!-- ================= 7. TWO AUDIENCES ================= -->
-    <section class="section" id="solutions" aria-labelledby="solutions-title">
-      <div class="container">
-        <div class="section-head">
-          <p class="eyebrow">Solutions</p>
-          <h2 class="h2" id="solutions-title">One tournament. Two winners.</h2>
-          <p class="lead">Organizers get a simpler event. Athletes get something that lasts.</p>
+    <section class="how" id="how-it-works" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="how-head">
+          <p class="kicker mono">How it works</p>
+          <h2 class="section-title" id="how-title">Run the tournament. Record the achievement. Build the history.</h2>
         </div>
 
-        <div class="audiences">
-          <article class="card audience aud-org">
-            <p class="eyebrow">For organizers</p>
-            <h3>Run the tournament. We'll help with the complexity.</h3>
-            <ul class="check-list" style="--c: var(--accent-3)">
-              <li>Registrations</li>
-              <li>Competition management</li>
-              <li>Results</li>
-              <li>Rankings</li>
-              <li>Prizes <span class="soon">Coming soon</span></li>
-              <li>Participant experience</li>
-            </ul>
-            <a href="contact.html" class="btn btn-primary">Build a better tournament <span aria-hidden="true">→</span></a>
+        <div class="journey" role="list">
+          <article class="step" role="listitem">
+            <div class="step-dot">01</div>
+            <h3>Set it up</h3>
+            <p>Create the competition and let players or teams register.</p>
+            <span class="who">Organizer</span>
           </article>
-
-          <article class="card audience aud-ath">
-            <p class="eyebrow">For athletes</p>
-            <h3>Play the tournament. Keep the achievement.</h3>
-            <ul class="check-list">
-              <li>Results</li>
-              <li>Rankings</li>
-              <li>Achievements <span class="soon">Coming soon</span></li>
-              <li>Prizes <span class="soon">Coming soon</span></li>
-              <li>Sporting history <span class="soon">Coming soon</span></li>
-            </ul>
-            <a href="#story" class="btn btn-athlete">See your sporting journey <span aria-hidden="true">→</span></a>
+          <article class="step" role="listitem">
+            <div class="step-dot">02</div>
+            <h3>Play</h3>
+            <p>Follow brackets, publish results and keep standings current.</p>
+            <span class="who">Organizer + players</span>
+          </article>
+          <article class="step" role="listitem">
+            <div class="step-dot">03</div>
+            <h3>Celebrate</h3>
+            <p>Recognize winners with achievements and prizes as the ecosystem expands.</p>
+            <span class="who">Coming soon</span>
+          </article>
+          <article class="step" role="listitem">
+            <div class="step-dot">04</div>
+            <h3>Remember</h3>
+            <p>Carry each result into a sporting history that grows over time.</p>
+            <span class="who">Athletes · coming soon</span>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- ================= 8. WHY ONCHAINFEST ================= -->
-    <section class="section section-alt" id="about" aria-labelledby="why-title">
-      <div class="container">
-        <div class="section-head">
-          <p class="eyebrow">Why OnChainFest</p>
-          <h2 class="h2" id="why-title">
-            <span class="line">Less administration.</span>
-            <span class="line">Better tournaments.</span>
-            <span class="line grad">More value for athletes.</span>
-          </h2>
+    <section class="athletes" id="athletes" aria-labelledby="athletes-title">
+      <div class="athlete-photo" aria-hidden="true"></div>
+      <div class="wrap athlete-grid">
+        <div class="athlete-copy">
+          <p class="kicker mono">For athletes</p>
+          <h2 class="section-title" id="athletes-title"><span>Your tournament ends.</span> <span class="outline">Your achievement doesn't.</span></h2>
+          <p class="lede">Every tournament can become part of your sporting journey — results, rankings and milestones that do not disappear when the weekend is over.</p>
+          <div class="athlete-stat" aria-label="Example athlete profile stats">
+            <div><b>12</b><small>Tournaments</small></div>
+            <div><b>01</b><small>Title</small></div>
+            <div><b>+18</b><small>Ranking places</small></div>
+          </div>
         </div>
-        <div class="why">
-          <div style="--c: var(--accent-3)">
-            <h3>Simpler</h3>
-            <p>Spend less time managing tournament logistics.</p>
-          </div>
-          <div style="--c: var(--accent)">
-            <h3>Better experience</h3>
-            <p>Give players one clear place for their tournament journey.</p>
-          </div>
-          <div style="--c: var(--accent-2)">
-            <h3>Lasting value</h3>
-            <p>Results don't disappear when the tournament ends.</p>
-          </div>
-          <div style="--c: var(--verified)">
-            <h3>Built to grow</h3>
-            <p>Build a sporting record that can grow from one tournament to the next.</p>
-          </div>
+
+        <div class="athlete-ledger" aria-label="Illustrative athlete history">
+          <div class="ledger-head"><span>Year</span><span>Event</span><span>Result</span></div>
+          <div class="ledger-row"><time>2026</time><strong>Club Championship</strong><span>Champion</span></div>
+          <div class="ledger-row"><time>2026</time><strong>Spring Open</strong><span>Finalist</span></div>
+          <div class="ledger-row"><time>2025</time><strong>Summer Series · Stage 3</strong><span>Semifinal</span></div>
+          <div class="ledger-row"><time>2025</time><strong>Autumn League</strong><span>Ranked #4</span></div>
         </div>
       </div>
     </section>
 
-    <!-- ================= 9. FINAL CTA ================= -->
-    <section class="section" id="contact" aria-labelledby="cta-title">
-      <div class="container">
-        <div class="cta-panel">
-          <p class="eyebrow">Let's talk</p>
-          <h2 class="h2" id="cta-title">Ready to run your next tournament differently?</h2>
-          <p class="lead">
-            Whether you're organizing your club's next competition or building a tournament series,
-            OnChainFest helps make the experience simpler for organizers and more valuable for
-            athletes.
-          </p>
-          <div class="actions">
-            <a href="contact.html" class="btn btn-primary">Talk to us <span aria-hidden="true">→</span></a>
-            <a href="#organizers" class="btn btn-ghost">For Clubs &amp; Organizers</a>
-          </div>
-          <p class="cta-athlete"><a href="#athletes" class="text-link">I'm an Athlete <span aria-hidden="true">→</span></a></p>
-          <p class="cta-mail">Prefer email? <a href="mailto:vicvalch@onchainfest.xyz">vicvalch@onchainfest.xyz</a></p>
+
+
+    <section class="bragging" id="ecosystem" aria-labelledby="ecosystem-title">
+      <div class="wrap bragging-grid">
+        <div>
+          <p class="kicker mono">The OnChainFest ecosystem</p>
+          <h2 class="section-title" id="ecosystem-title">Play it. Prove it. Own the Bragging Rights.</h2>
+          <p class="lede">OnChainFest is the tournament platform. Bragging Rights ($BRT) is an NFT layer within the broader ecosystem — being developed to turn verified sporting achievements into digital recognition athletes can carry beyond a single event.</p>
+          <p class="tech-note">$BRT is not what powers the tournament. It extends the experience: the event creates the result, OnChainFest preserves the record, and Bragging Rights can give selected achievements a collectible digital expression.</p>
+          <p class="coming">NFT ecosystem layer — in development</p>
         </div>
+
+        <div>
+          <div class="orbit" aria-label="The OnChainFest ecosystem">
+            <span class="orbit-ring one"></span>
+            <span class="orbit-ring two"></span>
+            <span class="orbit-ring three"></span>
+            <div class="orbit-core"><img src="img/logo.png" alt="" /></div>
+            <div class="orbit-label a"><b>OnChainFest</b><span>Tournament platform</span></div>
+            <div class="orbit-label b"><b>Results</b><span>Verified outcomes</span></div>
+            <div class="orbit-label c"><b>Athlete history</b><span>Sporting record</span></div>
+            <div class="orbit-label d"><b>$BRT</b><span>Bragging Rights NFT</span></div>
+          </div>
+          <p class="orbit-caption">Tournament platform at the core // ecosystem layers around it</p>
+        </div>
+      </div>
+    </section>
+
+
+
+
+    <section class="cta" id="contact" aria-labelledby="cta-title">
+      <div class="cta-lines" aria-hidden="true"></div>
+      <div class="wrap cta-inner">
+        <p class="kicker mono">Next tournament</p>
+        <h2 class="section-title" id="cta-title">Ready to run it differently?</h2>
+        <p class="lede">Tell us what you are organizing — club competition, academy event, league or tournament series — and we will show you where OnChainFest can fit.</p>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="contact.html">Talk to us <span class="arrow">→</span></a>
+          <a class="btn btn-outline" href="#organizers">See organizer flow</a>
+        </div>
+        <p class="cta-mail">Prefer email? <a href="mailto:vicvalch@onchainfest.xyz">vicvalch@onchainfest.xyz</a></p>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-inner">
-        <a href="#top" class="brand" aria-label="OnChainFest – back to top">
-          <span class="brand-mark"><img src="img/logo.png" alt="" width="40" height="40" /></span>
-          <span class="brand-name">
-            <strong>OnChainFest</strong>
-            <span>Sports Tournament Solutions</span>
-          </span>
-        </a>
-        <nav class="footer-links" aria-label="Footer">
-          <a href="#solutions">Solutions</a>
-          <a href="#how-it-works">How it works</a>
-          <a href="#organizers">For Organizers</a>
-          <a href="#athletes">For Athletes</a>
-          <a href="#bragging-rights">Bragging Rights</a>
-          <a href="contact.html">Contact</a>
-        </nav>
-      </div>
-      <div class="footer-meta">
-        <span>© 2026 OnChainFest. All rights reserved.</span>
-        <span>Achievements and rankings powered by Bragging Rights.</span>
-      </div>
+  <footer class="footer">
+    <div class="wrap footer-row">
+      <a class="brand" href="#top">
+        <span class="brand-crop"><img src="img/logo.png" width="38" height="38" alt="" /></span>
+        <span class="brand-copy"><strong>OnChainFest</strong><span>Sports tournament systems</span></span>
+      </a>
+      <nav class="footer-links" aria-label="Footer"><a href="#organizers">Organizers</a><a href="#athletes">Athletes</a><a href="#ecosystem">Ecosystem / $BRT</a><a href="contact.html">Contact</a></nav>
+      <span class="footer-meta">© 2026 OnChainFest</span>
     </div>
   </footer>
 
   <script>
-    (function () {
-      "use strict";
-      var toggle = document.getElementById("menu-toggle");
-      var menu = document.getElementById("mobile-menu");
-      if (!toggle || !menu) return;
-
-      function setOpen(open) {
-        menu.classList.toggle("open", open);
-        toggle.setAttribute("aria-expanded", open ? "true" : "false");
-        toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    (function(){
+      var toggle=document.getElementById("menu-toggle");
+      var menu=document.getElementById("mobile-menu");
+      if(!toggle||!menu)return;
+      function setOpen(open){
+        menu.classList.toggle("open",open);
+        toggle.setAttribute("aria-expanded",open?"true":"false");
+        toggle.setAttribute("aria-label",open?"Close menu":"Open menu");
       }
-
-      toggle.addEventListener("click", function (e) {
-        e.stopPropagation();
-        setOpen(!menu.classList.contains("open"));
-      });
-
-      menu.addEventListener("click", function (e) {
-        if (e.target.closest("a")) setOpen(false);
-      });
-
-      document.addEventListener("click", function (e) {
-        if (!menu.contains(e.target) && !toggle.contains(e.target)) setOpen(false);
-      });
-
-      document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && menu.classList.contains("open")) {
-          setOpen(false);
-          toggle.focus();
-        }
-      });
-
-      window.addEventListener("resize", function () {
-        if (window.innerWidth > 980) setOpen(false);
-      });
+      toggle.addEventListener("click",function(e){e.stopPropagation();setOpen(!menu.classList.contains("open"));});
+      menu.addEventListener("click",function(e){if(e.target.closest("a"))setOpen(false);});
+      document.addEventListener("click",function(e){if(!menu.contains(e.target)&&!toggle.contains(e.target))setOpen(false);});
+      document.addEventListener("keydown",function(e){if(e.key==="Escape"&&menu.classList.contains("open")){setOpen(false);toggle.focus();}});
+      window.addEventListener("resize",function(){if(window.innerWidth>1050)setOpen(false);});
     })();
   </script>
 </body>
