@@ -27,6 +27,7 @@
     "db:seed": "tsx packages/persistence/src/cli/seed-dev.ts",
     "db:seed:identity": "tsx packages/persistence/src/cli/seed-identity.ts",
     "db:seed:competition": "tsx packages/persistence/src/cli/seed-competition.ts",
+    "db:catalog:provision": "tsx packages/persistence/src/cli/provision-catalog.ts",
     "db:seed:evidence": "tsx packages/persistence/src/cli/seed-evidence.ts",
     "demo:foundation": "tsx packages/persistence/src/cli/demo-foundation.ts",
     "demo:identity": "tsx apps/api/src/cli/demo-identity.ts",

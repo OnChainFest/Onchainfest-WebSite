@@ -50,6 +50,10 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
 
 export type SlugResult = { ok: true; slug: string } | { ok: false; reason: 'INVALID' | 'RESERVED' };
 
+/** ONCF-03A: the one slug length bound (domain, database `identity.normalized_slug_ok`, API, web). */
+export const SLUG_MIN_LENGTH = 3;
+export const SLUG_MAX_LENGTH = 50;
+
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,48}[a-z0-9])$/;
 
 export function normalizeSlug(input: string): SlugResult {

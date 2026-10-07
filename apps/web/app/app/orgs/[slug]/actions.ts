@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import type { AuthErrorCode, AuthNoticeCode } from '../../../_lib/auth/messages';
 import { siteUrl } from '../../../_lib/auth/request-meta';
 import { verifiedSession } from '../../../_lib/auth/session';
-import { idempotencyKey, normalizeSlugInput } from '../../../_lib/onboarding-input';
+import { idempotencyKey, normalizeSlugInput, SLUG_RE } from '../../../_lib/onboarding-input';
 import { apiRequest, loadAccountState, type ApiResult } from '../../../_lib/platform';
 
 /**
@@ -14,7 +14,6 @@ import { apiRequest, loadAccountState, type ApiResult } from '../../../_lib/plat
  * the authority. Errors map to the fixed message vocabulary.
  */
 
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,98}[a-z0-9])?$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ROLES = ['OWNER', 'ADMIN', 'STAFF', 'COACH', 'OFFICIAL', 'ATHLETE', 'MEMBER'] as const;
 

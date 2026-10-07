@@ -1,4 +1,5 @@
 export * from './catalog';
+export * from './catalog-manifest';
 export * from './category';
 export * from './draw';
 export * from './dto';

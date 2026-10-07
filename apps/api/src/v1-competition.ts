@@ -11,8 +11,10 @@ import {
   defined,
   idempotencyHeaders,
   idParams,
+  lookupSlugSchema,
   nullableString,
   obj,
+  slugSchema,
   uuid,
   type V1Toolkit,
 } from './v1';
@@ -40,9 +42,10 @@ const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `$
  */
 export function registerCompetitionV1(t: V1Toolkit, deps: CompetitionV1Deps): void {
   const { route, requireAuth, operator, key } = t;
-  const slug = { type: 'string', minLength: 1, maxLength: 100 } as const;
-  const compSlugParams = obj({ slug }, ['slug']);
-  const eventSlugParams = obj({ slug, eventSlug: slug }, ['slug', 'eventSlug']);
+  const slug = slugSchema;
+  const lookup = lookupSlugSchema;
+  const compSlugParams = obj({ slug: lookup }, ['slug']);
+  const eventSlugParams = obj({ slug: lookup, eventSlug: lookup }, ['slug', 'eventSlug']);
   const instant = { type: 'string', minLength: 16, maxLength: 40 } as const;
   const nullableInstant = { type: ['string', 'null'], minLength: 16, maxLength: 40 } as const;
   const label = { type: 'string', minLength: 1, maxLength: 40 } as const;
@@ -381,6 +384,38 @@ export function registerCompetitionV1(t: V1Toolkit, deps: CompetitionV1Deps): vo
         ctx.accountId,
         params<{ competitionId: string }>(request).competitionId,
       );
+    },
+  );
+
+  // ONCF-03A organizer reads (DRAFT included). The store decides: ORG_MANAGE_COMPETITIONS in the
+  // organization for the list, COMP_VIEW_PRIVATE on the competition for the detail.
+  route(
+    'GET',
+    '/v1/organizations/:organizationId/competitions/manage',
+    'ORG_ADMIN',
+    { params: idParams('organizationId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      return {
+        items: await deps.competitions.organizationCompetitions({
+          actorAccountId: ctx.accountId,
+          organizationId: params<{ organizationId: string }>(request).organizationId,
+        }),
+      };
+    },
+  );
+
+  route(
+    'GET',
+    '/v1/competitions/:competitionId/manage',
+    'COMP_STAFF',
+    { params: idParams('competitionId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      return deps.competitions.managedCompetition({
+        actorAccountId: ctx.accountId,
+        competitionId: params<{ competitionId: string }>(request).competitionId,
+      });
     },
   );
 

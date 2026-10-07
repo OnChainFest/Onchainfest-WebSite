@@ -1,5 +1,9 @@
+import {
+  CANONICAL_CATALOG,
+  type CatalogManifest,
+  type DisciplineVersionSpec,
+} from '@br/competition';
 import { DomainError, DomainErrorCode } from '@br/domain';
-import type { DisciplineVersionSpec } from '@br/competition';
 import { CatalogStore } from '../catalog-store';
 import { CompetitionStore } from '../competition-store';
 import { StructureStore } from '../competition-structure-store';
@@ -70,37 +74,6 @@ async function athlete(name: string, displayName: string) {
   return { ...a, athleteId };
 }
 
-const PADEL: DisciplineVersionSpec = {
-  resultSchema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['setsWon', 'gamesWon'],
-    properties: {
-      setsWon: { type: 'integer', minimum: 0, maximum: 5 },
-      gamesWon: { type: 'integer', minimum: 0, maximum: 99 },
-    },
-  },
-  metrics: [
-    { key: 'setsWon', valueType: 'INTEGER', unit: 'sets' },
-    { key: 'gamesWon', valueType: 'INTEGER', unit: 'games' },
-  ],
-  comparator: {
-    outcomeModel: 'WIN_LOSS_DRAW',
-    primary: 'HEAD_TO_HEAD_WINNER',
-    keys: [
-      { metric: 'setsWon', order: 'HIGHER_IS_BETTER' },
-      { metric: 'gamesWon', order: 'HIGHER_IS_BETTER' },
-    ],
-  },
-  validation: { bounds: [{ metric: 'setsWon', min: '0', max: '3' }] },
-  allowedContestTypes: ['MATCH'],
-  participation: { participantKinds: ['TEAM'], lineupSize: { min: 2, max: 2 } },
-  evidenceExpectations: ['SIGNED_SCORESHEET'],
-};
-const TENNIS: DisciplineVersionSpec = {
-  ...PADEL,
-  participation: { participantKinds: ['INDIVIDUAL'], lineupSize: { min: 1, max: 1 } },
-};
 const RUNNING: DisciplineVersionSpec = {
   resultSchema: {
     type: 'object',
@@ -126,63 +99,31 @@ try {
     providerSubject: 'seed:operator',
     method: 'TEST',
   });
-  const version = async (
-    sport: string,
-    sportName: string,
-    discipline: string,
-    name: string,
-    spec: DisciplineVersionSpec,
-  ) => {
-    const { sportId } = await catalog.createSport({
-      operatorAccountId: op,
-      code: sport,
-      name: sportName,
-      idempotencyKey: `seed:sport:${sport}`,
-    });
-    const { disciplineId } = await catalog.createDiscipline({
-      operatorAccountId: op,
-      sportId,
-      code: discipline,
-      name,
-      idempotencyKey: `seed:discipline:${discipline}`,
-    });
-    const { disciplineVersionId } = await catalog.createDisciplineVersion({
-      operatorAccountId: op,
-      disciplineId,
-      spec,
-      idempotencyKey: `seed:dv:${discipline}:1`,
-    });
-    await tolerate(
-      () => catalog.publishDisciplineVersion({ operatorAccountId: op, disciplineVersionId }),
-      T,
-    );
-    return disciplineVersionId;
+  // ONCF-03A: the same lookup-first provisioner production uses, plus a dev-only running 5K
+  // (HEAT contests have no format engine yet, so it is not in the canonical catalog).
+  const DEV_CATALOG: CatalogManifest = {
+    sports: [
+      ...CANONICAL_CATALOG.sports,
+      {
+        code: 'running',
+        name: 'Running',
+        disciplines: [{ code: 'running.5k', name: 'Running 5K', spec: RUNNING }],
+      },
+    ],
+    formats: CANONICAL_CATALOG.formats,
   };
-  const format = async (code: string, name: string, engineId: string) => {
-    const { formatTemplateId } = await catalog.createFormatTemplate({
-      operatorAccountId: op,
-      code,
-      name,
-      idempotencyKey: `seed:format:${code}`,
-    });
-    const { formatVersionId } = await catalog.createFormatVersion({
-      operatorAccountId: op,
-      formatTemplateId,
-      engineId,
-      engineVersion: 1,
-      idempotencyKey: `seed:fv:${code}:1`,
-    });
-    await tolerate(
-      () => catalog.publishFormatVersion({ operatorAccountId: op, formatVersionId }),
-      T,
-    );
-    return formatVersionId;
+  const provisioned = await catalog.provision({ operatorAccountId: op, manifest: DEV_CATALOG });
+  if (provisioned.conflicts.length > 0)
+    throw new Error(`catalog conflicts: ${JSON.stringify(provisioned.conflicts)}`);
+  const idOf = (kind: 'discipline-version' | 'format-version', code: string): string => {
+    const id = provisioned.steps.find((s) => s.kind === kind && s.code === code)?.id;
+    if (id === undefined) throw new Error(`catalog entry ${code} missing`);
+    return id;
   };
-  const padelDv = await version('padel', 'Padel', 'padel.doubles', 'Padel doubles', PADEL);
-  const tennisDv = await version('tennis', 'Tennis', 'tennis.singles', 'Tennis singles', TENNIS);
-  await version('running', 'Running', 'running.5k', 'Running 5K', RUNNING);
-  const se = await format('single-elimination', 'Single elimination', 'single-elimination');
-  const rr = await format('round-robin', 'Round robin', 'round-robin');
+  const padelDv = idOf('discipline-version', 'padel.doubles');
+  const tennisDv = idOf('discipline-version', 'tennis.singles');
+  const se = idOf('format-version', 'single-elimination');
+  const rr = idOf('format-version', 'round-robin');
 
   // ── organizer ──
   const organizer = await account('comp-organizer');
@@ -367,6 +308,7 @@ try {
           disciplines: [
             'padel.doubles@1',
             'tennis.singles@1',
+            'tennis.doubles@1',
             'running.5k@1 (catalog only: no heat format yet)',
           ],
           formats: ['single-elimination/1', 'round-robin/1'],

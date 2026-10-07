@@ -15,6 +15,8 @@ import {
   GUARDIAN_ALLOWED_OPERATIONS,
   isPassportVisible,
   normalizeSlug,
+  SLUG_MAX_LENGTH,
+  SLUG_MIN_LENGTH,
   OrganizationType,
   OrgPermission,
   PASSPORT_SCHEMA,
@@ -50,6 +52,15 @@ describe('slugs', () => {
     ]) {
       expect(normalizeSlug(bad).ok, bad).toBe(false);
     }
+  });
+
+  it('accepts exactly SLUG_MIN_LENGTH..SLUG_MAX_LENGTH characters (ONCF-03A boundary)', () => {
+    expect(SLUG_MIN_LENGTH).toBe(3);
+    expect(SLUG_MAX_LENGTH).toBe(50);
+    expect(normalizeSlug('a'.repeat(SLUG_MIN_LENGTH)).ok).toBe(true);
+    expect(normalizeSlug('a'.repeat(SLUG_MIN_LENGTH - 1)).ok).toBe(false);
+    expect(normalizeSlug('a'.repeat(SLUG_MAX_LENGTH)).ok).toBe(true);
+    expect(normalizeSlug('a'.repeat(SLUG_MAX_LENGTH + 1)).ok).toBe(false);
   });
 
   it('rejects reserved words in any case', () => {

@@ -1,6 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
-/** Input shaping for onboarding forms. The platform API re-validates everything. */
+/**
+ * Input shaping for onboarding forms. The platform API re-validates everything.
+ * SLUG_RE mirrors the canonical slug bound (3–50 chars; @br/identity SLUG_MAX_LENGTH) and is the
+ * only slug pattern in the web app.
+ */
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,48}[a-z0-9])$/;
 const KEY_RE = /^[A-Za-z0-9._:-]{8,200}$/;
 

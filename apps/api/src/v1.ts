@@ -1,5 +1,5 @@
 import { DomainError, DomainErrorCode } from '@br/domain';
-import { OrgPermission, ROLE_PERMISSIONS, type AuthContext } from '@br/identity';
+import { OrgPermission, ROLE_PERMISSIONS, SLUG_MAX_LENGTH, type AuthContext } from '@br/identity';
 import type {
   IdentityStore,
   OrganizationReader,
@@ -199,10 +199,17 @@ export const idParams = (name: string) =>
     properties: { [name]: uuid },
     additionalProperties: false,
   }) as const;
+/**
+ * ONCF-03A slug bounds. A slug being CLAIMED (body) is bounded by the canonical SLUG_MAX_LENGTH
+ * (the store still normalizes and validates it). A slug in a PATH is only a lookup key: any value
+ * that cannot be a slug simply misses (404), so its bound is a request-size guard, not a slug rule.
+ */
+export const slugSchema = { type: 'string', minLength: 1, maxLength: SLUG_MAX_LENGTH } as const;
+export const lookupSlugSchema = { type: 'string', minLength: 1, maxLength: 100 } as const;
 const slugParams = {
   type: 'object',
   required: ['slug'],
-  properties: { slug: { type: 'string', minLength: 1, maxLength: 100 } },
+  properties: { slug: lookupSlugSchema },
 } as const;
 export const idempotencyHeaders = {
   type: 'object',
@@ -412,7 +419,7 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
       body: obj(
         {
           personId: uuid,
-          slug: { type: 'string', minLength: 1, maxLength: 100 },
+          slug: slugSchema,
           profile: obj(profileProps, ['displayName']),
         },
         ['personId', 'slug', 'profile'],
@@ -466,7 +473,7 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
               'OTHER',
             ],
           },
-          slug: { type: 'string', minLength: 1, maxLength: 100 },
+          slug: slugSchema,
           profile: obj(orgProfileProps, ['displayName']),
         },
         ['orgType', 'slug', 'profile'],
@@ -692,7 +699,7 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     'GUARDIAN',
     {
       params: idParams('athleteId'),
-      body: obj({ slug: { type: 'string', minLength: 1, maxLength: 100 } }, ['slug']),
+      body: obj({ slug: slugSchema }, ['slug']),
     },
     async (request) => {
       const ctx = requireAuth(request);
@@ -867,7 +874,7 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
     'ORG_ADMIN',
     {
       params: idParams('organizationId'),
-      body: obj({ slug: { type: 'string', minLength: 1, maxLength: 100 } }, ['slug']),
+      body: obj({ slug: slugSchema }, ['slug']),
     },
     async (request) => {
       const ctx = requireAuth(request);
@@ -891,7 +898,7 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
         {
           personId: uuid,
           // ONCF-02: or the invitee's athlete profile address (resolved server-side).
-          athleteSlug: { type: 'string', minLength: 1, maxLength: 100 },
+          athleteSlug: slugSchema,
           role: { enum: ['OWNER', 'ADMIN', 'MEMBER', 'ATHLETE', 'COACH', 'OFFICIAL', 'STAFF'] },
           visibility: { enum: ['PUBLIC', 'MEMBERS', 'PRIVATE'] },
         },

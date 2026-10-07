@@ -8,7 +8,9 @@ import {
   formatEngine,
   SPORT_CODE,
   validateDisciplineVersionSpec,
+  type CatalogManifest,
   type CatalogVersionStatus,
+  type CompetitionFormatEngine,
   type DisciplineVersionSpec,
 } from '@br/competition';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
@@ -18,6 +20,32 @@ import type { Db } from './db';
 import { identityIdempotency, lockKeys, pgConstraint, recordAudit } from './identity-support';
 import { emitEvent } from './outbox';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
+
+/** The content hash a FormatVersion pinning `engine` carries. */
+function formatVersionSpecHash(engine: CompetitionFormatEngine): string {
+  return catalogSpecHash('br:format-version-spec', {
+    engineId: engine.id,
+    engineVersion: engine.version,
+    configurationSchema: engine.configurationSchema,
+    contestType: engine.contestType,
+  });
+}
+
+export type CatalogProvisionAction =
+  'UNCHANGED' | 'CREATED' | 'PUBLISHED' | 'WOULD_CREATE' | 'WOULD_PUBLISH';
+
+export interface CatalogProvisionReport {
+  readonly steps: readonly {
+    readonly kind: 'sport' | 'discipline' | 'discipline-version' | 'format' | 'format-version';
+    readonly code: string;
+    readonly action: CatalogProvisionAction;
+    readonly id?: string;
+  }[];
+  /** Entries the provisioner refused to touch; an operator must resolve them deliberately. */
+  readonly conflicts: readonly { readonly code: string; readonly reason: string }[];
+}
+
+type VersionRow = { id: string; spec_hash: string; status: CatalogVersionStatus };
 
 /**
  * Sport catalog (br_catalog). INTERNAL/operator-only: organizers never define or edit sports,
@@ -301,13 +329,7 @@ export class CatalogStore {
         ),
       );
     }
-    const spec = {
-      engineId: engine.id,
-      engineVersion: engine.version,
-      configurationSchema: engine.configurationSchema,
-      contestType: engine.contestType,
-    };
-    const specHash = catalogSpecHash('br:format-version-spec', spec);
+    const specHash = formatVersionSpecHash(engine);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{
         formatVersionId: string;
@@ -436,5 +458,219 @@ export class CatalogStore {
         targetId: id,
       });
     });
+  }
+
+  // ───────────────────────────── provisioning (ONCF-03A) ─────────────────────────────
+
+  /**
+   * Applies a declared catalog lookup-first: a sport, discipline or format whose code exists is
+   * reused; a discipline/format version whose content hash already exists is reused (and published
+   * if still DRAFT). Nothing is ever duplicated, so re-running converges. A discipline or format
+   * that already has versions, none with the declared content, is a CONFLICT and left untouched:
+   * versions are immutable semantics and a new one is an operator decision, never a side effect.
+   * A RETIRED matching version is also a conflict (retiring is deliberate; it is not undone here).
+   * `dryRun` reports what would change without writing.
+   */
+  async provision(input: {
+    operatorAccountId: string;
+    manifest: CatalogManifest;
+    dryRun?: boolean;
+  }): Promise<CatalogProvisionReport> {
+    const op = input.operatorAccountId;
+    const dryRun = input.dryRun === true;
+    // Validate the whole manifest before any write.
+    for (const sport of input.manifest.sports) {
+      if (!SPORT_CODE.test(sport.code))
+        throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid sport code ${sport.code}`);
+      for (const d of sport.disciplines) {
+        if (!DISCIPLINE_CODE.test(d.code) || !disciplineBelongsToSport(d.code, sport.code))
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid discipline code ${d.code}`);
+        const issues = validateDisciplineVersionSpec(d.spec);
+        if (issues.length > 0)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid spec for ${d.code}`, {
+            issues: issues.slice(0, 20),
+          });
+      }
+    }
+    const engines = input.manifest.formats.map((f) => {
+      const engine = formatEngine(f.engineId, f.engineVersion);
+      if (!FORMAT_CODE.test(f.code) || engine === undefined)
+        throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid format ${f.code}`);
+      return { ...f, engine };
+    });
+
+    const steps: CatalogProvisionReport['steps'][number][] = [];
+    const conflicts: { code: string; reason: string }[] = [];
+    const key = (...parts: string[]) => `catalog-provision:${parts.join(':')}`;
+    const idOf = (table: 'sport' | 'discipline' | 'format_template', code: string) =>
+      this.tx(async (ctx) => {
+        const { rows } = await sql<{
+          id: string;
+        }>`SELECT id FROM ${sql.raw(`sports.${table}`)} WHERE code = ${code}`.execute(ctx.trx);
+        return rows[0]?.id;
+      });
+    const versionsOf = (kind: 'discipline' | 'format', parentId: string) =>
+      this.tx(async (ctx) => {
+        const { rows } =
+          kind === 'discipline'
+            ? await sql<VersionRow>`
+              SELECT v.id, v.spec_hash, c.status FROM sports.discipline_version v
+              JOIN sports.v_discipline_version_current c ON c.discipline_version_id = v.id
+              WHERE v.discipline_id = ${parentId} ORDER BY v.version`.execute(ctx.trx)
+            : await sql<VersionRow>`
+              SELECT v.id, v.spec_hash, c.status FROM sports.format_version v
+              JOIN sports.v_format_version_current c ON c.format_version_id = v.id
+              WHERE v.template_id = ${parentId} ORDER BY v.version`.execute(ctx.trx);
+        return rows;
+      });
+    /** Reuse, publish or create the version carrying `specHash` under an existing parent. */
+    const ensureVersion = async (
+      kind: 'discipline' | 'format',
+      code: string,
+      parentId: string | undefined,
+      specHash: string,
+      create: () => Promise<string>,
+    ) => {
+      const stepKind = kind === 'discipline' ? 'discipline-version' : 'format-version';
+      const versions = parentId === undefined ? [] : await versionsOf(kind, parentId);
+      const match = versions.find((v) => v.spec_hash === specHash);
+      if (match === undefined && versions.length > 0) {
+        conflicts.push({
+          code,
+          reason: `existing ${kind} versions differ from the declared specification`,
+        });
+        return;
+      }
+      if (match?.status === 'RETIRED') {
+        conflicts.push({ code, reason: `the matching ${kind} version is RETIRED` });
+        return;
+      }
+      if (match?.status === 'PUBLISHED') {
+        steps.push({ kind: stepKind, code, action: 'UNCHANGED', id: match.id });
+        return;
+      }
+      if (dryRun) {
+        steps.push({
+          kind: stepKind,
+          code,
+          action: match === undefined ? 'WOULD_CREATE' : 'WOULD_PUBLISH',
+          ...(match === undefined ? {} : { id: match.id }),
+        });
+        return;
+      }
+      const id = match?.id ?? (await create());
+      if (kind === 'discipline')
+        await this.publishDisciplineVersion({ operatorAccountId: op, disciplineVersionId: id });
+      else await this.publishFormatVersion({ operatorAccountId: op, formatVersionId: id });
+      steps.push({
+        kind: stepKind,
+        code,
+        action: match === undefined ? 'CREATED' : 'PUBLISHED',
+        id,
+      });
+    };
+    /** Reuse the row with this code, or create it (or report that it would be created). */
+    const ensure = async (
+      kind: 'sport' | 'discipline' | 'format',
+      code: string,
+      existing: string | undefined,
+      create: () => Promise<string>,
+    ) => {
+      if (existing !== undefined) {
+        steps.push({ kind, code, action: 'UNCHANGED', id: existing });
+        return existing;
+      }
+      if (dryRun) {
+        steps.push({ kind, code, action: 'WOULD_CREATE' });
+        return undefined;
+      }
+      const id = await create();
+      steps.push({ kind, code, action: 'CREATED', id });
+      return id;
+    };
+
+    for (const sport of input.manifest.sports) {
+      const sportId = await ensure(
+        'sport',
+        sport.code,
+        await idOf('sport', sport.code),
+        async () =>
+          (
+            await this.createSport({
+              operatorAccountId: op,
+              code: sport.code,
+              name: sport.name,
+              idempotencyKey: key('sport', sport.code),
+            })
+          ).sportId,
+      );
+      for (const d of sport.disciplines) {
+        const disciplineId = await ensure(
+          'discipline',
+          d.code,
+          await idOf('discipline', d.code),
+          async () =>
+            (
+              await this.createDiscipline({
+                operatorAccountId: op,
+                sportId: sportId as string,
+                code: d.code,
+                name: d.name,
+                idempotencyKey: key('discipline', d.code),
+              })
+            ).disciplineId,
+        );
+        const specHash = catalogSpecHash('br:discipline-version-spec', d.spec);
+        await ensureVersion(
+          'discipline',
+          d.code,
+          disciplineId,
+          specHash,
+          async () =>
+            (
+              await this.createDisciplineVersion({
+                operatorAccountId: op,
+                disciplineId: disciplineId as string,
+                spec: d.spec,
+                idempotencyKey: key('discipline-version', d.code, specHash),
+              })
+            ).disciplineVersionId,
+        );
+      }
+    }
+    for (const f of engines) {
+      const templateId = await ensure(
+        'format',
+        f.code,
+        await idOf('format_template', f.code),
+        async () =>
+          (
+            await this.createFormatTemplate({
+              operatorAccountId: op,
+              code: f.code,
+              name: f.name,
+              idempotencyKey: key('format', f.code),
+            })
+          ).formatTemplateId,
+      );
+      const specHash = formatVersionSpecHash(f.engine);
+      await ensureVersion(
+        'format',
+        f.code,
+        templateId,
+        specHash,
+        async () =>
+          (
+            await this.createFormatVersion({
+              operatorAccountId: op,
+              formatTemplateId: templateId as string,
+              engineId: f.engineId,
+              engineVersion: f.engineVersion,
+              idempotencyKey: key('format-version', f.code, specHash),
+            })
+          ).formatVersionId,
+      );
+    }
+    return { steps, conflicts };
   }
 }

@@ -2,8 +2,12 @@ import {
   ACTIVE_REGISTRATION_STATUSES,
   canonicalFormatConfig,
   canTransition,
+  competitionAcceptsEvents,
   CompetitionLifecycle,
+  competitionProfileEditable,
+  eventCapacityEditable,
   EventLifecycle,
+  eventSettingsEditable,
   formatEngine,
   isTerminal,
   RegistrationLifecycle,
@@ -158,6 +162,99 @@ export async function activeTeamMembers(
   return rows.map((r) => r.athlete_id);
 }
 
+const isoOrNull = (d: Date | null): string | null => (d === null ? null : d.toISOString());
+
+/** ONCF-03A organizer list row (DRAFT included; never served publicly). */
+export interface ManagedCompetitionCard {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly status: CompetitionStatus;
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly timezone: string;
+  readonly locationLabel: string | null;
+  readonly regionCode: string | null;
+  /** All events (categories), cancelled ones included; `cancelledEventCount` of them are CANCELLED. */
+  readonly eventCount: number;
+  readonly cancelledEventCount: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly statusChangedAt: string;
+}
+
+/** ONCF-03A organizer detail: the competition and its events in editable form. */
+export interface ManagedCompetition {
+  readonly competition: {
+    readonly id: string;
+    readonly slug: string;
+    readonly organizerOrganizationId: string;
+    readonly status: CompetitionStatus;
+    readonly profile: {
+      readonly name: string;
+      readonly description: string | null;
+      readonly locationLabel: string | null;
+      readonly regionCode: string | null;
+      readonly timezone: string;
+      readonly startsAt: string | null;
+      readonly endsAt: string | null;
+      readonly website: string | null;
+    };
+    readonly editable: { readonly profile: boolean; readonly addEvents: boolean };
+    readonly nextStatuses: CompetitionStatus[];
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly statusChangedAt: string;
+  };
+  readonly events: {
+    readonly id: string;
+    readonly slug: string;
+    readonly status: EventStatus;
+    /** Fixed at creation, like the pinned discipline and format versions. */
+    readonly entrantKind: 'INDIVIDUAL' | 'TEAM';
+    readonly discipline: {
+      readonly versionId: string;
+      readonly sport: { readonly code: string; readonly name: string };
+      readonly code: string;
+      readonly name: string;
+      readonly version: number;
+    };
+    readonly format: {
+      readonly versionId: string;
+      readonly code: string;
+      readonly name: string;
+      readonly version: number;
+      readonly engine: string;
+    };
+    readonly formatConfig: Record<string, unknown>;
+    readonly settings: {
+      readonly name: string;
+      readonly category: EventCategory;
+      readonly capacity: number | null;
+      readonly registrationMode: 'AUTO_CONFIRM' | 'ORGANIZER_APPROVAL';
+      readonly registrationOpensAt: string | null;
+      readonly registrationClosesAt: string | null;
+      readonly startsAt: string | null;
+      readonly endsAt: string | null;
+      readonly timezone: string;
+    };
+    readonly counts: {
+      readonly confirmed: number;
+      readonly waitlisted: number;
+      readonly participants: number;
+    };
+    readonly editable: {
+      readonly settings: boolean;
+      readonly capacityAndRegistrationMode: boolean;
+    };
+    readonly nextStatuses: EventStatus[];
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly statusChangedAt: string;
+  }[];
+  readonly access: { readonly staffRoles: StaffRole[]; readonly permissions: CompPermission[] };
+}
+
 /**
  * Competition operations (br_competition): competitions, staff, events, registration.
  * Application permissions only — nothing here issues, reads or implies an Authority capability,
@@ -288,7 +385,7 @@ export class CompetitionStore {
     await this.tx(async (ctx) => {
       const c = await loadCompetition(ctx, input.competitionId);
       await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_EDIT');
-      if (isTerminal(CompetitionLifecycle, c.status))
+      if (!competitionProfileEditable(c.status))
         throw transitionError('competition', c.status, 'edited');
       await sql`UPDATE competition.competition_profile SET name = ${p.name}, description = ${p.description}, location_label = ${p.locationLabel},
           region_code = ${p.regionCode}, timezone = ${p.timezone}, starts_at = ${p.startsAt}, ends_at = ${p.endsAt}, website = ${p.website},
@@ -535,6 +632,247 @@ export class CompetitionStore {
     });
   }
 
+  // ───────────────────────────── organizer reads (ONCF-03A) ─────────────────────────────
+
+  /**
+   * Every competition an organization organizes, DRAFT included, for its organizer area.
+   * Requires ORG_MANAGE_COMPETITIONS in that organization (ACTIVE OWNER/ADMIN); anyone else —
+   * including members of other organizations — gets FORBIDDEN, whether or not the id exists.
+   */
+  organizationCompetitions(input: {
+    actorAccountId: string;
+    organizationId: string;
+  }): Promise<ManagedCompetitionCard[]> {
+    return this.tx(async (ctx) => {
+      if (
+        !(await hasOrgPermission(
+          ctx,
+          input.actorAccountId,
+          input.organizationId,
+          'ORG_MANAGE_COMPETITIONS',
+        ))
+      ) {
+        await recordAudit(ctx, {
+          actorAccountId: input.actorAccountId,
+          action: 'competition.manage-list',
+          targetType: 'ORGANIZATION',
+          targetId: input.organizationId,
+          outcome: 'DENIED',
+        });
+        throw new DomainError(DomainErrorCode.FORBIDDEN, 'not permitted');
+      }
+      const { rows } = await sql<{
+        id: string;
+        slug: string;
+        name: string;
+        status: CompetitionStatus;
+        status_changed_at: Date;
+        starts_at: Date | null;
+        ends_at: Date | null;
+        timezone: string;
+        location_label: string | null;
+        region_code: string | null;
+        created_at: Date;
+        updated_at: Date;
+        event_count: number;
+        cancelled_event_count: number;
+      }>`
+        SELECT c.id, sl.slug, p.name, st.status, st.recorded_at AS status_changed_at, p.starts_at, p.ends_at, p.timezone,
+               p.location_label, p.region_code, c.recorded_at AS created_at, p.updated_at,
+               (SELECT count(*)::int FROM competition.event e WHERE e.competition_id = c.id) AS event_count,
+               (SELECT count(*)::int FROM competition.event e JOIN competition.v_event_current es ON es.event_id = e.id
+                 WHERE e.competition_id = c.id AND es.status = 'CANCELLED') AS cancelled_event_count
+        FROM competition.competition c
+        JOIN competition.competition_profile p ON p.competition_id = c.id
+        JOIN competition.v_competition_current st ON st.competition_id = c.id
+        JOIN competition.v_competition_slug_current sl ON sl.competition_id = c.id
+        WHERE c.organizer_organization_id = ${input.organizationId}
+        ORDER BY c.recorded_at DESC, c.id
+        LIMIT 200`.execute(ctx.trx);
+      return rows.map((r) => ({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        status: r.status,
+        startsAt: isoOrNull(r.starts_at),
+        endsAt: isoOrNull(r.ends_at),
+        timezone: r.timezone,
+        locationLabel: r.location_label,
+        regionCode: r.region_code,
+        eventCount: r.event_count,
+        cancelledEventCount: r.cancelled_event_count,
+        createdAt: r.created_at.toISOString(),
+        updatedAt: r.updated_at.toISOString(),
+        statusChangedAt: r.status_changed_at.toISOString(),
+      }));
+    });
+  }
+
+  /**
+   * One competition with all of its events (DRAFT included) in editable form. Requires
+   * COMP_VIEW_PRIVATE: organizer OWNER/ADMIN or ACTIVE competition staff. The `editable` flags and
+   * `nextStatuses` restate the lifecycle rules the commands enforce; the caller's own permissions
+   * are in `access` (the commands still decide).
+   */
+  managedCompetition(input: {
+    actorAccountId: string;
+    competitionId: string;
+  }): Promise<ManagedCompetition> {
+    return this.tx(async (ctx) => {
+      const c = await loadCompetition(ctx, input.competitionId);
+      await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_VIEW_PRIVATE');
+      const access = await competitionPermissions(ctx, input.actorAccountId, c);
+      const { rows: comp } = await sql<{
+        slug: string;
+        name: string;
+        description: string | null;
+        location_label: string | null;
+        region_code: string | null;
+        timezone: string;
+        starts_at: Date | null;
+        ends_at: Date | null;
+        website: string | null;
+        created_at: Date;
+        updated_at: Date;
+        status_changed_at: Date;
+      }>`
+        SELECT sl.slug, p.name, p.description, p.location_label, p.region_code, p.timezone, p.starts_at, p.ends_at, p.website,
+               c.recorded_at AS created_at, p.updated_at, st.recorded_at AS status_changed_at
+        FROM competition.competition c
+        JOIN competition.competition_profile p ON p.competition_id = c.id
+        JOIN competition.v_competition_current st ON st.competition_id = c.id
+        JOIN competition.v_competition_slug_current sl ON sl.competition_id = c.id
+        WHERE c.id = ${c.id}`.execute(ctx.trx);
+      const r = comp[0] as (typeof comp)[number];
+      const { rows: events } = await sql<{
+        id: string;
+        slug: string;
+        status: EventStatus;
+        status_changed_at: Date;
+        entrant_kind: 'INDIVIDUAL' | 'TEAM';
+        discipline_version_id: string;
+        sport_code: string;
+        sport_name: string;
+        discipline_code: string;
+        discipline_name: string;
+        discipline_version: number;
+        format_version_id: string;
+        format_code: string;
+        format_name: string;
+        format_version: number;
+        engine_id: string;
+        engine_version: number;
+        format_config: Record<string, unknown>;
+        name: string;
+        category: EventCategory;
+        capacity: number | null;
+        registration_mode: 'AUTO_CONFIRM' | 'ORGANIZER_APPROVAL';
+        registration_opens_at: Date | null;
+        registration_closes_at: Date | null;
+        starts_at: Date | null;
+        ends_at: Date | null;
+        timezone: string;
+        created_at: Date;
+        updated_at: Date;
+        confirmed_count: number | null;
+        waitlist_count: number | null;
+        participant_count: number | null;
+      }>`
+        SELECT e.id, sl.slug, st.status, st.recorded_at AS status_changed_at, e.entrant_kind,
+               e.discipline_version_id, s.code AS sport_code, s.name AS sport_name, d.code AS discipline_code,
+               d.name AS discipline_name, dv.version AS discipline_version,
+               e.format_version_id, t.code AS format_code, t.name AS format_name, fv.version AS format_version,
+               fv.engine_id, fv.engine_version, e.format_config,
+               p.name, p.category, p.capacity, p.registration_mode, p.registration_opens_at, p.registration_closes_at,
+               p.starts_at, p.ends_at, p.timezone, e.recorded_at AS created_at, p.updated_at,
+               es.confirmed_count, es.waitlist_count, es.participant_count
+        FROM competition.event e
+        JOIN competition.event_profile p ON p.event_id = e.id
+        JOIN competition.v_event_current st ON st.event_id = e.id
+        JOIN competition.v_event_slug_current sl ON sl.event_id = e.id
+        JOIN sports.discipline_version dv ON dv.id = e.discipline_version_id
+        JOIN sports.discipline d ON d.id = dv.discipline_id
+        JOIN sports.sport s ON s.id = d.sport_id
+        JOIN sports.format_version fv ON fv.id = e.format_version_id
+        JOIN sports.format_template t ON t.id = fv.template_id
+        LEFT JOIN competition_read.event_summary es ON es.event_id = e.id
+        WHERE e.competition_id = ${c.id}
+        ORDER BY e.recorded_at, e.id`.execute(ctx.trx);
+      return {
+        competition: {
+          id: c.id,
+          slug: r.slug,
+          organizerOrganizationId: c.organizerOrganizationId,
+          status: c.status,
+          profile: {
+            name: r.name,
+            description: r.description,
+            locationLabel: r.location_label,
+            regionCode: r.region_code,
+            timezone: r.timezone,
+            startsAt: isoOrNull(r.starts_at),
+            endsAt: isoOrNull(r.ends_at),
+            website: r.website,
+          },
+          editable: {
+            profile: competitionProfileEditable(c.status),
+            addEvents: competitionAcceptsEvents(c.status),
+          },
+          nextStatuses: [...CompetitionLifecycle.transitions[c.status]],
+          createdAt: r.created_at.toISOString(),
+          updatedAt: r.updated_at.toISOString(),
+          statusChangedAt: r.status_changed_at.toISOString(),
+        },
+        events: events.map((e) => ({
+          id: e.id,
+          slug: e.slug,
+          status: e.status,
+          entrantKind: e.entrant_kind,
+          discipline: {
+            versionId: e.discipline_version_id,
+            sport: { code: e.sport_code, name: e.sport_name },
+            code: e.discipline_code,
+            name: e.discipline_name,
+            version: e.discipline_version,
+          },
+          format: {
+            versionId: e.format_version_id,
+            code: e.format_code,
+            name: e.format_name,
+            version: e.format_version,
+            engine: `${e.engine_id}/${e.engine_version}`,
+          },
+          formatConfig: e.format_config,
+          settings: {
+            name: e.name,
+            category: e.category,
+            capacity: e.capacity,
+            registrationMode: e.registration_mode,
+            registrationOpensAt: isoOrNull(e.registration_opens_at),
+            registrationClosesAt: isoOrNull(e.registration_closes_at),
+            startsAt: isoOrNull(e.starts_at),
+            endsAt: isoOrNull(e.ends_at),
+            timezone: e.timezone,
+          },
+          counts: {
+            confirmed: e.confirmed_count ?? 0,
+            waitlisted: e.waitlist_count ?? 0,
+            participants: e.participant_count ?? 0,
+          },
+          editable: {
+            settings: eventSettingsEditable(e.status),
+            capacityAndRegistrationMode: eventCapacityEditable(e.status),
+          },
+          nextStatuses: [...EventLifecycle.transitions[e.status]],
+          createdAt: e.created_at.toISOString(),
+          updatedAt: e.updated_at.toISOString(),
+          statusChangedAt: e.status_changed_at.toISOString(),
+        })),
+        access: { staffRoles: access.staffRoles, permissions: [...access.permissions].sort() },
+      };
+    });
+  }
+
   // ───────────────────────────── events ─────────────────────────────
 
   private settings(s: EventSettingsInput, competitionTimezone: string) {
@@ -625,7 +963,7 @@ export class CompetitionStore {
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_EDIT');
-      if (!['DRAFT', 'PUBLISHED', 'ACTIVE'].includes(c.status))
+      if (!competitionAcceptsEvents(c.status))
         throw transitionError('competition', c.status, 'add events to');
       const compTz = await this.assertWithinCompetition(ctx, c.id, s.startsAt, s.endsAt);
       const timezone = input.settings.timezone === undefined ? compTz : s.timezone;
@@ -741,13 +1079,12 @@ export class CompetitionStore {
       const e = await loadEvent(ctx, input.eventId);
       const c = await loadCompetition(ctx, e.competitionId);
       await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_EDIT');
-      if (!['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED'].includes(e.status))
-        throw transitionError('event', e.status, 'edited');
+      if (!eventSettingsEditable(e.status)) throw transitionError('event', e.status, 'edited');
       const compTz = await this.assertWithinCompetition(ctx, c.id, null, null);
       const s = this.settings(input.settings, compTz);
       await this.assertWithinCompetition(ctx, c.id, s.startsAt, s.endsAt);
       if (
-        e.status !== 'DRAFT' &&
+        !eventCapacityEditable(e.status) &&
         (s.capacity !== e.capacity || s.registrationMode !== e.registrationMode)
       ) {
         throw new DomainError(

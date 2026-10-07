@@ -1,6 +1,8 @@
 import {
+  formatEngine,
   PUBLIC_COMPETITION_SCHEMA,
   PUBLIC_EVENT_SCHEMA,
+  type DisciplineVersionSpec,
   type NotAvailable,
   type PublicCompetitionV1,
   type PublicContest,
@@ -101,7 +103,13 @@ export class CompetitionReader {
     return inTransaction(this.db, ModuleRole.publicRead, fn);
   }
 
-  /** Published catalog (what organizers can pin). */
+  /**
+   * Published catalog (what organizers can pin). ONCF-03A: each discipline version carries the
+   * participation and contest-type facts of its spec, and each format version its contest type and
+   * configuration schema, so a client can offer only valid combinations. `compatibleFormatVersionIds`
+   * applies exactly the createEvent rule (the format's contest type is allowed by the discipline);
+   * a format whose engine is not registered in this build has `contestType: null` and fits nothing.
+   */
   catalog() {
     return this.tx(async (ctx) => {
       const { rows: disciplines } = await sql<{
@@ -112,8 +120,9 @@ export class CompetitionReader {
         name: string;
         version: number;
         spec_hash: string;
+        spec: DisciplineVersionSpec;
       }>`
-        SELECT dv.id, s.code AS sport_code, s.name AS sport_name, d.code, d.name, dv.version, dv.spec_hash
+        SELECT dv.id, s.code AS sport_code, s.name AS sport_name, d.code, d.name, dv.version, dv.spec_hash, dv.spec
         FROM sports.discipline_version dv JOIN sports.v_discipline_version_current c ON c.discipline_version_id = dv.id
         JOIN sports.discipline d ON d.id = dv.discipline_id JOIN sports.sport s ON s.id = d.sport_id
         WHERE c.status = 'PUBLISHED' ORDER BY d.code, dv.version`.execute(ctx.trx);
@@ -124,11 +133,20 @@ export class CompetitionReader {
         version: number;
         engine_id: string;
         engine_version: number;
+        configuration_schema: Record<string, unknown>;
       }>`
-        SELECT fv.id, t.code, t.name, fv.version, fv.engine_id, fv.engine_version
+        SELECT fv.id, t.code, t.name, fv.version, fv.engine_id, fv.engine_version, fv.configuration_schema
         FROM sports.format_version fv JOIN sports.v_format_version_current c ON c.format_version_id = fv.id
         JOIN sports.format_template t ON t.id = fv.template_id
         WHERE c.status = 'PUBLISHED' ORDER BY t.code, fv.version`.execute(ctx.trx);
+      const formatVersions = formats.map((f) => ({
+        formatVersionId: f.id,
+        format: { code: f.code, name: f.name },
+        version: f.version,
+        engine: `${f.engine_id}/${f.engine_version}`,
+        contestType: formatEngine(f.engine_id, f.engine_version)?.contestType ?? null,
+        configurationSchema: f.configuration_schema,
+      }));
       return {
         disciplineVersions: disciplines.map((d) => ({
           disciplineVersionId: d.id,
@@ -136,13 +154,16 @@ export class CompetitionReader {
           discipline: { code: d.code, name: d.name },
           version: d.version,
           specHash: d.spec_hash,
+          participantKinds: [...d.spec.participation.participantKinds],
+          lineupSize: { ...d.spec.participation.lineupSize },
+          allowedContestTypes: [...d.spec.allowedContestTypes],
+          compatibleFormatVersionIds: formatVersions
+            .filter(
+              (f) => f.contestType !== null && d.spec.allowedContestTypes.includes(f.contestType),
+            )
+            .map((f) => f.formatVersionId),
         })),
-        formatVersions: formats.map((f) => ({
-          formatVersionId: f.id,
-          format: { code: f.code, name: f.name },
-          version: f.version,
-          engine: `${f.engine_id}/${f.engine_version}`,
-        })),
+        formatVersions,
       };
     });
   }

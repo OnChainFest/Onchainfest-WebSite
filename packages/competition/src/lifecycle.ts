@@ -62,6 +62,30 @@ export const EventLifecycle = lifecycle<EventStatus>('event', ['DRAFT'], {
   CANCELLED: [],
 });
 
+/**
+ * Edit windows (ONCF-03A). The single statement of what the competition store enforces, so the
+ * organizer read model can report it without restating the rules:
+ *  - a competition profile is editable until the competition is terminal;
+ *  - events can be added while the competition is DRAFT, PUBLISHED or ACTIVE;
+ *  - event settings are editable until the field is locked; capacity and registration mode only
+ *    while the event is DRAFT. Discipline, format and entrant kind never change after creation.
+ */
+export function competitionProfileEditable(status: CompetitionStatus): boolean {
+  return !isTerminal(CompetitionLifecycle, status);
+}
+
+export function competitionAcceptsEvents(status: CompetitionStatus): boolean {
+  return status === 'DRAFT' || status === 'PUBLISHED' || status === 'ACTIVE';
+}
+
+export function eventSettingsEditable(status: EventStatus): boolean {
+  return status === 'DRAFT' || status === 'REGISTRATION_OPEN' || status === 'REGISTRATION_CLOSED';
+}
+
+export function eventCapacityEditable(status: EventStatus): boolean {
+  return status === 'DRAFT';
+}
+
 export type RegistrationStatus =
   'REQUESTED' | 'WAITLISTED' | 'CONFIRMED' | 'DECLINED' | 'WITHDRAWN' | 'CANCELLED';
 export const RegistrationLifecycle = lifecycle<RegistrationStatus>('registration', ['REQUESTED'], {
