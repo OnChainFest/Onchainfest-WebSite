@@ -25,6 +25,14 @@ import { categoryTransitionAction, updateCategoryAction } from '../../../actions
 
 export const metadata = { title: 'Category · OnChainFest' };
 
+/** ONCF-05B: the field lock, seeding and structure live on the category's Structure page. */
+const STRUCTURE_STATUSES: readonly string[] = [
+  'REGISTRATION_CLOSED',
+  'FIELD_LOCKED',
+  'IN_PROGRESS',
+  'COMPLETED',
+];
+
 /**
  * One category: its settings (while `editable.settings`; capacity and entry mode only while
  * `editable.capacityAndRegistrationMode`) and its lifecycle (from the event's `nextStatuses`).
@@ -203,9 +211,14 @@ export default async function CategoryPage({
                   ? `This category is ${EVENT_STATUS_LABEL[e.status].toLowerCase()}.`
                   : e.nextStatuses.some((n) => EVENT_COMMANDS[n] !== undefined)
                     ? 'Your role can’t change this category’s status.'
-                    : 'Next steps happen in competition operations.'}
+                    : 'Next: lock the field, seed it and generate the structure.'}
               </p>
             )}
+            {STRUCTURE_STATUSES.includes(e.status) && perms.includes('COMP_VIEW_PRIVATE') ? (
+              <a className="btn btn-cyan btn-full" href={`${base}/categories/${e.id}/structure`}>
+                Field &amp; structure →
+              </a>
+            ) : null}
           </section>
         </aside>
       </div>

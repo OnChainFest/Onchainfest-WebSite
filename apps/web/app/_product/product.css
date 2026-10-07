@@ -2883,3 +2883,125 @@
     display: none;
   }
 }
+
+/* ───────────── ONCF-05B: structure, teams, entry details ───────────── */
+.oc-app .st-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.oc-app .st-checklist li[data-done='true'] > span:first-child {
+  color: var(--cyan);
+}
+.oc-app .st-checklist li[data-optional='true'] {
+  opacity: 0.8;
+}
+.oc-app .st-methods {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+.oc-app .st-inline,
+.oc-app .st-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.oc-app .st-source label {
+  display: grid;
+  gap: 0.25rem;
+}
+.oc-app .st-table-wrap {
+  overflow-x: auto;
+}
+.oc-app .st-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.oc-app .st-table th,
+.oc-app .st-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .st-table tr[data-status='WITHDRAWN'],
+.oc-app .st-table tr[data-status='DISQUALIFIED'] {
+  opacity: 0.6;
+}
+.oc-app .st-table input {
+  width: 4rem;
+}
+.oc-app .st-overrides .st-override {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 6rem minmax(0, 3fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.oc-app .st-preview .st-stage h4 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0.6rem 0 0.25rem;
+}
+.oc-app .st-rounds {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+.oc-app .st-generate {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.oc-app .tm-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.oc-app .tm-team {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.oc-app .tm-members {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.oc-app .tm-members li[data-status='PROPOSED'] {
+  opacity: 0.75;
+}
+.oc-app .tm-invite {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.oc-app .tm-invite input {
+  flex: 1 1 14rem;
+}
+.oc-app .ea-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+.oc-app .ea-form label {
+  display: grid;
+  gap: 0.25rem;
+}
+@media (max-width: 520px) {
+  .oc-app .st-overrides .st-override {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

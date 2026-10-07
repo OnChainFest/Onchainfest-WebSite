@@ -44,12 +44,25 @@ export const ERROR_MESSAGES = {
     'Registration isn’t open for this category right now — it may not have opened yet or has closed.',
   registration_full: 'This category is full. No place is available right now.',
   registration_invalid:
-    'This entry can’t be made: confirm your eligibility and check this category takes individual entries.',
+    'This entry can’t be made: confirm eligibility, and check the entrant fits this category (an athlete for individual categories, a team with enough active members for team categories).',
   registration_not_permitted: 'You can only register athletes you manage.',
   registration_not_found: 'That registration doesn’t exist or isn’t yours to see.',
   registration_transition:
     'That entry has already changed. The page now shows its current status and options.',
   eligibility_required: 'Confirm that the athlete meets this category’s requirements.',
+  field_incomplete:
+    'The field can’t be locked yet: a team is outside the allowed roster size, or an entry is missing a required value. Resolve those entries first.',
+  seeding_invalid:
+    'Check the seeding: seed numbers run 1, 2, 3… without gaps, and every override names an entrant, a position and a reason.',
+  plan_invalid:
+    'The structure can’t be generated for this field with the category’s format settings. Check the format settings and the number of entrants.',
+  structure_done:
+    'That step is already done — the field, seeding and structure are set once and kept.',
+  team_invalid: 'Give the team a name and choose pair or squad.',
+  team_member_invalid:
+    'That athlete can’t be added to this team — they may already be on it or their profile isn’t active.',
+  attribute_invalid: 'Check the values: use the format shown for each field.',
+  attributes_frozen: 'Entry values are frozen once the organizer locks the field.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -88,6 +101,14 @@ export const NOTICE_MESSAGES = {
   registration_waitlisted: 'Registration moved to the waitlist.',
   registration_declined: 'Registration declined.',
   registration_cancelled: 'Registration cancelled.',
+  field_locked: 'Field locked. The entrants, rosters and declared values are now fixed.',
+  field_seeded: 'Field seeded. Preview the structure, then generate it.',
+  plan_generated: 'Structure generated. It’s now on the public category page.',
+  team_created: 'Team created. Invite its members next.',
+  member_invited: 'Invitation sent. The athlete accepts it from their Teams page.',
+  membership_accepted: 'You’ve joined the team.',
+  membership_declined: 'Invitation declined.',
+  attributes_saved: 'Entry details saved.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

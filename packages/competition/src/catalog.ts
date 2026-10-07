@@ -9,6 +9,14 @@ import {
   type CanonicalValue,
   type ContentHash,
 } from '@br/canonical';
+import {
+  EntryAttributeValueType,
+  PartitionKind,
+  ResourceType,
+  StartMethod,
+  type DisciplineCapabilitiesSpec,
+} from './capabilities';
+import { RULESET_FAMILIES } from './ruleset';
 
 /**
  * Sport catalog (BRT-01 result domain §4). Sports, disciplines and formats are DATA, never
@@ -96,12 +104,40 @@ export interface ValidationSpec {
 
 export interface ParticipationSpec {
   readonly participantKinds: readonly ParticipantKind[];
-  /** Athletes fielded per participant in one contest (padel doubles: 2..2). */
+  /** Athletes fielded per participant in one contest (padel doubles: 2..2). The declared lineup. */
   readonly lineupSize: { readonly min: number; readonly max: number };
+  // ── v2 only (ONCF-05B, ADR-0057): roster ≠ lineup ≠ on court ──
+  /** Athletes a TEAM entrant may field, frozen at field lock (relay 4..6; 3x3 4..4). */
+  readonly roster?: { readonly min: number; readonly max: number };
+  /** Lineup order matters (relay legs, Baker frame order). */
+  readonly lineupOrdered?: boolean;
+  /** Rule data only, never stored per contest (5v5: 5, minimum 2 to continue). */
+  readonly onCourt?: { readonly count: number; readonly minToContinue: number };
+  readonly substitution?: 'NONE' | 'ROLLING' | 'BETWEEN_GAMES' | 'BETWEEN_STAGES' | 'MEDICAL_ONLY';
+  /** Declared composition pattern (mixed relays); never inferred from identity data. */
+  readonly composition?: 'MIXED_ALTERNATING' | 'MIXED_EQUAL' | 'MIXED_ONE_EACH';
+  /** Sum of a declared MEMBER entry attribute over the players on court (wheelchair: ≤ 14.0). Recorded, not validated in v1. */
+  readonly lineupConstraint?: { readonly sumOf: string; readonly max: string };
+}
+
+/** A per-participant (or per-member) value declared at entry: seeding, handicap, start lists. */
+export interface EntryAttributeSpec {
+  readonly key: string;
+  readonly valueType: EntryAttributeValueType;
+  /** PARTICIPANT: one value per entrant; MEMBER: one value per team member. */
+  readonly scope: 'PARTICIPANT' | 'MEMBER';
+  readonly required: boolean;
+  /** Inclusive bounds as decimal strings (INTEGER / DECIMAL / DURATION_MS). */
+  readonly min?: string;
+  readonly max?: string;
 }
 
 /** Everything a DisciplineVersion pins. */
 export interface DisciplineVersionSpec {
+  /** Absent = v1 (BRT-05 / ONCF-03A). 2 = capabilities, entry attributes and extended participation. */
+  readonly specVersion?: 2;
+  readonly capabilities?: DisciplineCapabilitiesSpec;
+  readonly entryAttributes?: readonly EntryAttributeSpec[];
   /** BR-JSON object schema for ResultEntry components (the accepted schema mechanism). */
   readonly resultSchema: BrObjectSchema;
   readonly metrics: readonly MetricSpec[];
@@ -191,6 +227,9 @@ export function validateDisciplineVersionSpec(spec: DisciplineVersionSpec): Cata
   brJsonSafe(spec, '', issues);
   if (issues.length > 0) return issues;
   sizeOk(spec, issues);
+  const v2 = spec.specVersion === 2;
+  if (spec.specVersion !== undefined && !v2)
+    issues.push({ path: '/specVersion', message: 'unsupported spec version' });
   exactKeys(
     spec,
     [
@@ -201,6 +240,7 @@ export function validateDisciplineVersionSpec(spec: DisciplineVersionSpec): Cata
       'allowedContestTypes',
       'participation',
       'evidenceExpectations',
+      ...(v2 ? ['specVersion', 'capabilities', 'entryAttributes'] : []),
     ],
     '',
     issues,
@@ -322,7 +362,25 @@ export function validateDisciplineVersionSpec(spec: DisciplineVersionSpec): Cata
   if (typeof pa !== 'object' || pa === null)
     issues.push({ path: '/participation', message: 'required' });
   else {
-    exactKeys(pa, ['participantKinds', 'lineupSize'], '/participation', issues);
+    exactKeys(
+      pa,
+      [
+        'participantKinds',
+        'lineupSize',
+        ...(v2
+          ? [
+              'roster',
+              'lineupOrdered',
+              'onCourt',
+              'substitution',
+              'composition',
+              'lineupConstraint',
+            ]
+          : []),
+      ],
+      '/participation',
+      issues,
+    );
     const kinds = pa.participantKinds ?? [];
     if (
       kinds.length === 0 ||
@@ -354,6 +412,8 @@ export function validateDisciplineVersionSpec(spec: DisciplineVersionSpec): Cata
       });
   }
 
+  if (v2) validateV2(spec, issues);
+
   if (spec.evidenceExpectations !== undefined) {
     const e = spec.evidenceExpectations;
     if (
@@ -368,6 +428,140 @@ export function validateDisciplineVersionSpec(spec: DisciplineVersionSpec): Cata
       });
   }
   return issues;
+}
+
+const ATTRIBUTE_KEY = /^[a-z][A-Za-z0-9]{0,31}$/;
+const COUNT = (n: unknown, max: number) =>
+  Number.isInteger(n) && (n as number) >= 0 && (n as number) <= max;
+const setOfKnown = (value: unknown, known: readonly string[]) =>
+  Array.isArray(value) &&
+  new Set(value).size === value.length &&
+  value.every((v) => known.includes(v as string));
+
+/** v2 additions (ONCF-05B): capabilities, entry attributes, extended participation. */
+function validateV2(spec: DisciplineVersionSpec, issues: CatalogIssue[]): void {
+  const c = spec.capabilities as DisciplineCapabilitiesSpec | undefined;
+  if (typeof c !== 'object' || c === null)
+    issues.push({ path: '/capabilities', message: 'required in a v2 spec' });
+  else {
+    exactKeys(
+      c,
+      ['rulesetFamilies', 'partitionKinds', 'startMethods', 'multiRound', 'resourceTypes'],
+      '/capabilities',
+      issues,
+    );
+    if (!setOfKnown(c.rulesetFamilies, RULESET_FAMILIES) || c.rulesetFamilies.length === 0)
+      issues.push({
+        path: '/capabilities/rulesetFamilies',
+        message: 'must be a non-empty set of ruleset families',
+      });
+    if (!setOfKnown(c.partitionKinds, Object.values(PartitionKind)))
+      issues.push({
+        path: '/capabilities/partitionKinds',
+        message: 'must be a set of partition kinds',
+      });
+    if (!setOfKnown(c.startMethods, Object.values(StartMethod)))
+      issues.push({
+        path: '/capabilities/startMethods',
+        message: 'must be a set of start methods',
+      });
+    if (typeof c.multiRound !== 'boolean')
+      issues.push({ path: '/capabilities/multiRound', message: 'must be a boolean' });
+    if (!setOfKnown(c.resourceTypes, Object.values(ResourceType)) || c.resourceTypes.length === 0)
+      issues.push({
+        path: '/capabilities/resourceTypes',
+        message: 'must be a non-empty set of resource types',
+      });
+    if (
+      Array.isArray(c.startMethods) &&
+      c.startMethods.length > 0 &&
+      !spec.allowedContestTypes.some((t) => t !== 'MATCH')
+    )
+      issues.push({
+        path: '/capabilities/startMethods',
+        message: 'start methods need a field contest type',
+      });
+  }
+  const attrs = spec.entryAttributes ?? [];
+  if (!Array.isArray(attrs) || attrs.length > 16)
+    issues.push({ path: '/entryAttributes', message: 'at most 16 entry attributes' });
+  const seen = new Set<string>();
+  (Array.isArray(attrs) ? attrs : []).forEach((a, i) => {
+    const p = `/entryAttributes/${i}`;
+    exactKeys(a, ['key', 'valueType', 'scope', 'required', 'min', 'max'], p, issues);
+    if (!ATTRIBUTE_KEY.test(a.key))
+      issues.push({ path: `${p}/key`, message: 'invalid attribute key' });
+    if (seen.has(a.key)) issues.push({ path: `${p}/key`, message: 'duplicate attribute' });
+    seen.add(a.key);
+    if (!Object.values(EntryAttributeValueType).includes(a.valueType))
+      issues.push({ path: `${p}/valueType`, message: 'invalid value type' });
+    if (a.scope !== 'PARTICIPANT' && a.scope !== 'MEMBER')
+      issues.push({ path: `${p}/scope`, message: 'must be PARTICIPANT or MEMBER' });
+    if (typeof a.required !== 'boolean')
+      issues.push({ path: `${p}/required`, message: 'must be a boolean' });
+    for (const b of ['min', 'max'] as const) {
+      const v = a[b];
+      if (v !== undefined && (a.valueType === 'TEXT' || !DECIMAL.test(v)))
+        issues.push({
+          path: `${p}/${b}`,
+          message: 'bounds are decimal strings on numeric attributes',
+        });
+    }
+  });
+  const pa = spec.participation;
+  if (typeof pa !== 'object' || pa === null) return;
+  const ls = pa.lineupSize;
+  if (pa.roster !== undefined) {
+    const r = pa.roster;
+    if (!COUNT(r.min, 100) || !COUNT(r.max, 100) || r.min < 1 || r.max < r.min)
+      issues.push({ path: '/participation/roster', message: 'must satisfy 1 ≤ min ≤ max ≤ 100' });
+    else if (ls !== undefined && (ls.max > r.max || ls.min > r.max))
+      issues.push({
+        path: '/participation/roster',
+        message: 'the lineup cannot exceed the roster',
+      });
+  }
+  if (pa.lineupOrdered !== undefined && typeof pa.lineupOrdered !== 'boolean')
+    issues.push({ path: '/participation/lineupOrdered', message: 'must be a boolean' });
+  if (pa.onCourt !== undefined) {
+    const o = pa.onCourt;
+    if (
+      !COUNT(o.count, 100) ||
+      !COUNT(o.minToContinue, 100) ||
+      o.count < 1 ||
+      o.minToContinue > o.count
+    )
+      issues.push({
+        path: '/participation/onCourt',
+        message: 'must satisfy 0 ≤ minToContinue ≤ count',
+      });
+  }
+  if (
+    pa.substitution !== undefined &&
+    !['NONE', 'ROLLING', 'BETWEEN_GAMES', 'BETWEEN_STAGES', 'MEDICAL_ONLY'].includes(
+      pa.substitution,
+    )
+  )
+    issues.push({ path: '/participation/substitution', message: 'invalid substitution rule' });
+  if (
+    pa.composition !== undefined &&
+    !['MIXED_ALTERNATING', 'MIXED_EQUAL', 'MIXED_ONE_EACH'].includes(pa.composition)
+  )
+    issues.push({ path: '/participation/composition', message: 'invalid composition' });
+  if (pa.lineupConstraint !== undefined) {
+    const lc = pa.lineupConstraint;
+    const attr = attrs.find((a) => a.key === lc.sumOf);
+    if (attr === undefined || attr.scope !== 'MEMBER' || attr.valueType === 'TEXT')
+      issues.push({
+        path: '/participation/lineupConstraint/sumOf',
+        message: 'must name a numeric MEMBER entry attribute',
+      });
+    if (!DECIMAL.test(lc.max))
+      issues.push({
+        path: '/participation/lineupConstraint/max',
+        message: 'must be a decimal string',
+      });
+  }
 }
 
 /** Content hash of a catalog specification document (free-form but BR-JSON safe; JCS). */

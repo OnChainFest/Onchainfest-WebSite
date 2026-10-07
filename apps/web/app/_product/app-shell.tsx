@@ -13,7 +13,11 @@ export function navItems(account: AccountState, onboarding: OnboardingState): Na
   const items: NavItem[] = [{ href: '/app', label: 'Home' }];
   if (onboarding !== 'active') items.push({ href: '/app/onboarding', label: 'Finish setup' });
   // ONCF-04: the athlete's entries (own and managed athletes).
-  if (account.me.athletes.length > 0) items.push({ href: '/app/registrations', label: 'Entries' });
+  if (account.me.athletes.length > 0) {
+    items.push({ href: '/app/registrations', label: 'Entries' });
+    // ONCF-05B: pairs and squads for team categories.
+    items.push({ href: '/app/teams', label: 'Teams' });
+  }
   for (const a of account.me.athletes.slice(0, 1))
     items.push({ href: `/athletes/${a.slug}`, label: 'Athlete profile' });
   const orgs = [...new Map(account.organizations.map((o) => [o.slug, o])).values()];

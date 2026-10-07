@@ -10,7 +10,8 @@ import {
   validateDisciplineVersionSpec,
   type CatalogManifest,
   type CatalogVersionStatus,
-  type CompetitionFormatEngine,
+  formatVersionSpec,
+  type AnyFormatEngine,
   type DisciplineVersionSpec,
 } from '@br/competition';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
@@ -21,14 +22,12 @@ import { identityIdempotency, lockKeys, pgConstraint, recordAudit } from './iden
 import { emitEvent } from './outbox';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
-/** The content hash a FormatVersion pinning `engine` carries. */
-function formatVersionSpecHash(engine: CompetitionFormatEngine): string {
-  return catalogSpecHash('br:format-version-spec', {
-    engineId: engine.id,
-    engineVersion: engine.version,
-    configurationSchema: engine.configurationSchema,
-    contestType: engine.contestType,
-  });
+/**
+ * The content hash a FormatVersion pinning `engine` carries. v1 engines keep their exact BRT-05
+ * spec (unchanged hashes); v2 engines also hash their declared capability requirements.
+ */
+function formatVersionSpecHash(engine: AnyFormatEngine): string {
+  return catalogSpecHash('br:format-version-spec', formatVersionSpec(engine));
 }
 
 export type CatalogProvisionAction =
@@ -485,18 +484,27 @@ export class CatalogStore {
       for (const d of sport.disciplines) {
         if (!DISCIPLINE_CODE.test(d.code) || !disciplineBelongsToSport(d.code, sport.code))
           throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid discipline code ${d.code}`);
-        const issues = validateDisciplineVersionSpec(d.spec);
-        if (issues.length > 0)
-          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid spec for ${d.code}`, {
-            issues: issues.slice(0, 20),
-          });
+        if (d.specs.length === 0)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `no versions for ${d.code}`);
+        for (const spec of d.specs) {
+          const issues = validateDisciplineVersionSpec(spec);
+          if (issues.length > 0)
+            throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid spec for ${d.code}`, {
+              issues: issues.slice(0, 20),
+            });
+        }
       }
     }
     const engines = input.manifest.formats.map((f) => {
-      const engine = formatEngine(f.engineId, f.engineVersion);
-      if (!FORMAT_CODE.test(f.code) || engine === undefined)
+      const versions = f.versions.map((v) => {
+        const engine = formatEngine(v.engineId, v.engineVersion);
+        if (engine === undefined)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid format ${f.code}`);
+        return { ...v, engine };
+      });
+      if (!FORMAT_CODE.test(f.code) || versions.length === 0)
         throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid format ${f.code}`);
-      return { ...f, engine };
+      return { ...f, versions };
     });
 
     const steps: CatalogProvisionReport['steps'][number][] = [];
@@ -523,18 +531,24 @@ export class CatalogStore {
               WHERE v.template_id = ${parentId} ORDER BY v.version`.execute(ctx.trx);
         return rows;
       });
-    /** Reuse, publish or create the version carrying `specHash` under an existing parent. */
+    /**
+     * Reuse, publish or create the version carrying `specHash` under an existing parent. `history`
+     * is the manifest's declared version history: every existing version must belong to it (else
+     * a conflict), and a declared version that does not exist yet is created and published.
+     */
     const ensureVersion = async (
       kind: 'discipline' | 'format',
       code: string,
       parentId: string | undefined,
       specHash: string,
+      history: readonly string[],
       create: () => Promise<string>,
     ) => {
       const stepKind = kind === 'discipline' ? 'discipline-version' : 'format-version';
       const versions = parentId === undefined ? [] : await versionsOf(kind, parentId);
       const match = versions.find((v) => v.spec_hash === specHash);
-      if (match === undefined && versions.length > 0) {
+      if (versions.some((v) => !history.includes(v.spec_hash))) {
+        if (conflicts.some((c) => c.code === code)) return; // one report per discipline / format
         conflicts.push({
           code,
           reason: `existing ${kind} versions differ from the declared specification`,
@@ -620,22 +634,26 @@ export class CatalogStore {
               })
             ).disciplineId,
         );
-        const specHash = catalogSpecHash('br:discipline-version-spec', d.spec);
-        await ensureVersion(
-          'discipline',
-          d.code,
-          disciplineId,
-          specHash,
-          async () =>
-            (
-              await this.createDisciplineVersion({
-                operatorAccountId: op,
-                disciplineId: disciplineId as string,
-                spec: d.spec,
-                idempotencyKey: key('discipline-version', d.code, specHash),
-              })
-            ).disciplineVersionId,
-        );
+        const history = d.specs.map((spec) => catalogSpecHash('br:discipline-version-spec', spec));
+        for (const [i, spec] of d.specs.entries()) {
+          const specHash = history[i] as string;
+          await ensureVersion(
+            'discipline',
+            d.code,
+            disciplineId,
+            specHash,
+            history,
+            async () =>
+              (
+                await this.createDisciplineVersion({
+                  operatorAccountId: op,
+                  disciplineId: disciplineId as string,
+                  spec,
+                  idempotencyKey: key('discipline-version', d.code, specHash),
+                })
+              ).disciplineVersionId,
+          );
+        }
       }
     }
     for (const f of engines) {
@@ -653,23 +671,27 @@ export class CatalogStore {
             })
           ).formatTemplateId,
       );
-      const specHash = formatVersionSpecHash(f.engine);
-      await ensureVersion(
-        'format',
-        f.code,
-        templateId,
-        specHash,
-        async () =>
-          (
-            await this.createFormatVersion({
-              operatorAccountId: op,
-              formatTemplateId: templateId as string,
-              engineId: f.engineId,
-              engineVersion: f.engineVersion,
-              idempotencyKey: key('format-version', f.code, specHash),
-            })
-          ).formatVersionId,
-      );
+      const history = f.versions.map((v) => formatVersionSpecHash(v.engine));
+      for (const [i, v] of f.versions.entries()) {
+        const specHash = history[i] as string;
+        await ensureVersion(
+          'format',
+          f.code,
+          templateId,
+          specHash,
+          history,
+          async () =>
+            (
+              await this.createFormatVersion({
+                operatorAccountId: op,
+                formatTemplateId: templateId as string,
+                engineId: v.engineId,
+                engineVersion: v.engineVersion,
+                idempotencyKey: key('format-version', f.code, specHash),
+              })
+            ).formatVersionId,
+        );
+      }
     }
     return { steps, conflicts };
   }

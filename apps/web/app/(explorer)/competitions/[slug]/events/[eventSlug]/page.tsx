@@ -2,11 +2,14 @@ import { notFound, permanentRedirect } from 'next/navigation';
 import { getPublic } from '../../../../../_lib/api';
 import {
   Entrant,
+  groupName,
+  partitionLabel,
   SlotView,
   StatusPill,
   when,
   type Contest,
   type Entry,
+  type FieldEntry,
   type PublicEvent,
   type StructureRound,
 } from '../../../../../_lib/competition';
@@ -134,12 +137,14 @@ export default async function EventPage({ params }: Params) {
                   <td>{when(c.scheduledStart, tz)}</td>
                   <td>{[c.locationLabel, c.courtLabel].filter(Boolean).join(' · ') || '—'}</td>
                   <td>
-                    {c.slots.map((s, i) => (
-                      <span key={s.slot}>
-                        {i > 0 && ' vs '}
-                        <SlotView slot={s} />
-                      </span>
-                    ))}
+                    {c.slots.length === 0 && (c.entryCount ?? 0) > 0
+                      ? `${c.entryCount} entrants${c.partitionKey ? ` · ${partitionLabel(c.partitionKey) ?? ''}` : ''}`
+                      : c.slots.map((s, i) => (
+                          <span key={s.slot}>
+                            {i > 0 && ' vs '}
+                            <SlotView slot={s} />
+                          </span>
+                        ))}
                   </td>
                   <td>{c.status.toLowerCase().replace(/_/g, ' ')}</td>
                 </tr>
@@ -153,6 +158,8 @@ export default async function EventPage({ params }: Params) {
         <h2 style={{ fontSize: '1.1rem' }}>Structure</h2>
         {rounds.length === 0 ? (
           <p style={{ color: '#6b7280' }}>Not generated yet.</p>
+        ) : rounds.some((r) => r.stage !== null && r.stage !== undefined) ? (
+          <StageStructure rounds={rounds} />
         ) : (
           <div style={{ display: 'flex', gap: '1.5rem', overflowX: 'auto' }}>
             {rounds.map((r) => (
@@ -230,5 +237,149 @@ export default async function EventPage({ params }: Params) {
         </section>
       )}
     </main>
+  );
+}
+
+const ENTRY_PREVIEW = 50;
+
+/** "+1:30" from seconds after the start (interval starts). */
+function offset(seconds: number | null): string {
+  if (seconds === null) return '';
+  return ` +${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function Entries({ entries, total }: { entries: FieldEntry[]; total: number }) {
+  return (
+    <ol style={{ margin: '0.25rem 0 0', paddingLeft: '1.4rem' }}>
+      {entries.slice(0, ENTRY_PREVIEW).map((e) => (
+        <li key={e.participantId} value={e.position}>
+          <Entrant display={e.display} />
+          {e.startOffsetSeconds !== null && (
+            <small style={{ color: '#6b7280' }}>{offset(e.startOffsetSeconds)}</small>
+          )}
+        </li>
+      ))}
+      {total > ENTRY_PREVIEW && (
+        <li style={{ listStyle: 'none', color: '#6b7280' }}>and {total - ENTRY_PREVIEW} more</li>
+      )}
+    </ol>
+  );
+}
+
+const box = {
+  border: '1px solid #e5e7eb',
+  borderRadius: 6,
+  padding: '0.4rem 0.6rem',
+  marginBottom: '0.5rem',
+  fontSize: '0.85rem',
+} as const;
+
+/**
+ * ONCF-05B stage-graph structure: rounds grouped under their stage, partitions (waves, heats,
+ * start groups, groups) labelled, field entries listed, and dependencies shown only as where the
+ * entrant will come from. Dynamic rounds say their field comes from results; nothing is resolved.
+ */
+function StageStructure({ rounds }: { rounds: StructureRound[] }) {
+  const stages = [...new Map(rounds.map((r) => [r.stage?.key ?? '', r.stage])).values()];
+  return (
+    <div>
+      {stages.map((stage) => {
+        const own = rounds.filter((r) => (r.stage?.key ?? '') === (stage?.key ?? ''));
+        return (
+          <div key={stage?.key ?? 'single'} style={{ marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>
+              {stage?.label ?? 'Structure'}
+              {stage?.partitionKind === 'COMPETITIVE' && (
+                <small style={{ color: '#6b7280' }}> · ranked within each group</small>
+              )}
+              {stage?.partitionKind === 'LOGISTIC' && (
+                <small style={{ color: '#6b7280' }}> · one classification across all groups</small>
+              )}
+            </h3>
+            <div style={{ display: 'flex', gap: '1.5rem', overflowX: 'auto' }}>
+              {own.map((r) => (
+                <div key={r.sequence} style={{ minWidth: 220 }}>
+                  <h4 style={{ fontSize: '0.9rem', margin: '0.25rem 0' }}>
+                    {r.label}
+                    {r.groupKey && !r.label.startsWith('Group') && (
+                      <small style={{ color: '#6b7280' }}> · Group {groupName(r.groupKey)}</small>
+                    )}
+                  </h4>
+                  {r.dynamicEntry ? (
+                    <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                      Field set after the previous round’s results (cut or elimination).
+                    </p>
+                  ) : (
+                    <RoundContests round={r} />
+                  )}
+                  {r.byes.length > 0 && (
+                    <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                      Bye:{' '}
+                      {r.byes.map((b) => (
+                        <span key={b.participantId}>
+                          <Entrant display={b.display} />{' '}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoundContests({ round }: { round: StructureRound }) {
+  const contests = round.contests;
+  // Per-entrant contests in start groups (e.g. a round played in groups): one box per group.
+  const grouped =
+    contests.length > 0 &&
+    contests.every((c) => c.slots.length <= 1 && (c.entryCount ?? 0) === 0 && c.partitionKey);
+  if (grouped) {
+    const parts = [...new Set(contests.map((c) => c.partitionKey as string))];
+    return (
+      <>
+        {parts.map((p) => (
+          <div key={p} style={box}>
+            <small style={{ color: '#6b7280' }}>{partitionLabel(p)}</small>
+            {contests
+              .filter((c) => c.partitionKey === p)
+              .map((c) => (
+                <div key={c.contestId}>
+                  {c.slots[0] !== undefined && <SlotView slot={c.slots[0]} />}
+                </div>
+              ))}
+          </div>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      {contests.map((c) => (
+        <div key={c.contestId} style={box}>
+          <small style={{ color: '#6b7280' }}>
+            #{c.sequence}
+            {c.partitionKey &&
+              !c.partitionKey.startsWith('g') &&
+              ` · ${partitionLabel(c.partitionKey)}`}
+            {(c.entryCount ?? 0) > 0 && ` · ${c.entryCount} entrants`}
+          </small>
+          {(c.entryCount ?? 0) > 0 ? (
+            <Entries entries={c.entries ?? []} total={c.entryCount ?? 0} />
+          ) : (
+            c.slots.map((s) => (
+              <div key={s.slot}>
+                {c.slots.length > 2 && <small style={{ color: '#6b7280' }}>Lane {s.slot} · </small>}
+                <SlotView slot={s} />
+              </div>
+            ))
+          )}
+        </div>
+      ))}
+    </>
   );
 }

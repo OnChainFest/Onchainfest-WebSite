@@ -18,11 +18,31 @@ import {
   type ParticipantStatus,
   type PlanDocument,
   type SeedingDocument,
+  capabilityIssues,
+  computeSeeding,
+  engineRequirements,
+  fieldHashV2,
+  planHashV2,
+  planInputHashV2,
+  providedCapabilities,
+  SeedingError,
+  seedingHashV2,
+  validEntryAttributeValue,
+  type SeedingMethodV2,
+  type SeedingOverride,
+  type SeedSource,
 } from '@br/competition';
 import { DomainError, DomainErrorCode, newId, type DomainEventType, type Uuid } from '@br/domain';
 import { sql } from 'kysely';
 import { refreshEventReadModels } from './competition-projection';
 import { activeTeamMembers, canActForAthlete, isTeamManager } from './competition-store';
+import {
+  disciplineSpec,
+  frozenAttribute,
+  frozenRoster,
+  materializePlanV2,
+  snapshotFieldV2,
+} from './competition-structure-v2';
 import {
   competitionPermissions,
   currentStatus,
@@ -155,9 +175,15 @@ export class StructureStore {
         });
       }
       participants.sort((a, b) => (a.participantId < b.participantId ? -1 : 1));
-      const fieldHash = computeFieldHash(snapshotOf(e.id, participants));
-      await sql`INSERT INTO competition.event_field (event_id, field_hash, participant_count, locked_by_account_id, recorded_at)
-        VALUES (${e.id}, ${fieldHash}, ${participants.length}, ${input.actorAccountId}, ${ctx.txTime})`.execute(
+      // ONCF-05B: a v2 discipline freezes the roster and declared entry attributes into the field
+      // (br:competition-field@2). v1 disciplines keep the exact BRT-05 field document.
+      const spec = await disciplineSpec(ctx, e.disciplineVersionId);
+      const v2 = spec.specVersion === 2;
+      const fieldHash = v2
+        ? fieldHashV2(await snapshotFieldV2(ctx, e.id, participants, spec))
+        : computeFieldHash(snapshotOf(e.id, participants));
+      await sql`INSERT INTO competition.event_field (event_id, field_hash, participant_count, locked_by_account_id, field_version, recorded_at)
+        VALUES (${e.id}, ${fieldHash}, ${participants.length}, ${input.actorAccountId}, ${v2 ? 2 : 1}, ${ctx.txTime})`.execute(
         ctx.trx,
       );
       await sql`INSERT INTO competition.event_status_change (id, event_id, status, actor_account_id, recorded_at)
@@ -193,39 +219,65 @@ export class StructureStore {
   // ───────────────────────────── seeding ─────────────────────────────
 
   /**
-   * Seeds the locked field once: MANUAL (a full permutation) or DETERMINISTIC_DRAW (server CSPRNG
-   * seed, persisted, `br-draw/1`). The seeding records the field hash it applies to.
+   * Seeds the locked field once (immutable; tied to the field hash).
+   *  - v1 (BRT-05, unchanged): MANUAL (a full permutation) or DETERMINISTIC_DRAW (`br-draw/1`).
+   *  - v2 (ONCF-05B, ADR-0058): + RANKED_THEN_DRAWN (declared seeds, banded, the rest drawn) and
+   *    BY_ENTRY_ATTRIBUTE (frozen declared values, e.g. entry time); a declared source; audited
+   *    overrides with reasons. Used whenever a v2 feature is requested or the field is v2.
+   * Every draw uses a server CSPRNG seed that is persisted (reproducible, not provably fair).
    */
   async seedField(input: {
     actorAccountId: string;
     eventId: string;
-    method: 'MANUAL' | 'DETERMINISTIC_DRAW';
+    method: SeedingMethodV2;
     order?: readonly string[];
+    seeds?: readonly string[];
+    banded?: boolean;
+    attributeKey?: string;
+    direction?: 'ASC' | 'DESC';
+    source?: SeedSource;
+    overrides?: readonly SeedingOverride[];
     idempotencyKey: string;
   }): Promise<{
     method: string;
     seedOrder: string[];
     drawSeed: string | null;
     seedingHash: string;
+    seedingVersion: 1 | 2;
     created: boolean;
   }> {
-    if (input.method !== 'MANUAL' && input.method !== 'DETERMINISTIC_DRAW')
+    if (
+      !['MANUAL', 'DETERMINISTIC_DRAW', 'RANKED_THEN_DRAWN', 'BY_ENTRY_ATTRIBUTE'].includes(
+        input.method,
+      )
+    )
       throw new DomainError(DomainErrorCode.INVALID_INPUT, 'invalid seeding method');
     if (input.method === 'MANUAL' && input.order === undefined)
       throw new DomainError(DomainErrorCode.INVALID_INPUT, 'manual seeding needs an order');
-    if (input.method === 'DETERMINISTIC_DRAW' && input.order !== undefined)
-      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'a draw takes no order');
+    if (input.method !== 'MANUAL' && input.order !== undefined)
+      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'only manual seeding takes an order');
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{
         method: string;
         seedOrder: string[];
         drawSeed: string | null;
         seedingHash: string;
+        seedingVersion: 1 | 2;
       }>(ctx, {
         command: 'SeedEventField',
         actorAccountId: input.actorAccountId,
         idempotencyKey: input.idempotencyKey,
-        params: { eventId: input.eventId, method: input.method, order: input.order },
+        params: {
+          eventId: input.eventId,
+          method: input.method,
+          order: input.order,
+          seeds: input.seeds,
+          banded: input.banded,
+          attributeKey: input.attributeKey,
+          direction: input.direction,
+          source: input.source,
+          overrides: input.overrides,
+        },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       await lockKeys(ctx, `event-structure:${input.eventId}`);
@@ -253,38 +305,105 @@ export class StructureStore {
         );
       const { rows: field } = await sql<{
         field_hash: string;
-      }>`SELECT field_hash FROM competition.event_field WHERE event_id = ${e.id}`.execute(ctx.trx);
+        field_version: number;
+      }>`SELECT field_hash, field_version FROM competition.event_field WHERE event_id = ${e.id}`.execute(
+        ctx.trx,
+      );
       const fieldHash = field[0]?.field_hash as string;
       const ids = (await fieldParticipants(ctx, e.id)).map((p) => p.participantId);
+      const v2 =
+        field[0]?.field_version === 2 ||
+        input.method === 'RANKED_THEN_DRAWN' ||
+        input.method === 'BY_ENTRY_ATTRIBUTE' ||
+        (input.overrides ?? []).length > 0 ||
+        input.source !== undefined;
       let order: string[];
       let drawSeed: string | null = null;
-      if (input.method === 'MANUAL') {
-        order = [...(input.order as readonly string[])].map((x) => x.toLowerCase());
-        if (
-          order.length !== ids.length ||
-          new Set(order).size !== order.length ||
-          !order.every((x) => ids.includes(x))
-        ) {
+      let seedingHash: string;
+      let document: Record<string, unknown> | null = null;
+      if (v2) {
+        drawSeed = input.method === 'MANUAL' ? null : randomBytes(32).toString('hex');
+        let attributeValues: Map<string, string> | undefined;
+        let attributeType: ReturnType<typeof attributeTypeOf> = undefined;
+        if (input.method === 'BY_ENTRY_ATTRIBUTE') {
+          const spec = await disciplineSpec(ctx, e.disciplineVersionId);
+          attributeType = attributeTypeOf(spec, input.attributeKey);
+          if (attributeType === undefined || attributeType === 'TEXT')
+            throw new DomainError(
+              DomainErrorCode.INVALID_INPUT,
+              'seed by a numeric PARTICIPANT entry attribute the discipline declares',
+            );
+          attributeValues = await frozenAttribute(ctx, e.id, input.attributeKey as string);
+        }
+        let doc;
+        try {
+          doc = computeSeeding({
+            eventId: e.id,
+            fieldHash,
+            participantIds: ids,
+            request: {
+              method: input.method,
+              ...(input.order === undefined ? {} : { order: input.order }),
+              ...(input.seeds === undefined ? {} : { seeds: input.seeds }),
+              ...(input.banded === undefined ? {} : { banded: input.banded }),
+              ...(input.attributeKey === undefined ? {} : { attributeKey: input.attributeKey }),
+              ...(input.direction === undefined ? {} : { direction: input.direction }),
+              ...(input.source === undefined ? {} : { source: input.source }),
+              ...(input.overrides === undefined ? {} : { overrides: input.overrides }),
+            },
+            ...(drawSeed === null ? {} : { drawSeed }),
+            ...(attributeValues === undefined ? {} : { attributeValues }),
+            ...(attributeType === undefined ? {} : { attributeType }),
+          });
+        } catch (err) {
+          if (err instanceof SeedingError)
+            throw new DomainError(DomainErrorCode.INVALID_INPUT, err.message, {
+              reason: err.reason,
+            });
+          throw err;
+        }
+        order = [...doc.order];
+        try {
+          seedingHash = seedingHashV2(doc);
+        } catch {
           throw new DomainError(
             DomainErrorCode.INVALID_INPUT,
-            'manual order must list every participant of the locked field exactly once',
+            'invalid seeding document (check labels and dates)',
           );
         }
+        document = doc as unknown as Record<string, unknown>;
       } else {
-        drawSeed = randomBytes(32).toString('hex');
-        order = deterministicDraw(ids, drawSeed);
+        if (input.method === 'MANUAL') {
+          order = [...(input.order as readonly string[])].map((x) => x.toLowerCase());
+          if (
+            order.length !== ids.length ||
+            new Set(order).size !== order.length ||
+            !order.every((x) => ids.includes(x))
+          ) {
+            throw new DomainError(
+              DomainErrorCode.INVALID_INPUT,
+              'manual order must list every participant of the locked field exactly once',
+            );
+          }
+        } else {
+          drawSeed = randomBytes(32).toString('hex');
+          order = deterministicDraw(ids, drawSeed);
+        }
+        const doc: SeedingDocument = {
+          eventId: e.id,
+          fieldHash,
+          method: input.method as 'MANUAL' | 'DETERMINISTIC_DRAW',
+          ...(drawSeed === null ? {} : { drawAlgorithm: DRAW_ALGORITHM, drawSeed }),
+          order,
+        };
+        seedingHash = computeSeedingHash(doc);
       }
-      const doc: SeedingDocument = {
-        eventId: e.id,
-        fieldHash,
-        method: input.method,
-        ...(drawSeed === null ? {} : { drawAlgorithm: DRAW_ALGORITHM, drawSeed }),
-        order,
-      };
-      const seedingHash = computeSeedingHash(doc);
-      await sql`INSERT INTO competition.event_seeding (event_id, field_hash, method, draw_algorithm, draw_seed, seed_order, seeding_hash, seeded_by_account_id, recorded_at)
+      await sql`INSERT INTO competition.event_seeding (event_id, field_hash, method, draw_algorithm, draw_seed, seed_order, seeding_hash,
+                  seeded_by_account_id, seeding_version, seeding_document, recorded_at)
         VALUES (${e.id}, ${fieldHash}, ${input.method}, ${drawSeed === null ? null : DRAW_ALGORITHM}, ${drawSeed}, ${order}::uuid[], ${seedingHash},
-                ${input.actorAccountId}, ${ctx.txTime})`.execute(ctx.trx);
+                ${input.actorAccountId}, ${v2 ? 2 : 1}, ${document === null ? null : JSON.stringify(document)}::jsonb, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
       await refreshEventReadModels(ctx, e.id);
       await emitEvent(ctx, {
         eventType: 'EventSeeded',
@@ -297,11 +416,422 @@ export class StructureStore {
         action: 'event.seeded',
         targetType: 'EVENT',
         targetId: e.id,
-        details: { method: input.method },
+        details: {
+          method: input.method,
+          ...(v2 ? { seedingVersion: 2, overrides: (input.overrides ?? []).length } : {}),
+        },
       });
-      const response = { method: input.method, seedOrder: order, drawSeed, seedingHash };
+      for (const o of input.overrides ?? [])
+        await recordAudit(ctx, {
+          actorAccountId: input.actorAccountId,
+          action: 'event.seeding.override',
+          targetType: 'EVENT',
+          targetId: e.id,
+          details: { participantId: o.participantId, toPosition: o.toPosition, reason: o.reason },
+        });
+      const response = {
+        method: input.method,
+        seedOrder: order,
+        drawSeed,
+        seedingHash,
+        seedingVersion: (v2 ? 2 : 1) as 1 | 2,
+      };
       await idem.record(response);
       return { ...response, created: true };
+    });
+  }
+
+  // ───────────────────────────── entry attributes (ONCF-05B) ─────────────────────────────
+
+  /**
+   * Declares entry attributes on a registration before the field locks (ADR-0056): entry time,
+   * average, handicap index, bib, classification points… Only keys the pinned v2 DisciplineVersion
+   * declares, typed and bounded by it; MEMBER-scope values name an ACTIVE team member. A NULL value
+   * clears a key. The entrant (athlete controller / team manager) or an organizer with
+   * COMP_MANAGE_REGISTRATIONS may declare. Values are DECLARED, never verified; the field lock
+   * freezes and hashes them. Audit records keys only, never values.
+   */
+  async declareEntryAttributes(input: {
+    actorAccountId: string;
+    registrationId: string;
+    attributes: readonly { key: string; value: string | null; athleteId?: string }[];
+    idempotencyKey: string;
+  }): Promise<{ registrationId: string; declared: number; created: boolean }> {
+    if (input.attributes.length === 0 || input.attributes.length > 64)
+      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'declare 1–64 attribute values');
+    const attrs = input.attributes.map((a) => ({
+      key: a.key,
+      value: a.value,
+      athleteId: a.athleteId === undefined ? null : a.athleteId.toLowerCase(),
+    }));
+    return this.tx(async (ctx) => {
+      const idem = await identityIdempotency<{ registrationId: string; declared: number }>(ctx, {
+        command: 'DeclareEntryAttributes',
+        actorAccountId: input.actorAccountId,
+        idempotencyKey: input.idempotencyKey,
+        params: { registrationId: input.registrationId, attrs },
+      });
+      if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
+      await lockKeys(ctx, `registration:${input.registrationId}`);
+      const { rows } = await sql<{
+        event_id: string;
+        athlete_id: string | null;
+        team_id: string | null;
+        status: string;
+      }>`
+        SELECT r.event_id, r.athlete_id, r.team_id, v.status FROM competition.registration r
+        JOIN competition.v_registration_current v ON v.registration_id = r.id WHERE r.id = ${input.registrationId}`.execute(
+        ctx.trx,
+      );
+      const r = rows[0];
+      if (r === undefined)
+        throw new DomainError(DomainErrorCode.NOT_FOUND, 'registration not found');
+      const e = await loadEvent(ctx, r.event_id);
+      if (!(await this.entrantControl(ctx, input.actorAccountId, r)))
+        await requireCompPermission(
+          ctx,
+          input.actorAccountId,
+          await loadCompetition(ctx, e.competitionId),
+          'COMP_MANAGE_REGISTRATIONS',
+        );
+      if (!['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED'].includes(e.status))
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'entry attributes are frozen once the field is locked',
+        );
+      if (!['REQUESTED', 'WAITLISTED', 'CONFIRMED'].includes(r.status))
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          `the registration is ${r.status}`,
+        );
+      const spec = await disciplineSpec(ctx, e.disciplineVersionId);
+      const declared = new Map((spec.entryAttributes ?? []).map((a) => [a.key, a]));
+      const members = r.team_id === null ? [] : await activeTeamMembers(ctx, r.team_id, ctx.txTime);
+      for (const a of attrs) {
+        const d = declared.get(a.key);
+        if (d === undefined)
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            `this discipline does not declare ${a.key}`,
+          );
+        if (d.scope === 'MEMBER' && (a.athleteId === null || !members.includes(a.athleteId)))
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            `${a.key} is declared per active team member`,
+          );
+        if (d.scope === 'PARTICIPANT' && a.athleteId !== null)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `${a.key} is declared per entrant`);
+        if (
+          a.value !== null &&
+          !validEntryAttributeValue(d.valueType, a.value, {
+            ...(d.min === undefined ? {} : { min: d.min }),
+            ...(d.max === undefined ? {} : { max: d.max }),
+          })
+        )
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid value for ${a.key}`);
+      }
+      for (const a of attrs)
+        await sql`INSERT INTO competition.registration_entry_attribute (id, registration_id, event_id, attribute_key, athlete_id, value, declared_by_account_id, recorded_at)
+          VALUES (${newId()}, ${input.registrationId}, ${r.event_id}, ${a.key}, ${a.athleteId}, ${a.value}, ${input.actorAccountId}, ${ctx.txTime})`.execute(
+          ctx.trx,
+        );
+      await recordAudit(ctx, {
+        actorAccountId: input.actorAccountId,
+        action: 'registration.entry-attributes',
+        targetType: 'REGISTRATION',
+        targetId: input.registrationId,
+        details: { keys: [...new Set(attrs.map((a) => a.key))].sort() },
+      });
+      const response = { registrationId: input.registrationId, declared: attrs.length };
+      await idem.record(response);
+      return { ...response, created: true };
+    });
+  }
+
+  /** Current declared entry attributes of a registration (entrant or COMP_VIEW_PRIVATE staff). */
+  async entryAttributes(input: { actorAccountId: string; registrationId: string }) {
+    return this.tx(async (ctx) => {
+      const { rows } = await sql<{
+        event_id: string;
+        athlete_id: string | null;
+        team_id: string | null;
+      }>`
+        SELECT event_id, athlete_id, team_id FROM competition.registration WHERE id = ${input.registrationId}`.execute(
+        ctx.trx,
+      );
+      const r = rows[0];
+      if (r === undefined)
+        throw new DomainError(DomainErrorCode.NOT_FOUND, 'registration not found');
+      if (!(await this.entrantControl(ctx, input.actorAccountId, r))) {
+        const e = await loadEvent(ctx, r.event_id);
+        await requireCompPermission(
+          ctx,
+          input.actorAccountId,
+          await loadCompetition(ctx, e.competitionId),
+          'COMP_VIEW_PRIVATE',
+        );
+      }
+      const { rows: values } = await sql<{
+        attribute_key: string;
+        athlete_id: string | null;
+        value: string;
+      }>`
+        SELECT attribute_key, athlete_id, value FROM competition.v_registration_entry_attribute_current
+        WHERE registration_id = ${input.registrationId} ORDER BY attribute_key, athlete_id NULLS FIRST`.execute(
+        ctx.trx,
+      );
+      return values.map((v) => ({
+        key: v.attribute_key,
+        value: v.value,
+        ...(v.athlete_id === null ? {} : { athleteId: v.athlete_id }),
+      }));
+    });
+  }
+
+  // ───────────────────────────── organizer structure reads (ONCF-05B) ─────────────────────────────
+
+  /**
+   * Readiness checklist (ONCF-05A §16.2): DERIVED from facts, never a lifecycle state. Reports what
+   * exists (field, roster snapshot, seeding, plan, schedule) and what blocks the next step. The
+   * `IN_PROGRESS` precondition is unchanged (a plan exists); a complete schedule is only a warning.
+   */
+  readiness(input: { actorAccountId: string; eventId: string }) {
+    return this.tx(async (ctx) => {
+      const e = await loadEvent(ctx, input.eventId);
+      await requireCompPermission(
+        ctx,
+        input.actorAccountId,
+        await loadCompetition(ctx, e.competitionId),
+        'COMP_VIEW_PRIVATE',
+      );
+      const { rows } = await sql<{
+        field_version: number | null;
+        participants: number | null;
+        seeding_method: string | null;
+        seeding_version: number | null;
+        overrides: number | null;
+        engine: string | null;
+        plan_version: number | null;
+        stages: number;
+        contests: number;
+        scheduled: number;
+        dynamic_rounds: number;
+        rosters: number;
+        team_participants: number;
+        attributes: number;
+      }>`
+        SELECT f.field_version, f.participant_count AS participants,
+               sd.method AS seeding_method, sd.seeding_version,
+               coalesce(jsonb_array_length(sd.seeding_document -> 'overrides'), 0) AS overrides,
+               CASE WHEN pl.event_id IS NULL THEN NULL ELSE pl.engine_id || '/' || pl.engine_version END AS engine,
+               pl.plan_version,
+               (SELECT count(*)::int FROM competition.stage s WHERE s.event_id = e.id) AS stages,
+               (SELECT count(*)::int FROM competition.contest c WHERE c.event_id = e.id) AS contests,
+               (SELECT count(*)::int FROM competition.contest c JOIN competition.contest_schedule cs ON cs.contest_id = c.id WHERE c.event_id = e.id) AS scheduled,
+               (SELECT count(*)::int FROM competition.round r WHERE r.event_id = e.id AND r.dynamic_transition_key IS NOT NULL) AS dynamic_rounds,
+               (SELECT count(DISTINCT m.participant_id)::int FROM competition.participant_roster_member m JOIN competition.participant p ON p.id = m.participant_id WHERE p.event_id = e.id) AS rosters,
+               (SELECT count(*)::int FROM competition.participant p WHERE p.event_id = e.id AND p.participant_kind = 'TEAM') AS team_participants,
+               (SELECT count(*)::int FROM competition.participant_entry_attribute a JOIN competition.participant p ON p.id = a.participant_id WHERE p.event_id = e.id) AS attributes
+        FROM competition.event e
+        LEFT JOIN competition.event_field f ON f.event_id = e.id
+        LEFT JOIN competition.event_seeding sd ON sd.event_id = e.id
+        LEFT JOIN competition.event_plan pl ON pl.event_id = e.id
+        WHERE e.id = ${e.id}`.execute(ctx.trx);
+      const r = rows[0];
+      if (r === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'event not found');
+      const blockers: string[] = [];
+      const warnings: string[] = [];
+      if (r.field_version === null) blockers.push('FIELD_NOT_LOCKED');
+      else if (r.seeding_method === null) blockers.push('NOT_SEEDED');
+      else if (r.engine === null) blockers.push('NO_PLAN');
+      if (r.engine !== null && r.scheduled < r.contests) warnings.push('CONTESTS_UNSCHEDULED');
+      if (r.dynamic_rounds > 0) warnings.push('ROUNDS_AWAIT_ADVANCEMENT');
+      return {
+        eventId: e.id,
+        status: e.status,
+        fieldLocked: r.field_version !== null,
+        fieldVersion: r.field_version,
+        participants: r.participants ?? 0,
+        rosterSnapshot:
+          r.field_version === 2 ? { teams: r.team_participants, snapshotted: r.rosters } : null,
+        entryAttributesFrozen: r.attributes,
+        seeded: r.seeding_method !== null,
+        seeding:
+          r.seeding_method === null
+            ? null
+            : { method: r.seeding_method, version: r.seeding_version, overrides: r.overrides ?? 0 },
+        planGenerated: r.engine !== null,
+        plan:
+          r.engine === null
+            ? null
+            : {
+                engine: r.engine,
+                planVersion: r.plan_version,
+                stages: r.stages,
+                contests: r.contests,
+                dynamicRounds: r.dynamic_rounds,
+              },
+        contestsScheduled: { scheduled: r.scheduled, total: r.contests },
+        blockers,
+        warnings,
+      };
+    });
+  }
+
+  /**
+   * The locked field for organizers (COMP_VIEW_PRIVATE): participants with their entrant ids, seed
+   * position, roster size and FROZEN entry attributes (seeding inputs). Never public — declared
+   * values such as classification points or handicaps are not published by ONCF-05B.
+   */
+  lockedField(input: { actorAccountId: string; eventId: string }) {
+    return this.tx(async (ctx) => {
+      const e = await loadEvent(ctx, input.eventId);
+      await requireCompPermission(
+        ctx,
+        input.actorAccountId,
+        await loadCompetition(ctx, e.competitionId),
+        'COMP_VIEW_PRIVATE',
+      );
+      const { rows } = await sql<{
+        id: string;
+        registration_id: string;
+        participant_kind: 'INDIVIDUAL' | 'TEAM';
+        athlete_id: string | null;
+        team_id: string | null;
+        team_name: string | null;
+        status: string;
+        seed: number | null;
+        roster: number;
+      }>`
+        SELECT p.id, p.registration_id, p.participant_kind, p.athlete_id, p.team_id, tp.display_name AS team_name, v.status,
+               (SELECT array_position(sd.seed_order, p.id) FROM competition.event_seeding sd WHERE sd.event_id = p.event_id) AS seed,
+               (SELECT count(*)::int FROM competition.participant_roster_member m WHERE m.participant_id = p.id) AS roster
+        FROM competition.participant p
+        JOIN competition.v_participant_current v ON v.participant_id = p.id
+        LEFT JOIN competition.team_profile tp ON tp.team_id = p.team_id
+        WHERE p.event_id = ${e.id} ORDER BY seed NULLS LAST, p.id`.execute(ctx.trx);
+      const { rows: attrs } = await sql<{
+        participant_id: string;
+        attribute_key: string;
+        athlete_id: string | null;
+        value: string;
+      }>`
+        SELECT a.participant_id, a.attribute_key, a.athlete_id, a.value FROM competition.participant_entry_attribute a
+        JOIN competition.participant p ON p.id = a.participant_id WHERE p.event_id = ${e.id}
+        ORDER BY a.attribute_key, a.athlete_id NULLS FIRST`.execute(ctx.trx);
+      return rows.map((p) => ({
+        participantId: p.id,
+        registrationId: p.registration_id,
+        kind: p.participant_kind,
+        athleteId: p.athlete_id,
+        teamId: p.team_id,
+        teamName: p.team_name,
+        status: p.status,
+        seed: p.seed,
+        rosterSize: p.participant_kind === 'TEAM' ? p.roster : null,
+        attributes: attrs
+          .filter((a) => a.participant_id === p.id)
+          .map((a) => ({
+            key: a.attribute_key,
+            value: a.value,
+            ...(a.athlete_id === null ? {} : { athleteId: a.athlete_id }),
+          })),
+      }));
+    });
+  }
+
+  /**
+   * Preview of the plan the pinned engine WOULD generate from the current seeding (COMP_VIEW_PRIVATE).
+   * Pure: nothing is persisted, hashed into the event or audited; generation stays the single,
+   * immutable command. Returns a structural summary (stages, rounds, counts), not the document.
+   */
+  previewPlan(input: { actorAccountId: string; eventId: string }) {
+    return this.tx(async (ctx) => {
+      const e = await loadEvent(ctx, input.eventId);
+      await requireCompPermission(
+        ctx,
+        input.actorAccountId,
+        await loadCompetition(ctx, e.competitionId),
+        'COMP_VIEW_PRIVATE',
+      );
+      const { rows: sd } = await sql<{ seed_order: string[] }>`
+        SELECT seed_order FROM competition.event_seeding WHERE event_id = ${e.id}`.execute(ctx.trx);
+      if (sd[0] === undefined)
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'seed the field before previewing the plan',
+        );
+      const spec = await disciplineSpec(ctx, e.disciplineVersionId);
+      const { rows: fv } = await sql<{ engine_id: string; engine_version: number }>`
+        SELECT engine_id, engine_version FROM sports.format_version WHERE id = ${e.formatVersionId}`.execute(
+        ctx.trx,
+      );
+      const engine =
+        fv[0] === undefined ? undefined : formatEngine(fv[0].engine_id, fv[0].engine_version);
+      if (engine === undefined)
+        throw new DomainError(DomainErrorCode.INVALID_INPUT, 'format engine is not available');
+      const participants = await fieldParticipants(ctx, e.id);
+      const engineInput = {
+        eventId: e.id,
+        participants: participants.map((p) => ({ participantId: p.participantId, kind: p.kind })),
+        seedOrder: sd[0].seed_order,
+        config: e.formatConfig,
+        allowedContestTypes: spec.allowedContestTypes,
+      };
+      try {
+        if (engine.planVersion === 2) {
+          const plan = engine.generate(engineInput);
+          return {
+            engine: `${engine.id}/${engine.version}`,
+            planVersion: 2 as const,
+            stages: plan.stages.map((s) => ({
+              key: s.key,
+              label: s.label,
+              primitive: s.primitive,
+              partitionKind: s.partition?.kind ?? null,
+            })),
+            transitions: plan.transitions.map((t) => ({
+              key: t.key,
+              kind: t.kind,
+              fromStage: t.fromStage,
+              toStage: t.toStage,
+            })),
+            rounds: plan.rounds.map((r) => ({
+              key: r.key,
+              label: r.label,
+              roundType: r.roundType,
+              stageKey: r.stageKey,
+              groupKey: r.groupKey ?? null,
+              dynamic: r.dynamicEntry !== undefined,
+              contests: r.contests.length,
+              entries: r.contests.reduce((n, c) => n + (c.entries?.length ?? 0), 0),
+            })),
+            contests: plan.rounds.reduce((n, r) => n + r.contests.length, 0),
+          };
+        }
+        const plan = engine.generate(engineInput);
+        return {
+          engine: `${engine.id}/${engine.version}`,
+          planVersion: 1 as const,
+          stages: [],
+          transitions: [],
+          rounds: plan.rounds.map((r) => ({
+            key: r.key,
+            label: r.label,
+            roundType: r.roundType,
+            stageKey: null,
+            groupKey: null,
+            dynamic: false,
+            contests: r.contests.length,
+            entries: 0,
+          })),
+          contests: plan.rounds.reduce((n, r) => n + r.contests.length, 0),
+        };
+      } catch (err) {
+        if (err instanceof FormatEngineError)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, err.message, { reason: err.reason });
+        throw err;
+      }
     });
   }
 
@@ -387,6 +917,15 @@ export class StructureStore {
           DomainErrorCode.INVALID_INPUT,
           `format engine ${fv.engine_id}/${fv.engine_version} is not available`,
         );
+      if (engine.planVersion === 2) {
+        const gaps = capabilityIssues(providedCapabilities(dv.spec), engineRequirements(engine));
+        if (gaps.length > 0)
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            `the discipline does not provide what this format requires: ${gaps.map((g) => g.message).join('; ')}`,
+            { reason: 'CAPABILITY_MISMATCH' },
+          );
+      }
       const participants = await fieldParticipants(ctx, e.id);
       const inputDoc = {
         eventId: e.id,
@@ -401,7 +940,8 @@ export class StructureStore {
         configHash: e.formatConfigHash,
         seedOrder: sd.seed_order,
       };
-      const inputHash = computePlanInputHash(inputDoc);
+      const inputHash =
+        engine.planVersion === 2 ? planInputHashV2(inputDoc) : computePlanInputHash(inputDoc);
       const engineRef = `${engine.id}/${engine.version}`;
 
       const { rows: existing } = await sql<{
@@ -428,6 +968,63 @@ export class StructureStore {
         };
         await idem.record(response);
         return { ...response, created: false };
+      }
+
+      if (engine.planVersion === 2) {
+        let planV2;
+        try {
+          planV2 = engine.generate({
+            eventId: e.id,
+            participants: participants.map((p) => ({
+              participantId: p.participantId,
+              kind: p.kind,
+            })),
+            seedOrder: sd.seed_order,
+            config: e.formatConfig,
+            allowedContestTypes: dv.spec.allowedContestTypes,
+          });
+        } catch (err) {
+          if (err instanceof FormatEngineError)
+            throw new DomainError(DomainErrorCode.INVALID_INPUT, err.message, {
+              reason: err.reason,
+            });
+          throw err;
+        }
+        const planHash = planHashV2(planV2);
+        await sql`INSERT INTO competition.event_plan (event_id, engine_id, engine_version, input_hash, plan_hash, plan_document, generated_by_account_id, plan_version, recorded_at)
+          VALUES (${e.id}, ${engine.id}, ${engine.version}, ${inputHash}, ${planHash}, ${JSON.stringify(planV2)}::jsonb, ${input.actorAccountId}, 2, ${ctx.txTime})`.execute(
+          ctx.trx,
+        );
+        const contests = await materializePlanV2(ctx, e.id, input.actorAccountId, planV2);
+        await refreshEventReadModels(ctx, e.id);
+        await emitEvent(ctx, {
+          eventType: 'EventPlanGenerated',
+          aggregateType: 'EVENT',
+          aggregateId: e.id as Uuid,
+          payload: {
+            engine: engineRef,
+            inputHash,
+            planHash,
+            rounds: planV2.rounds.length,
+            contests,
+          },
+        });
+        await recordAudit(ctx, {
+          actorAccountId: input.actorAccountId,
+          action: 'event.plan-generated',
+          targetType: 'EVENT',
+          targetId: e.id,
+          details: { engine: engineRef, planVersion: 2 },
+        });
+        const response = {
+          planHash,
+          inputHash,
+          engine: engineRef,
+          rounds: planV2.rounds.length,
+          contests,
+        };
+        await idem.record(response);
+        return { ...response, created: true };
       }
 
       let plan: PlanDocument;
@@ -937,24 +1534,28 @@ export class StructureStore {
       }>`SELECT spec FROM sports.discipline_version WHERE id = ${e.disciplineVersionId}`.execute(
         ctx.trx,
       );
-      const size = dv[0]?.spec.participation.lineupSize ?? { min: 1, max: 1 };
+      const participation = dv[0]?.spec.participation;
+      const size = participation?.lineupSize ?? { min: 1, max: 1 };
       if (athletes.length < size.min || athletes.length > size.max) {
         throw new DomainError(
           DomainErrorCode.INVALID_INPUT,
           `a lineup must field ${size.min}–${size.max} athletes`,
         );
       }
+      // ONCF-05B (ADR-0057): a v2 field validates against the roster frozen at lock; v1 fields keep
+      // the BRT-05 rule (ACTIVE members at submission time).
       const eligible =
         p.athlete_id !== null
           ? [p.athlete_id]
-          : await activeTeamMembers(ctx, p.team_id as string, ctx.txTime);
+          : ((await frozenRoster(ctx, input.participantId)) ??
+            (await activeTeamMembers(ctx, p.team_id as string, ctx.txTime)));
       const ineligible = athletes.filter((a) => !eligible.includes(a.athleteId));
       if (ineligible.length > 0) {
         throw new DomainError(
           DomainErrorCode.INVALID_INPUT,
           p.athlete_id !== null
             ? 'an individual participant fields exactly its own athlete'
-            : 'every lineup athlete must be an active member of the team',
+            : 'every lineup athlete must be on the team roster',
         );
       }
       const { rows: prev } = await sql<{ n: number }>`
@@ -966,9 +1567,11 @@ export class StructureStore {
         VALUES (${lineupId}, ${input.contestId}, ${input.participantId}, ${input.actorAccountId}, ${ctx.txTime})`.execute(
         ctx.trx,
       );
-      for (const a of athletes) {
-        await sql`INSERT INTO competition.lineup_member (lineup_id, athlete_id, member_role, recorded_at)
-          VALUES (${lineupId}, ${a.athleteId}, ${a.role}, ${ctx.txTime})`.execute(ctx.trx);
+      for (const [i, a] of athletes.entries()) {
+        await sql`INSERT INTO competition.lineup_member (lineup_id, athlete_id, member_role, ordinal, recorded_at)
+          VALUES (${lineupId}, ${a.athleteId}, ${a.role}, ${participation?.lineupOrdered === true ? i + 1 : null}, ${ctx.txTime})`.execute(
+          ctx.trx,
+        );
       }
       const replaced = (prev[0]?.n ?? 0) > 0;
       await emitEvent(ctx, {
@@ -988,6 +1591,11 @@ export class StructureStore {
       return { ...response, created: true };
     });
   }
+}
+
+function attributeTypeOf(spec: DisciplineVersionSpec, key: string | undefined) {
+  const a = (spec.entryAttributes ?? []).find((x) => x.key === key && x.scope === 'PARTICIPANT');
+  return a?.valueType;
 }
 
 function isFinished(status: string): boolean {

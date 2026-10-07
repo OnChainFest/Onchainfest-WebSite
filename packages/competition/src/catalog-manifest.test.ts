@@ -17,19 +17,21 @@ import {
   validateDisciplineVersionSpec,
 } from './index';
 
-describe('ONCF-03A canonical catalog manifest', () => {
+describe('ONCF-03A canonical catalog manifest (version histories since ONCF-05B)', () => {
   const disciplines = CANONICAL_CATALOG.sports.flatMap((s) =>
     s.disciplines.map((d) => ({ sport: s.code, ...d })),
   );
+  const v1 = (code: string) => disciplines.find((d) => d.code === code)?.specs[0];
 
-  it('covers padel and tennis, and nothing that cannot be run', () => {
-    expect(CANONICAL_CATALOG.sports.map((s) => s.code)).toEqual(['padel', 'tennis']);
-    expect(disciplines.map((d) => d.code)).toEqual([
+  it('keeps the ONCF-03A racket disciplines first in their histories and adds nothing unrunnable', () => {
+    expect(CANONICAL_CATALOG.sports.slice(0, 2).map((s) => s.code)).toEqual(['padel', 'tennis']);
+    expect(disciplines.slice(0, 3).map((d) => d.code)).toEqual([
       'padel.doubles',
       'tennis.singles',
       'tennis.doubles',
     ]);
-    expect(disciplines.some((d) => d.sport === 'running')).toBe(false);
+    // running.5k stays dev-only; the canonical running disciplines are parameterised by data.
+    expect(disciplines.some((d) => d.code === 'running.5k')).toBe(false);
   });
 
   it('has valid codes and specifications', () => {
@@ -37,43 +39,38 @@ describe('ONCF-03A canonical catalog manifest', () => {
     for (const d of disciplines) {
       expect(DISCIPLINE_CODE.test(d.code), d.code).toBe(true);
       expect(disciplineBelongsToSport(d.code, d.sport), d.code).toBe(true);
-      expect(validateDisciplineVersionSpec(d.spec), d.code).toEqual([]);
+      for (const spec of d.specs) expect(validateDisciplineVersionSpec(spec), d.code).toEqual([]);
     }
     for (const f of CANONICAL_CATALOG.formats) {
       expect(FORMAT_CODE.test(f.code), f.code).toBe(true);
-      expect(formatEngine(f.engineId, f.engineVersion), f.code).toBeDefined();
+      for (const v of f.versions)
+        expect(formatEngine(v.engineId, v.engineVersion), f.code).toBeDefined();
     }
   });
 
-  it('gives every discipline at least one format whose contest type it allows', () => {
-    const contestTypes = CANONICAL_CATALOG.formats.map(
-      (f) => formatEngine(f.engineId, f.engineVersion)?.contestType,
+  it('gives every discipline version at least one format version whose contest type it allows', () => {
+    const contestTypes = CANONICAL_CATALOG.formats.flatMap((f) =>
+      f.versions.map((v) => formatEngine(v.engineId, v.engineVersion)?.contestType),
     );
     for (const d of disciplines)
-      expect(
-        contestTypes.some((t) => t !== undefined && d.spec.allowedContestTypes.includes(t)),
-        d.code,
-      ).toBe(true);
+      for (const spec of d.specs)
+        expect(
+          contestTypes.some((t) => t !== undefined && spec.allowedContestTypes.includes(t)),
+          d.code,
+        ).toBe(true);
   });
 
-  it('declares the entrant kind each discipline is played with', () => {
-    const kinds = Object.fromEntries(
-      disciplines.map((d) => [d.code, d.spec.participation.participantKinds]),
-    );
-    expect(kinds).toEqual({
-      'padel.doubles': ['TEAM'],
-      'tennis.singles': ['INDIVIDUAL'],
-      'tennis.doubles': ['TEAM'],
-    });
+  it('declares the entrant kind each ONCF-03A discipline is played with', () => {
+    expect(v1('padel.doubles')?.participation.participantKinds).toEqual(['TEAM']);
+    expect(v1('tennis.singles')?.participation.participantKinds).toEqual(['INDIVIDUAL']);
+    expect(v1('tennis.doubles')?.participation.participantKinds).toEqual(['TEAM']);
   });
 
-  it('keeps specification hashes stable (changing one needs a new catalog version)', () => {
-    const hashes = Object.fromEntries(
-      disciplines.map((d) => [d.code, catalogSpecHash('br:discipline-version-spec', d.spec)]),
-    );
-    // Padel and tennis doubles share the racket-match semantics, so their content is identical.
-    expect(hashes['padel.doubles']).toBe(hashes['tennis.doubles']);
-    expect(hashes['tennis.singles']).not.toBe(hashes['padel.doubles']);
+  it('keeps v1 specification hashes stable (changing one needs a new catalog version)', () => {
+    const h = (code: string) => catalogSpecHash('br:discipline-version-spec', v1(code));
+    // Padel and tennis doubles share the racket-match semantics, so their v1 content is identical.
+    expect(h('padel.doubles')).toBe(h('tennis.doubles'));
+    expect(h('tennis.singles')).not.toBe(h('padel.doubles'));
   });
 });
 

@@ -222,6 +222,85 @@ export class TeamStore {
     });
   }
 
+  /**
+   * ONCF-05B team reads (for pair / squad entry). Teams the caller manages, each with its members'
+   * current membership status. Athletes are returned as ids; the API names them under the roster
+   * rule (only PUBLIC / AUTHENTICATED profiles), exactly like registrations.
+   */
+  myTeams(input: { actorAccountId: string }) {
+    return this.tx(async (ctx) => {
+      const facts = await loadControlFacts(ctx, input.actorAccountId);
+      if (!facts.accountActive || facts.selfPersonId === undefined) return [];
+      const { rows } = await sql<{
+        team_id: string;
+        team_kind: TeamKind;
+        display_name: string;
+        recorded_at: Date;
+      }>`
+        SELECT t.id AS team_id, t.team_kind, p.display_name, t.recorded_at FROM competition.team t
+        JOIN competition.team_manager m ON m.team_id = t.id JOIN competition.team_profile p ON p.team_id = t.id
+        WHERE m.person_id = ${facts.selfPersonId} ORDER BY t.recorded_at DESC LIMIT 200`.execute(
+        ctx.trx,
+      );
+      const out = [];
+      for (const t of rows) {
+        const { rows: members } = await sql<{
+          id: string;
+          athlete_id: string;
+          status: TeamMembershipStatus;
+        }>`
+          SELECT m.id, m.athlete_id, c.status FROM competition.team_membership m
+          JOIN competition.v_team_membership_current c ON c.team_membership_id = m.id
+          WHERE m.team_id = ${t.team_id} AND c.status IN ('PROPOSED', 'ACTIVE') ORDER BY m.recorded_at, m.id`.execute(
+          ctx.trx,
+        );
+        out.push({
+          teamId: t.team_id,
+          teamKind: t.team_kind,
+          displayName: t.display_name,
+          createdAt: t.recorded_at.toISOString(),
+          members: members.map((m) => ({
+            membershipId: m.id,
+            athleteId: m.athlete_id,
+            status: m.status,
+          })),
+        });
+      }
+      return out;
+    });
+  }
+
+  /** Memberships of athletes the caller may act for (SELF / confirmed guardian): pending first. */
+  myMemberships(input: { actorAccountId: string }) {
+    return this.tx(async (ctx) => {
+      const facts = await loadControlFacts(ctx, input.actorAccountId);
+      if (!facts.accountActive || facts.selfPersonId === undefined) return [];
+      const persons = [facts.selfPersonId, ...facts.activeDependentPersonIds];
+      const { rows } = await sql<{
+        id: string;
+        team_id: string;
+        athlete_id: string;
+        status: TeamMembershipStatus;
+        display_name: string;
+        team_kind: TeamKind;
+      }>`
+        SELECT m.id, m.team_id, m.athlete_id, c.status, p.display_name, t.team_kind FROM competition.team_membership m
+        JOIN competition.v_team_membership_current c ON c.team_membership_id = m.id
+        JOIN identity.athlete a ON a.id = m.athlete_id
+        JOIN competition.team t ON t.id = m.team_id JOIN competition.team_profile p ON p.team_id = m.team_id
+        WHERE a.person_id = ANY(${persons}::uuid[]) AND c.status IN ('PROPOSED', 'ACTIVE')
+        ORDER BY (c.status = 'PROPOSED') DESC, m.recorded_at DESC LIMIT 200`.execute(ctx.trx);
+      return rows.map((r) => ({
+        membershipId: r.id,
+        teamId: r.team_id,
+        teamName: r.display_name,
+        teamKind: r.team_kind,
+        athleteId: r.athlete_id,
+        status: r.status,
+      }));
+    });
+  }
+
   /** Athlete ids with an ACTIVE membership at `at` (default: now). */
   members(teamId: string, at?: Date): Promise<string[]> {
     return this.tx((ctx) => activeTeamMembers(ctx, teamId, at ?? ctx.txTime));

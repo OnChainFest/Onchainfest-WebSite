@@ -3,6 +3,7 @@ import {
   PADEL_DOUBLES_V1,
   TENNIS_SINGLES_V1,
   type CatalogManifest,
+  type DisciplineVersionSpec,
 } from '@br/competition';
 import { newId } from '@br/domain';
 import { apiDb, newTestAccount, operatorDb, ownerDb } from '@br/testkit';
@@ -38,13 +39,15 @@ function manifest(): CatalogManifest {
       {
         code: `padel${t}`,
         name: 'Padel',
-        disciplines: [{ code: `padel${t}.doubles`, name: 'Padel doubles', spec: PADEL_DOUBLES_V1 }],
+        disciplines: [
+          { code: `padel${t}.doubles`, name: 'Padel doubles', specs: [PADEL_DOUBLES_V1] },
+        ],
       },
       {
         code: `tennis${t}`,
         name: 'Tennis',
         disciplines: [
-          { code: `tennis${t}.singles`, name: 'Tennis singles', spec: TENNIS_SINGLES_V1 },
+          { code: `tennis${t}.singles`, name: 'Tennis singles', specs: [TENNIS_SINGLES_V1] },
         ],
       },
     ],
@@ -52,8 +55,7 @@ function manifest(): CatalogManifest {
       {
         code: `single-elimination-${t}`,
         name: 'Single elimination',
-        engineId: 'single-elimination',
-        engineVersion: 1,
+        versions: [{ engineId: 'single-elimination', engineVersion: 1 }],
       },
     ],
   };
@@ -131,7 +133,7 @@ describe('CatalogStore.provision', () => {
     const { disciplineVersionId } = await catalog.createDisciplineVersion({
       operatorAccountId: op,
       disciplineId,
-      spec: disc.spec,
+      spec: disc.specs[0] as DisciplineVersionSpec,
       idempotencyKey: `k-${newId()}`,
     });
     const report = await catalog.provision({ operatorAccountId: op, manifest: m });
@@ -156,7 +158,9 @@ describe('CatalogStore.provision', () => {
               ...s,
               disciplines: s.disciplines.map((d) => ({
                 ...d,
-                spec: { ...d.spec, evidenceExpectations: ['VIDEO'] },
+                specs: [
+                  { ...(d.specs[0] as DisciplineVersionSpec), evidenceExpectations: ['VIDEO'] },
+                ],
               })),
             }
           : s,
@@ -176,7 +180,13 @@ describe('CatalogStore.provision', () => {
     const m = manifest();
     const bad: CatalogManifest = {
       ...m,
-      formats: [{ code: 'nope', name: 'Nope', engineId: 'no-such-engine', engineVersion: 1 }],
+      formats: [
+        {
+          code: 'nope',
+          name: 'Nope',
+          versions: [{ engineId: 'no-such-engine', engineVersion: 1 }],
+        },
+      ],
     };
     await expect(catalog.provision({ operatorAccountId: op, manifest: bad })).rejects.toThrow(
       'invalid format nope',
@@ -184,16 +194,50 @@ describe('CatalogStore.provision', () => {
     expect((await rowCounts(m))?.s).toBe(0);
   });
 
-  it('the canonical catalog provisions idempotently (padel and tennis, no running)', async () => {
+  it('the canonical catalog provisions idempotently (eight sports; v1 racket versions kept)', async () => {
     const first = await catalog.provision({ operatorAccountId: op, manifest: CANONICAL_CATALOG });
     expect(first.conflicts).toEqual([]);
     const second = await catalog.provision({ operatorAccountId: op, manifest: CANONICAL_CATALOG });
     expect(second.steps.every((s) => s.action === 'UNCHANGED')).toBe(true);
-    expect(await rowCounts(CANONICAL_CATALOG)).toEqual({ s: 2, d: 3, dv: 3, f: 2, fv: 2 });
+    // 8 sports, 21 disciplines, 21 + 3 racket v2 versions, 11 formats, 11 + 2 v2 format versions.
+    expect(await rowCounts(CANONICAL_CATALOG)).toEqual({ s: 8, d: 21, dv: 24, f: 11, fv: 13 });
     const listed = await reader.catalog();
     const codes = listed.disciplineVersions.map((d) => d.discipline.code);
     expect(codes).toEqual(
-      expect.arrayContaining(['padel.doubles', 'tennis.singles', 'tennis.doubles']),
+      expect.arrayContaining(['padel.doubles', 'tennis.singles', 'golf.scramble', 'swimming.pool']),
     );
+    // ONCF-05B: compatibility is the generic capability rule (ADR-0053).
+    const road = listed.disciplineVersions.find((d) => d.discipline.code === 'running.road');
+    const fmt = (code: string) =>
+      listed.formatVersions.filter((f) => f.format.code === code).map((f) => f.formatVersionId);
+    expect(road?.compatibleFormatVersionIds).toEqual(expect.arrayContaining(fmt('wave-start')));
+    expect(road?.compatibleFormatVersionIds).not.toEqual(
+      expect.arrayContaining(fmt('heats-final')),
+    );
+  });
+
+  it('upgrades an ONCF-03A catalog by adding the declared later versions (no conflict)', async () => {
+    const m = manifest();
+    await catalog.provision({ operatorAccountId: op, manifest: m });
+    const later: CatalogManifest = {
+      ...m,
+      sports: m.sports.map((s) => ({
+        ...s,
+        disciplines: s.disciplines.map((d) => ({
+          ...d,
+          specs: [
+            ...d.specs,
+            { ...(d.specs[0] as DisciplineVersionSpec), evidenceExpectations: ['VIDEO'] },
+          ],
+        })),
+      })),
+      formats: m.formats.map((f) => ({
+        ...f,
+        versions: [...f.versions, { engineId: 'single-elimination', engineVersion: 2 }],
+      })),
+    };
+    const report = await catalog.provision({ operatorAccountId: op, manifest: later });
+    expect(report.conflicts).toEqual([]);
+    expect(await rowCounts(later)).toEqual({ s: 2, d: 2, dv: 4, f: 1, fv: 2 });
   });
 });

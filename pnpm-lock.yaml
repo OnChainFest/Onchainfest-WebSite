@@ -84,6 +84,9 @@ importers:
         specifier: 0.29.6
         version: 0.29.6
     devDependencies:
+      '@br/competition':
+        specifier: workspace:*
+        version: link:../../packages/competition
       '@br/rankings':
         specifier: workspace:*
         version: link:../../packages/rankings

@@ -103,7 +103,39 @@ export type PublicSlot =
       readonly contestId: string;
       readonly contestSequence: number;
       readonly resolved: false;
+    }
+  // ONCF-05B stage-graph dependencies (unresolved until advancement, ONCF-05D).
+  | {
+      readonly slot: number;
+      readonly kind: 'RANK_FROM_STAGE';
+      readonly stageKey: string | null;
+      readonly groupKey: string | null;
+      readonly rank: number;
+      readonly resolved: false;
+    }
+  | {
+      readonly slot: number;
+      readonly kind: 'BEST_RANKED_FROM_STAGE';
+      readonly stageKey: string;
+      readonly rank: number;
+      readonly ordinal: number;
+      readonly resolved: false;
+    }
+  | {
+      readonly slot: number;
+      readonly kind: 'QUALIFIER';
+      readonly transitionKey: string;
+      readonly ordinal: number;
+      readonly resolved: false;
     };
+
+/** ONCF-05B: a field entry (mass start, wave, time trial, stage) — no 64-slot ceiling. */
+export interface PublicFieldEntry {
+  readonly participantId: string;
+  readonly position: number;
+  readonly startOffsetSeconds: number | null;
+  readonly display: PublicEntrantDisplay;
+}
 
 export interface PublicContest {
   readonly contestId: string;
@@ -125,6 +157,10 @@ export interface PublicContest {
     readonly displayName: string | null;
   } | null;
   readonly slots: readonly PublicSlot[];
+  /** ONCF-05B: logistic or competitive partition ("w2" wave, "h3" heat, "t7" tee group, "g1" group). */
+  readonly partitionKey: string | null;
+  readonly entryCount: number;
+  readonly entries: readonly PublicFieldEntry[];
   /** Contest status is operational; results are a separate (not yet implemented) domain. */
   readonly result: NotAvailable;
 }
@@ -133,6 +169,16 @@ export interface PublicStructureRound {
   readonly sequence: number;
   readonly label: string;
   readonly roundType: RoundType;
+  /** ONCF-05B: the stage this round belongs to (null for BRT-05 single-stage plans). */
+  readonly stage: {
+    readonly key: string;
+    readonly label: string;
+    readonly primitive: 'KNOCKOUT' | 'ROUND_ROBIN' | 'FIELD' | 'HEATS';
+    readonly partitionKind: 'LOGISTIC' | 'COMPETITIVE' | null;
+  } | null;
+  readonly groupKey: string | null;
+  /** The field of this round is only known once this transition resolves (e.g. a golf cut). */
+  readonly dynamicEntry: { readonly transitionKey: string } | null;
   readonly byes: readonly {
     readonly participantId: string;
     readonly display: PublicEntrantDisplay;

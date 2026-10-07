@@ -1,4 +1,7 @@
 import {
+  providedCapabilities,
+  engineRequirements,
+  capabilityIssues,
   ACTIVE_REGISTRATION_STATUSES,
   availableRegistrationDecisions,
   canonicalFormatConfig,
@@ -1203,10 +1206,20 @@ export class CompetitionStore {
           DomainErrorCode.INVALID_INPUT,
           'format engine version is not available',
         );
-      if (!dv.spec.allowedContestTypes.includes(engine.contestType)) {
+      // ONCF-05B (ADR-0053): the generic capability rule; v1 engines still only require their
+      // contest type, so BRT-05 behaviour (and its error) is unchanged for them.
+      const capabilityGaps = capabilityIssues(
+        providedCapabilities(dv.spec),
+        engineRequirements(engine),
+      );
+      if (capabilityGaps.length > 0) {
+        const contestGap = capabilityGaps.find((g) => g.capability === 'contestType');
         throw new DomainError(
           DomainErrorCode.INVALID_INPUT,
-          `format produces ${engine.contestType} contests, which the discipline does not allow`,
+          contestGap !== undefined && engine.planVersion !== 2
+            ? `format produces ${engine.contestType} contests, which the discipline does not allow`
+            : `the discipline does not provide what this format requires: ${capabilityGaps.map((g) => g.message).join('; ')}`,
+          { reason: 'CAPABILITY_MISMATCH', capabilities: capabilityGaps.map((g) => g.capability) },
         );
       }
       const kinds = dv.spec.participation.participantKinds;
@@ -1735,7 +1748,9 @@ export class CompetitionStore {
       }>`SELECT spec FROM sports.discipline_version WHERE id = ${e.disciplineVersionId}`.execute(
         ctx.trx,
       );
-      const min = rows[0]?.spec.participation.lineupSize.min ?? 1;
+      // ONCF-05B: a v2 discipline bounds the roster separately from the lineup (ADR-0057).
+      const participation = rows[0]?.spec.participation;
+      const min = participation?.roster?.min ?? participation?.lineupSize.min ?? 1;
       if (athletes.length < min)
         throw new DomainError(
           DomainErrorCode.INVALID_INPUT,

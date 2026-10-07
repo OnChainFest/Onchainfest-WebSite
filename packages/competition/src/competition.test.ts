@@ -239,7 +239,8 @@ describe('engine input guards (shared)', () => {
   it('registry resolves exact versions only', () => {
     expect(formatEngine('single-elimination', 1)).toBe(singleEliminationV1);
     expect(formatEngine('round-robin', 1)).toBe(roundRobinV1);
-    expect(formatEngine('single-elimination', 2)).toBeUndefined();
+    expect(formatEngine('single-elimination', 2)?.version).toBe(2); // ONCF-05B
+    expect(formatEngine('single-elimination', 3)).toBeUndefined();
     expect(formatEngine('double-elimination', 1)).toBeUndefined();
   });
 });

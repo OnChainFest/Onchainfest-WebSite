@@ -1,4 +1,7 @@
 import {
+  providedCapabilities,
+  engineRequirements,
+  capabilityIssues,
   formatEngine,
   PUBLIC_COMPETITION_SCHEMA,
   PUBLIC_EVENT_SCHEMA,
@@ -109,8 +112,9 @@ export class CompetitionReader {
    * Published catalog (what organizers can pin). ONCF-03A: each discipline version carries the
    * participation and contest-type facts of its spec, and each format version its contest type and
    * configuration schema, so a client can offer only valid combinations. `compatibleFormatVersionIds`
-   * applies exactly the createEvent rule (the format's contest type is allowed by the discipline);
-   * a format whose engine is not registered in this build has `contestType: null` and fits nothing.
+   * applies exactly the createEvent rule — since ONCF-05B the generic capability rule (ADR-0053):
+   * every capability the format requires is provided by the discipline. A format whose engine is
+   * not registered in this build has `contestType: null` / `requires: null` and fits nothing.
    */
   catalog() {
     return this.tx(async (ctx) => {
@@ -141,14 +145,19 @@ export class CompetitionReader {
         FROM sports.format_version fv JOIN sports.v_format_version_current c ON c.format_version_id = fv.id
         JOIN sports.format_template t ON t.id = fv.template_id
         WHERE c.status = 'PUBLISHED' ORDER BY t.code, fv.version`.execute(ctx.trx);
-      const formatVersions = formats.map((f) => ({
-        formatVersionId: f.id,
-        format: { code: f.code, name: f.name },
-        version: f.version,
-        engine: `${f.engine_id}/${f.engine_version}`,
-        contestType: formatEngine(f.engine_id, f.engine_version)?.contestType ?? null,
-        configurationSchema: f.configuration_schema,
-      }));
+      const formatVersions = formats.map((f) => {
+        const engine = formatEngine(f.engine_id, f.engine_version);
+        return {
+          formatVersionId: f.id,
+          format: { code: f.code, name: f.name },
+          version: f.version,
+          engine: `${f.engine_id}/${f.engine_version}`,
+          contestType: engine?.contestType ?? null,
+          configurationSchema: f.configuration_schema,
+          /** ONCF-05B: the capabilities this format requires (null: engine not in this build). */
+          requires: engine === undefined ? null : engineRequirements(engine),
+        };
+      });
       return {
         disciplineVersions: disciplines.map((d) => ({
           disciplineVersionId: d.id,
@@ -159,9 +168,15 @@ export class CompetitionReader {
           participantKinds: [...d.spec.participation.participantKinds],
           lineupSize: { ...d.spec.participation.lineupSize },
           allowedContestTypes: [...d.spec.allowedContestTypes],
+          // ONCF-05B: capabilities, roster and declared entry attributes (v1 specs derive theirs).
+          capabilities: providedCapabilities(d.spec),
+          roster: d.spec.participation.roster ?? null,
+          entryAttributes: [...(d.spec.entryAttributes ?? [])],
           compatibleFormatVersionIds: formatVersions
             .filter(
-              (f) => f.contestType !== null && d.spec.allowedContestTypes.includes(f.contestType),
+              (f) =>
+                f.requires !== null &&
+                capabilityIssues(providedCapabilities(d.spec), f.requires).length === 0,
             )
             .map((f) => f.formatVersionId),
         })),
@@ -443,7 +458,15 @@ export class CompetitionReader {
         participantId?: string;
         contestId?: string;
         contestSequence?: number;
+        stageKey?: string;
+        groupKey?: string;
+        rank?: number;
+        ordinal?: number;
+        transitionKey?: string;
       }[];
+      partition_key: string | null;
+      entry_count: number;
+      entries: { participantId: string; position: number; startOffsetSeconds?: number }[];
       r_sequence: number;
       r_label: string;
       r_type: PublicContest['round']['roundType'];
@@ -465,22 +488,59 @@ export class CompetitionReader {
         courtLabel: c.court_label,
         venue:
           c.venue_organization_id === null ? null : await this.org(ctx, c.venue_organization_id),
-        slots: c.slots.map((s): PublicSlot =>
-          s.kind === 'PARTICIPANT'
-            ? {
+        slots: c.slots.map((s): PublicSlot => {
+          switch (s.kind) {
+            case 'PARTICIPANT':
+              return {
                 slot: s.slot,
                 kind: 'PARTICIPANT',
                 participantId: s.participantId as string,
                 display: displays.get(s.participantId as string) ?? { kind: 'PRIVATE_ENTRANT' },
-              }
-            : {
+              };
+            case 'RANK_FROM_STAGE':
+              return {
+                slot: s.slot,
+                kind: 'RANK_FROM_STAGE',
+                stageKey: s.stageKey ?? null,
+                groupKey: s.groupKey ?? null,
+                rank: s.rank as number,
+                resolved: false,
+              };
+            case 'BEST_RANKED_FROM_STAGE':
+              return {
+                slot: s.slot,
+                kind: 'BEST_RANKED_FROM_STAGE',
+                stageKey: s.stageKey as string,
+                rank: s.rank as number,
+                ordinal: s.ordinal as number,
+                resolved: false,
+              };
+            case 'QUALIFIER':
+              return {
+                slot: s.slot,
+                kind: 'QUALIFIER',
+                transitionKey: s.transitionKey as string,
+                ordinal: s.ordinal as number,
+                resolved: false,
+              };
+            default:
+              return {
                 slot: s.slot,
                 kind: s.kind as 'WINNER_OF_CONTEST' | 'LOSER_OF_CONTEST',
                 contestId: s.contestId as string,
                 contestSequence: s.contestSequence as number,
                 resolved: false,
-              },
-        ),
+              };
+          }
+        }),
+        partitionKey: c.partition_key,
+        entryCount: c.entry_count,
+        entries: c.entries.map((e) => ({
+          participantId: e.participantId,
+          position: e.position,
+          startOffsetSeconds: e.startOffsetSeconds ?? null,
+          display: displays.get(e.participantId) ?? { kind: 'PRIVATE_ENTRANT' as const },
+        })),
         result: NOT_AVAILABLE,
       });
     }
@@ -526,14 +586,35 @@ export class CompetitionReader {
         label: string;
         round_type: PublicStructureRound['roundType'];
         byes: string[];
+        stage_key: string | null;
+        stage_label: string | null;
+        stage_primitive: 'KNOCKOUT' | 'ROUND_ROBIN' | 'FIELD' | 'HEATS' | null;
+        partition_kind: 'LOGISTIC' | 'COMPETITIVE' | null;
+        group_key: string | null;
+        dynamic_transition_key: string | null;
       }>`
-        SELECT sequence, label, round_type, byes FROM competition_read.round_card WHERE event_id = ${r.event.event_id} ORDER BY sequence`.execute(
+        SELECT sequence, label, round_type, byes, stage_key, stage_label, stage_primitive, partition_kind, group_key, dynamic_transition_key
+        FROM competition_read.round_card WHERE event_id = ${r.event.event_id} ORDER BY sequence`.execute(
         ctx.trx,
       );
       return rounds.map((round) => ({
         sequence: round.sequence,
         label: round.label,
         roundType: round.round_type,
+        stage:
+          round.stage_key === null
+            ? null
+            : {
+                key: round.stage_key,
+                label: round.stage_label as string,
+                primitive: round.stage_primitive as 'KNOCKOUT' | 'ROUND_ROBIN' | 'FIELD' | 'HEATS',
+                partitionKind: round.partition_kind,
+              },
+        groupKey: round.group_key,
+        dynamicEntry:
+          round.dynamic_transition_key === null
+            ? null
+            : { transitionKey: round.dynamic_transition_key },
         byes: round.byes.map((participantId) => ({
           participantId,
           display: displays.get(participantId) ?? { kind: 'PRIVATE_ENTRANT' as const },

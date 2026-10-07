@@ -101,15 +101,20 @@ try {
   });
   // ONCF-03A: the same lookup-first provisioner production uses, plus a dev-only running 5K
   // (HEAT contests have no format engine yet, so it is not in the canonical catalog).
+  // ONCF-05B: running is canonical now (road / track / relay); the dev-only 5K stays an extra
+  // discipline of the same sport (distance as a discipline code is the pre-ONCF-05B shape).
   const DEV_CATALOG: CatalogManifest = {
-    sports: [
-      ...CANONICAL_CATALOG.sports,
-      {
-        code: 'running',
-        name: 'Running',
-        disciplines: [{ code: 'running.5k', name: 'Running 5K', spec: RUNNING }],
-      },
-    ],
+    sports: CANONICAL_CATALOG.sports.map((s) =>
+      s.code === 'running'
+        ? {
+            ...s,
+            disciplines: [
+              ...s.disciplines,
+              { code: 'running.5k', name: 'Running 5K', specs: [RUNNING] },
+            ],
+          }
+        : s,
+    ),
     formats: CANONICAL_CATALOG.formats,
   };
   const provisioned = await catalog.provision({ operatorAccountId: op, manifest: DEV_CATALOG });

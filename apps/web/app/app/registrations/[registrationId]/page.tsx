@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { appContext } from '../../../_lib/app-context';
+import { attributeContext } from '../../../_lib/entry-attributes';
 import {
   REGISTRATION_STATUS_COPY,
   registrationById,
@@ -9,6 +10,7 @@ import {
 } from '../../../_lib/registrations';
 import { one, type SearchParams } from '../../../_lib/search-params';
 import { dateTime } from '../../../_lib/tournament-builder';
+import { EntryAttributesPanel } from '../../../_product/entry-attributes';
 import { Flash } from '../../../_product/flash';
 import {
   EntrantIdentity,
@@ -16,7 +18,7 @@ import {
   RegistrationStatusChip,
   RegistrationTimeline,
 } from '../../../_product/registration-ui';
-import { withdrawRegistrationAction } from '../../register/actions';
+import { declareAttributesAction, withdrawRegistrationAction } from '../../register/actions';
 
 export const metadata = { title: 'Your entry · OnChainFest' };
 
@@ -49,6 +51,9 @@ export default async function RegistrationPage({
   if (!reg.viewer.entrant) notFound();
   const own = ctx.account.me.athletes.find((a) => a.athleteId === reg.athleteId);
   const publicEvent = `/competitions/${reg.competition.slug}/events/${reg.event.slug}`;
+  // ONCF-05B: declared entry values, editable by the entrant until the field locks.
+  const active = ['REQUESTED', 'WAITLISTED', 'CONFIRMED'].includes(reg.status);
+  const attrs = active ? await attributeContext(ctx.session.accessToken, reg) : null;
 
   return (
     <>
@@ -82,6 +87,13 @@ export default async function RegistrationPage({
             </h2>
             <EntrantIdentity r={reg} {...(own === undefined ? {} : { ownSlug: own.slug })} />
           </section>
+          {attrs !== null ? (
+            <EntryAttributesPanel
+              registrationId={reg.id}
+              ctx={attrs}
+              action={declareAttributesAction}
+            />
+          ) : null}
           <section className="rg-panel" aria-labelledby="hist-h">
             <h2 id="hist-h" className="mono muted">
               Progress

@@ -87,24 +87,38 @@ export async function refreshEventReadModels(ctx: TxContext, eventId: string): P
     ctx.trx,
   );
   await sql`
-    INSERT INTO competition_read.round_card (round_id, event_id, sequence, round_type, label, byes)
-    SELECT id, event_id, sequence, round_type, label, byes FROM competition.round WHERE event_id = ${eventId}`.execute(
-    ctx.trx,
-  );
+    INSERT INTO competition_read.round_card (round_id, event_id, sequence, round_type, label, byes,
+      stage_key, stage_label, stage_primitive, partition_kind, group_key, dynamic_transition_key)
+    SELECT r.id, r.event_id, r.sequence, r.round_type, r.label, r.byes,
+           st.plan_key, st.label, st.primitive, st.partition_kind, r.group_key, r.dynamic_transition_key
+    FROM competition.round r LEFT JOIN competition.stage st ON st.id = r.stage_id
+    WHERE r.event_id = ${eventId}`.execute(ctx.trx);
   await sql`
     INSERT INTO competition_read.contest_card
       (contest_id, event_id, round_id, sequence, contest_type, status, scheduled_start, scheduled_end, venue_organization_id,
-       location_label, court_label, slots)
+       location_label, court_label, slots, partition_key, entry_count, entries)
     SELECT c.id, c.event_id, c.round_id, c.sequence, c.contest_type, st.status, sc.scheduled_start, sc.scheduled_end,
            sc.venue_organization_id, sc.location_label, sc.court_label,
            coalesce((
              SELECT jsonb_agg(
                       CASE WHEN ct.source_kind = 'PARTICIPANT'
                         THEN jsonb_build_object('slot', ct.slot, 'kind', 'PARTICIPANT', 'participantId', ct.participant_id)
-                        ELSE jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind, 'contestId', ct.source_contest_id,
+                        WHEN ct.source_kind IN ('WINNER_OF_CONTEST', 'LOSER_OF_CONTEST')
+                        THEN jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind, 'contestId', ct.source_contest_id,
                                                 'contestSequence', (SELECT src.sequence FROM competition.contest src WHERE src.id = ct.source_contest_id))
+                        -- ONCF-05B stage-graph dependencies (plan keys only; unresolved)
+                        ELSE jsonb_strip_nulls(jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind,
+                               'stageKey', (SELECT s.plan_key FROM competition.stage s WHERE s.id = ct.source_stage_id),
+                               'groupKey', ct.source_group_key, 'rank', ct.source_rank, 'ordinal', ct.source_ordinal,
+                               'transitionKey', (SELECT t.plan_key FROM competition.stage_transition t WHERE t.id = ct.source_transition_id)))
                       END ORDER BY ct.slot)
-             FROM competition.contestant ct WHERE ct.contest_id = c.id), '[]'::jsonb)
+             FROM competition.contestant ct WHERE ct.contest_id = c.id), '[]'::jsonb),
+           c.partition_key,
+           (SELECT count(*)::int FROM competition.contest_entry ce WHERE ce.contest_id = c.id),
+           coalesce((
+             SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('participantId', ce.participant_id, 'position', ce.start_order,
+                                                                    'startOffsetSeconds', ce.start_offset_seconds)) ORDER BY ce.start_order)
+             FROM competition.contest_entry ce WHERE ce.contest_id = c.id), '[]'::jsonb)
     FROM competition.contest c
     JOIN competition.v_contest_current st ON st.contest_id = c.id
     LEFT JOIN competition.contest_schedule sc ON sc.contest_id = c.id

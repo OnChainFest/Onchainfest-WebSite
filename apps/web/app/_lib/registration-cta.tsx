@@ -24,12 +24,12 @@ export function RegistrationCtaPanel({
     cta.kind === 'open'
       ? closes !== null
         ? `Entries close ${closes}.`
-        : 'Sign in to enter an athlete.'
+        : event.entrantKind === 'TEAM'
+          ? 'Sign in to enter your team.'
+          : 'Sign in to enter an athlete.'
       : cta.kind === 'opens'
         ? `Entries open ${dateTime(cta.at, event.timezone) ?? 'soon'}.`
-        : cta.kind === 'team'
-          ? 'This category takes team entries, which aren’t available online yet.'
-          : null;
+        : null;
   return (
     <section
       aria-label="Registration"

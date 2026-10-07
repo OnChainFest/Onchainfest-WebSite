@@ -228,7 +228,7 @@ describe('sport catalog (operator-only, versioned, immutable)', () => {
         operatorAccountId: cat.operatorAccountId,
         formatTemplateId,
         engineId: 'single-elimination',
-        engineVersion: 2,
+        engineVersion: 99, // ONCF-05B registered single-elimination/2; an unknown version is still refused
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_INPUT,

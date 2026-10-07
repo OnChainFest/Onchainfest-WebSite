@@ -103,6 +103,31 @@ export interface CatalogDisciplineVersion {
   lineupSize: { min: number; max: number };
   allowedContestTypes: string[];
   compatibleFormatVersionIds: string[];
+  /** ONCF-05B (may be absent on older API builds): capabilities, roster and declared attributes. */
+  capabilities?: {
+    contestTypes: string[];
+    participantKinds: EntrantKind[];
+    rulesetFamilies: string[];
+    partitionKinds: string[];
+    startMethods: string[];
+    multiRound: boolean;
+    resourceTypes: string[];
+    entryAttributes: { key: string; valueType: EntryAttributeValueType }[];
+  };
+  roster?: { min: number; max: number } | null;
+  entryAttributes?: EntryAttributeSpec[];
+}
+
+export type EntryAttributeValueType = 'DURATION_MS' | 'INTEGER' | 'DECIMAL' | 'TEXT';
+
+/** A value the discipline lets entrants declare at entry (seeding, handicap, start lists). */
+export interface EntryAttributeSpec {
+  key: string;
+  valueType: EntryAttributeValueType;
+  scope: 'PARTICIPANT' | 'MEMBER';
+  required: boolean;
+  min?: string;
+  max?: string;
 }
 
 export interface CatalogFormatVersion {
@@ -112,6 +137,8 @@ export interface CatalogFormatVersion {
   engine: string;
   contestType: string | null;
   configurationSchema: Record<string, unknown>;
+  /** ONCF-05B: the capabilities the format requires (null: engine not in this API build). */
+  requires?: Record<string, unknown> | null;
 }
 
 export interface Catalog {
@@ -136,4 +163,15 @@ export function managedCompetition(
 /** The published catalog (public). Valid pairs come from `compatibleFormatVersionIds`. */
 export function tournamentCatalog(): Promise<Fetched<Catalog>> {
   return getPublic<Catalog>('/v1/catalog');
+}
+
+/** The catalog version an event pins (public reads name it by discipline code + version). */
+export function catalogDiscipline(
+  catalog: Catalog,
+  code: string,
+  version: number,
+): CatalogDisciplineVersion | undefined {
+  return catalog.disciplineVersions.find(
+    (d) => d.discipline.code === code && d.version === version,
+  );
 }

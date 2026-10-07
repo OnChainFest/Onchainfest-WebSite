@@ -1,5 +1,7 @@
 import type { BrObjectSchema } from '@br/canonical';
 import type { ContestType, ParticipantKind } from '../catalog';
+import { legacyRequirements, type FormatRequirements } from '../capabilities';
+import type { PlanDocumentV2 } from './plan-v2';
 
 /**
  * Competition format engine port (BRT-05). An engine is a PURE, deterministic function:
@@ -95,7 +97,7 @@ export class FormatEngineError extends Error {
   }
 }
 
-export interface CompetitionFormatEngine {
+interface FormatEngineBase {
   /** Stable engine id (e.g. "single-elimination"). */
   readonly id: string;
   /** Semantic version: any change to generated structure ⇒ a new version. */
@@ -103,20 +105,63 @@ export interface CompetitionFormatEngine {
   readonly displayName: string;
   /** BR-JSON schema of the per-event configuration. */
   readonly configurationSchema: BrObjectSchema;
-  /** Contest type produced; the discipline must allow it. */
+  /** Contest type produced; the discipline must allow it. v2 engines: their primary contest type. */
   readonly contestType: ContestType;
   readonly minParticipants: number;
   readonly maxParticipants: number;
+  /**
+   * v2 engines (ONCF-05B): the capabilities the discipline must provide (ADR-0053). Absent on v1
+   * engines, whose requirement stays "the discipline allows `contestType`".
+   */
+  readonly requires?: FormatRequirements;
+  /** v2 FIELD-style engines: acceptable contest types in preference order (first allowed wins). */
+  readonly contestTypes?: readonly ContestType[];
+}
+
+/** v1 engines (BRT-05): single-stage plans (`br:competition-plan@1`). */
+export interface CompetitionFormatEngine extends FormatEngineBase {
+  readonly planVersion?: 1;
   generate(input: FormatEngineInput): PlanDocument;
 }
 
+/** v2 engines (ONCF-05B): stage-graph plans (`br:competition-plan@2`). */
+export interface CompetitionFormatEngineV2 extends FormatEngineBase {
+  readonly planVersion: 2;
+  readonly requires: FormatRequirements;
+  generate(input: FormatEngineInput): PlanDocumentV2;
+}
+
+export type AnyFormatEngine = CompetitionFormatEngine | CompetitionFormatEngineV2;
+
+/** The requirements an engine imposes: declared (v2) or its single contest type (v1). */
+export function engineRequirements(
+  engine: Pick<FormatEngineBase, 'requires' | 'contestType'>,
+): FormatRequirements {
+  return engine.requires ?? legacyRequirements(engine.contestType);
+}
+
+/** The contest type a v2 engine produces for a discipline (first preference it allows). */
+export function chooseContestType(
+  engine: Pick<FormatEngineBase, 'contestType' | 'contestTypes'>,
+  allowed: readonly ContestType[],
+): ContestType {
+  const prefs = engine.contestTypes ?? [engine.contestType];
+  const chosen = prefs.find((t) => allowed.includes(t));
+  if (chosen === undefined)
+    throw new FormatEngineError(
+      'CONTEST_TYPE_NOT_ALLOWED',
+      `none of ${prefs.join(', ')} is allowed by this discipline`,
+    );
+  return chosen;
+}
+
 /** "single-elimination/1" */
-export function engineRef(engine: Pick<CompetitionFormatEngine, 'id' | 'version'>): string {
+export function engineRef(engine: Pick<FormatEngineBase, 'id' | 'version'>): string {
   return `${engine.id}/${engine.version}`;
 }
 
 /** Shared input checks: field size, contest type, seed order is an exact permutation. */
-export function assertEngineInput(engine: CompetitionFormatEngine, input: FormatEngineInput): void {
+export function assertEngineInput(engine: FormatEngineBase, input: FormatEngineInput): void {
   const n = input.participants.length;
   if (n < engine.minParticipants || n > engine.maxParticipants) {
     throw new FormatEngineError(
@@ -124,7 +169,12 @@ export function assertEngineInput(engine: CompetitionFormatEngine, input: Format
       `${engineRef(engine)} supports ${engine.minParticipants}–${engine.maxParticipants} participants (got ${n})`,
     );
   }
-  if (!input.allowedContestTypes.includes(engine.contestType)) {
+  const req = engineRequirements(engine).contestTypes;
+  const missing = (req?.allOf ?? []).filter((t) => !input.allowedContestTypes.includes(t));
+  if (
+    missing.length > 0 ||
+    (req?.anyOf !== undefined && !req.anyOf.some((t) => input.allowedContestTypes.includes(t)))
+  ) {
     throw new FormatEngineError(
       'CONTEST_TYPE_NOT_ALLOWED',
       `${engineRef(engine)} produces ${engine.contestType} contests, which this discipline does not allow`,

@@ -465,7 +465,8 @@ describe('registration call-to-action', () => {
       'cancelled',
     );
     expect(lib.registrationCta(ev(), 'CANCELLED', now).kind).toBe('cancelled');
-    expect(lib.registrationCta(ev({ entrantKind: 'TEAM' }), 'PUBLISHED', now).kind).toBe('team');
+    // ONCF-05B: team categories are entered by a team the caller manages.
+    expect(lib.registrationCta(ev({ entrantKind: 'TEAM' }), 'PUBLISHED', now).kind).toBe('open');
   });
 
   it('the public category page links to the registration flow only while open', async () => {
@@ -570,11 +571,10 @@ describe('athlete registration page', () => {
     expect(page).not.toContain('Review entry');
   });
 
-  it('offers no registration when the category is closed, cancelled, team-only or not yet open', async () => {
+  it('offers no registration when the category is closed, cancelled or not yet open', async () => {
     for (const [ev, text] of [
       [publicEvent({ status: 'REGISTRATION_CLOSED' }), 'Registration closed'],
       [publicEvent({ status: 'CANCELLED' }), 'cancelled by the organizer'],
-      [publicEvent({ entrantKind: 'TEAM' }), 'team entries'],
       [publicEvent({ opensAt: '2099-01-01T00:00:00.000Z', closesAt: null }), 'Entries open'],
     ] as const) {
       platform({ event: ev });

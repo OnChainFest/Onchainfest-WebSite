@@ -6,3 +6,4 @@ export * from './ranking-engine';
 export * from './classification-engine';
 export * from './staleness';
 export * from './public';
+export * from './classification-policy-v2';

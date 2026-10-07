@@ -4,12 +4,14 @@ import { BRT07_SCHEMAS } from './verification';
 import { BRT08_SCHEMAS } from './achievements';
 import { BRT09_SCHEMAS } from './records';
 import { BRT10_SCHEMAS } from './rankings';
+import { ONCF05B_SCHEMAS } from './competition-v2';
 
 export * from './definitions';
 export * from './verification';
 export * from './achievements';
 export * from './records';
 export * from './rankings';
+export * from './competition-v2';
 export { authorityScope, recognitionScope, mark } from './primitives';
 
 /** Schema ids as constants (id, version) so callers never hand-type them. */
@@ -35,6 +37,11 @@ export const SchemaRef = {
   competitionSeeding: { id: 'br:competition-seeding', version: 1 },
   competitionPlanInput: { id: 'br:competition-plan-input', version: 1 },
   competitionPlan: { id: 'br:competition-plan', version: 1 },
+  // ONCF-05B (v2 competition documents)
+  competitionFieldV2: { id: 'br:competition-field', version: 2 },
+  competitionSeedingV2: { id: 'br:competition-seeding', version: 2 },
+  competitionPlanInputV2: { id: 'br:competition-plan-input', version: 2 },
+  competitionPlanV2: { id: 'br:competition-plan', version: 2 },
   // BRT-06
   evidenceDescriptor: { id: 'br:evidence-descriptor', version: 1 },
   attestationStatement: { id: 'br:attestation-statement', version: 1 },
@@ -154,6 +161,7 @@ export function platformCanonicalizer(): Canonicalizer {
     ...BRT08_SCHEMAS,
     ...BRT09_SCHEMAS,
     ...BRT10_SCHEMAS,
+    ...ONCF05B_SCHEMAS,
   ]);
   return shared;
 }

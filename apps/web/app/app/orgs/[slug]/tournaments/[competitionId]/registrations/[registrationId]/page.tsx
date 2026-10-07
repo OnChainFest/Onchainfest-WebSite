@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
+import { attributeContext } from '../../../../../../../_lib/entry-attributes';
 import { orgContext } from '../../../../../../../_lib/org-context';
 import {
   categoryLooksFull,
@@ -10,6 +11,7 @@ import {
 import { one, type SearchParams } from '../../../../../../../_lib/search-params';
 import { dateTime } from '../../../../../../../_lib/tournament-builder';
 import { tournamentFor } from '../../../../../../../_lib/tournament-context';
+import { EntryAttributesPanel } from '../../../../../../../_product/entry-attributes';
 import { Flash } from '../../../../../../../_product/flash';
 import {
   DecisionForms,
@@ -62,6 +64,8 @@ export default async function RegistrationDetailPage({
     ]),
   );
   const isFull = categoryLooksFull(event);
+  // ONCF-05B: declared entry values, read-only for staff (the entrant declares them).
+  const attrs = await attributeContext(org.ctx.accessToken, reg);
 
   return (
     <>
@@ -95,6 +99,7 @@ export default async function RegistrationDetailPage({
             </div>
           </section>
           <EntryTicket r={reg} />
+          {attrs !== null ? <EntryAttributesPanel registrationId={reg.id} ctx={attrs} /> : null}
           <section className="rg-panel" aria-labelledby="hist-h">
             <h2 id="hist-h" className="mono muted">
               History

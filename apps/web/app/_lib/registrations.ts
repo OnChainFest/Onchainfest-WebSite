@@ -174,8 +174,7 @@ export type RegistrationCta =
   | { kind: 'locked' }
   | { kind: 'in_progress' }
   | { kind: 'completed' }
-  | { kind: 'cancelled' }
-  | { kind: 'team' };
+  | { kind: 'cancelled' };
 
 /**
  * The registration state a public page shows for a category, from its public lifecycle status and
@@ -201,8 +200,7 @@ export function registrationCta(
       const { opensAt, closesAt } = event.registration;
       if (opensAt !== null && now < new Date(opensAt)) return { kind: 'opens', at: opensAt };
       if (closesAt !== null && now >= new Date(closesAt)) return { kind: 'closed' };
-      // Team entry needs team formation, which this web app doesn't offer yet (ONCF-04 scope).
-      if (event.entrantKind === 'TEAM') return { kind: 'team' };
+      // ONCF-05B: team categories are entered by a team's manager (pairs and squads on /app/teams).
       return { kind: 'open' };
     }
     default:
@@ -219,7 +217,6 @@ export const CTA_COPY: Record<RegistrationCta['kind'], string> = {
   in_progress: 'In play',
   completed: 'Completed',
   cancelled: 'Cancelled',
-  team: 'Team entries',
 };
 
 /** `/app/register/<competition>/<category>`: the only registration entry point (auth-gated). */
@@ -271,6 +268,20 @@ export function activeEntry(
     (r) =>
       r.event.id === eventId &&
       r.athleteId === athleteId &&
+      (r.status === 'REQUESTED' || r.status === 'WAITLISTED' || r.status === 'CONFIRMED'),
+  );
+}
+
+/** The active entry a team already holds in a category (team categories, ONCF-05B). */
+export function activeTeamEntry(
+  items: readonly Registration[],
+  eventId: string,
+  teamId: string,
+): Registration | undefined {
+  return items.find(
+    (r) =>
+      r.event.id === eventId &&
+      r.team?.id === teamId &&
       (r.status === 'REQUESTED' || r.status === 'WAITLISTED' || r.status === 'CONFIRMED'),
   );
 }

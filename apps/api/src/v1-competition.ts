@@ -674,24 +674,115 @@ export function registerCompetitionV1(
       headers: idempotencyHeaders,
       body: obj(
         {
-          method: { enum: ['MANUAL', 'DETERMINISTIC_DRAW'] },
-          order: { type: 'array', maxItems: 4096, uniqueItems: true, items: uuid },
+          // ONCF-05B (ADR-0058): + ranked-then-drawn, by entry attribute, sources and overrides.
+          method: {
+            enum: ['MANUAL', 'DETERMINISTIC_DRAW', 'RANKED_THEN_DRAWN', 'BY_ENTRY_ATTRIBUTE'],
+          },
+          order: { type: 'array', maxItems: 20000, uniqueItems: true, items: uuid },
+          seeds: { type: 'array', minItems: 1, maxItems: 64, uniqueItems: true, items: uuid },
+          banded: { type: 'boolean' },
+          attributeKey: { type: 'string', pattern: '^[a-z][A-Za-z0-9]{0,31}$' },
+          direction: { enum: ['ASC', 'DESC'] },
+          source: obj(
+            {
+              kind: { enum: ['ORGANIZER', 'DECLARED_EXTERNAL', 'ENTRY_ATTRIBUTE'] },
+              label: { type: 'string', minLength: 1, maxLength: 120 },
+              asOf: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' },
+            },
+            ['kind'],
+          ),
+          overrides: {
+            type: 'array',
+            maxItems: 256,
+            items: obj(
+              {
+                participantId: uuid,
+                toPosition: { type: 'integer', minimum: 1, maximum: 20000 },
+                reason: { type: 'string', minLength: 1, maxLength: 300 },
+              },
+              ['participantId', 'toPosition', 'reason'],
+            ),
+          },
         },
         ['method'],
       ),
     },
     async (request) => {
       const ctx = requireAuth(request);
-      const b = body<{ method: 'MANUAL' | 'DETERMINISTIC_DRAW'; order?: string[] }>(request);
+      const b = body<{
+        method: 'MANUAL' | 'DETERMINISTIC_DRAW' | 'RANKED_THEN_DRAWN' | 'BY_ENTRY_ATTRIBUTE';
+        order?: string[];
+        seeds?: string[];
+        banded?: boolean;
+        attributeKey?: string;
+        direction?: 'ASC' | 'DESC';
+        source?: {
+          kind: 'ORGANIZER' | 'DECLARED_EXTERNAL' | 'ENTRY_ATTRIBUTE';
+          label?: string;
+          asOf?: string;
+        };
+        overrides?: { participantId: string; toPosition: number; reason: string }[];
+      }>(request);
       return deps.structure.seedField(
         defined({
           actorAccountId: ctx.accountId,
           eventId: params<{ eventId: string }>(request).eventId,
-          method: b.method,
-          order: b.order,
+          ...b,
           idempotencyKey: key(request),
         }),
       );
+    },
+  );
+
+  // ONCF-05B organizer structure reads (never public; declared values stay private).
+  route(
+    'GET',
+    '/v1/events/:eventId/readiness',
+    'COMP_STAFF',
+    { params: idParams('eventId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      return deps.structure.readiness({
+        actorAccountId: ctx.accountId,
+        eventId: params<{ eventId: string }>(request).eventId,
+      });
+    },
+  );
+
+  route(
+    'GET',
+    '/v1/events/:eventId/plan-preview',
+    'COMP_STAFF',
+    { params: idParams('eventId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      return deps.structure.previewPlan({
+        actorAccountId: ctx.accountId,
+        eventId: params<{ eventId: string }>(request).eventId,
+      });
+    },
+  );
+
+  route(
+    'GET',
+    '/v1/events/:eventId/field',
+    'COMP_STAFF',
+    { params: idParams('eventId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const items = await deps.structure.lockedField({
+        actorAccountId: ctx.accountId,
+        eventId: params<{ eventId: string }>(request).eventId,
+      });
+      const athletes = await deps.identity.visibleAthletes([
+        ...new Set(items.flatMap((p) => (p.athleteId === null ? [] : [p.athleteId]))),
+      ]);
+      return {
+        items: items.map((p) => ({
+          ...p,
+          athlete: p.athleteId === null ? null : (athletes.get(p.athleteId) ?? null),
+        })),
+      };
     },
   );
 
@@ -724,6 +815,63 @@ export function registerCompetitionV1(
       athlete: r.athleteId === null ? null : (athletes.get(r.athleteId) ?? null),
     }));
   };
+
+  // ONCF-05B: declared entry attributes (entry time, average, handicap, bib, classification points).
+  route(
+    'GET',
+    '/v1/registrations/:registrationId/entry-attributes',
+    'SELF',
+    { params: idParams('registrationId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      return {
+        items: await deps.structure.entryAttributes({
+          actorAccountId: ctx.accountId,
+          registrationId: params<{ registrationId: string }>(request).registrationId,
+        }),
+      };
+    },
+  );
+
+  route(
+    'POST',
+    '/v1/registrations/:registrationId/entry-attributes',
+    'SELF',
+    {
+      params: idParams('registrationId'),
+      headers: idempotencyHeaders,
+      body: obj(
+        {
+          attributes: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 64,
+            items: obj(
+              {
+                key: { type: 'string', pattern: '^[a-z][A-Za-z0-9]{0,31}$' },
+                value: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+                athleteId: uuid,
+              },
+              ['key', 'value'],
+            ),
+          },
+        },
+        ['attributes'],
+      ),
+    },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const b = body<{ attributes: { key: string; value: string | null; athleteId?: string }[] }>(
+        request,
+      );
+      return deps.structure.declareEntryAttributes({
+        actorAccountId: ctx.accountId,
+        registrationId: params<{ registrationId: string }>(request).registrationId,
+        attributes: b.attributes,
+        idempotencyKey: key(request),
+      });
+    },
+  );
 
   route('GET', '/v1/me/registrations', 'AUTHENTICATED', {}, async (request) => {
     const ctx = requireAuth(request);
@@ -1039,6 +1187,26 @@ export function registerCompetitionV1(
   );
 
   // ───────────────────────────── teams (AUTHENTICATED / SELF) ─────────────────────────────
+
+  // ONCF-05B team reads for pair / squad entry. Members are named under the roster rule.
+  route('GET', '/v1/me/teams', 'AUTHENTICATED', {}, async (request) => {
+    const ctx = requireAuth(request);
+    const items = await deps.teams.myTeams({ actorAccountId: ctx.accountId });
+    const athletes = await deps.identity.visibleAthletes([
+      ...new Set(items.flatMap((t) => t.members.map((m) => m.athleteId))),
+    ]);
+    return {
+      items: items.map((t) => ({
+        ...t,
+        members: t.members.map((m) => ({ ...m, athlete: athletes.get(m.athleteId) ?? null })),
+      })),
+    };
+  });
+
+  route('GET', '/v1/me/team-memberships', 'AUTHENTICATED', {}, async (request) => {
+    const ctx = requireAuth(request);
+    return { items: await deps.teams.myMemberships({ actorAccountId: ctx.accountId }) };
+  });
 
   route(
     'POST',
