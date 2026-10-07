@@ -36,6 +36,8 @@ export interface PublicEventSummary {
   readonly slug: string;
   readonly name: string;
   readonly status: EventStatus;
+  /** ONCF-04: whether athletes or teams enter (fixed at creation). */
+  readonly entrantKind: ParticipantKind;
   readonly sport: { readonly code: string; readonly name: string };
   readonly discipline: { readonly code: string; readonly name: string; readonly version: number };
   readonly format: {

@@ -32,17 +32,29 @@ export function parseOnboardingHint(value: unknown): OnboardingHint | null {
 }
 
 /**
+ * The onboarding URL, optionally pre-selecting a path and carrying a validated continuation that
+ * onboarding resumes once the profile exists (ONCF-04: back to the registration that was started).
+ */
+export function onboardingPath(hint: OnboardingHint | null, next: string | null): string {
+  const q = new URLSearchParams();
+  if (hint !== null) q.set('path', hint);
+  if (next !== null) q.set('next', next);
+  const s = q.toString();
+  return s === '' ? ONBOARDING_PATH : `${ONBOARDING_PATH}?${s}`;
+}
+
+/**
  * Where to send a user after authentication. Unfinished onboarding always wins over a requested
- * continuation; a continuation is honoured only if it passes validateContinuationRoute.
+ * continuation (which onboarding then carries along); a continuation is honoured only if it passes
+ * validateContinuationRoute.
  */
 export function resolvePostAuthDestination(input: {
   readonly facts: OnboardingFacts;
   readonly requested?: unknown;
   readonly hint?: unknown;
 }): string {
-  if (resolveOnboardingState(input.facts) !== 'active') {
-    const hint = parseOnboardingHint(input.hint);
-    return hint === null ? ONBOARDING_PATH : `${ONBOARDING_PATH}?path=${hint}`;
-  }
-  return validateContinuationRoute(input.requested) ?? APP_HOME;
+  const next = validateContinuationRoute(input.requested);
+  if (resolveOnboardingState(input.facts) !== 'active')
+    return onboardingPath(parseOnboardingHint(input.hint), next);
+  return next ?? APP_HOME;
 }

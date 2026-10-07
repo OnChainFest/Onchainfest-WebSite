@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { validateContinuationRoute } from '../../_lib/auth/continuation';
 import type { AuthErrorCode } from '../../_lib/auth/messages';
 import { verifiedSession } from '../../_lib/auth/session';
 import {
@@ -24,18 +25,24 @@ const field = (form: FormData, name: string) => {
   return typeof v === 'string' ? v : '';
 };
 
-function back(path: Path, error: AuthErrorCode): never {
-  redirect(`/app/onboarding?path=${path}&error=${error}`);
+/** `next`: a validated continuation carried through onboarding (ONCF-04), kept on retries. */
+function back(path: Path, error: AuthErrorCode, next: string | null = null): never {
+  const carry = next === null ? '' : `&next=${encodeURIComponent(next)}`;
+  redirect(`/app/onboarding?path=${path}&error=${error}${carry}`);
 }
 
-function failure(path: Path, result: Exclude<ApiResult<unknown>, { kind: 'ok' }>): never {
+function failure(
+  path: Path,
+  result: Exclude<ApiResult<unknown>, { kind: 'ok' }>,
+  next: string | null = null,
+): never {
   if (result.kind === 'unauthenticated') redirect('/signin?error=session_expired&next=%2Fapp');
-  if (result.kind === 'unavailable') back(path, 'platform_unavailable');
-  if (result.code === 'SLUG_TAKEN') back(path, 'profile_address_taken');
-  if (result.code === 'SLUG_INVALID') back(path, 'profile_address_invalid');
-  if (result.status === 403) back(path, 'not_permitted');
-  if (result.status === 400) back(path, 'profile_invalid');
-  back(path, 'platform_unavailable');
+  if (result.kind === 'unavailable') back(path, 'platform_unavailable', next);
+  if (result.code === 'SLUG_TAKEN') back(path, 'profile_address_taken', next);
+  if (result.code === 'SLUG_INVALID') back(path, 'profile_address_invalid', next);
+  if (result.status === 403) back(path, 'not_permitted', next);
+  if (result.status === 400) back(path, 'profile_invalid', next);
+  back(path, 'platform_unavailable', next);
 }
 
 async function session(): Promise<string> {
@@ -45,15 +52,20 @@ async function session(): Promise<string> {
 }
 
 /** The caller's SELF person: reuse it, or create it (idempotent per rendered form). */
-async function ensurePerson(token: string, path: Path, key: string): Promise<string> {
+async function ensurePerson(
+  token: string,
+  path: Path,
+  key: string,
+  next: string | null = null,
+): Promise<string> {
   const me = await apiRequest<MeResponse>(token, 'GET', '/v1/me');
-  if (me.kind !== 'ok') failure(path, me);
+  if (me.kind !== 'ok') failure(path, me, next);
   if (me.data.selfPersonId !== null) return me.data.selfPersonId;
   const created = await apiRequest<{ personId: string }>(token, 'POST', '/v1/persons', {
     body: { relation: 'SELF' },
     idempotencyKey: key,
   });
-  if (created.kind !== 'ok') failure(path, created);
+  if (created.kind !== 'ok') failure(path, created, next);
   return created.data.personId;
 }
 
@@ -62,12 +74,19 @@ export async function createAthleteProfileAction(form: FormData): Promise<never>
   const slugInput = normalizeSlugInput(field(form, 'slug'));
   const country = countryInput(field(form, 'country'));
   const sport = field(form, 'sport').trim();
-  if (displayName === '' || displayName.length > 80) back('athlete', 'missing_fields');
-  if (slugInput === null) back('athlete', 'profile_address_invalid');
-  if (country === null || sport.length > 40) back('athlete', 'profile_invalid');
+  // ONCF-04: where to resume afterwards (e.g. the registration that sent the athlete here).
+  const next = validateContinuationRoute(field(form, 'next'));
+  if (displayName === '' || displayName.length > 80) back('athlete', 'missing_fields', next);
+  if (slugInput === null) back('athlete', 'profile_address_invalid', next);
+  if (country === null || sport.length > 40) back('athlete', 'profile_invalid', next);
 
   const token = await session();
-  const personId = await ensurePerson(token, 'athlete', idempotencyKey(field(form, 'personKey')));
+  const personId = await ensurePerson(
+    token,
+    'athlete',
+    idempotencyKey(field(form, 'personKey')),
+    next,
+  );
   const result = await apiRequest<{ athleteId: string; slug: string }>(
     token,
     'POST',
@@ -85,7 +104,8 @@ export async function createAthleteProfileAction(form: FormData): Promise<never>
       },
     },
   );
-  if (result.kind !== 'ok') failure('athlete', result);
+  if (result.kind !== 'ok') failure('athlete', result, next);
+  if (next !== null) redirect(`${next}${next.includes('?') ? '&' : '?'}notice=athlete_created`);
   redirect('/app?notice=athlete_created');
 }
 

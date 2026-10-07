@@ -100,6 +100,11 @@ export default async function TournamentBuilderPage({
                 Edit details
               </a>
             ) : null}
+            {events.length > 0 ? (
+              <a className="btn btn-cyan btn-sm" href={`${base}/registrations`}>
+                Registrations
+              </a>
+            ) : null}
             {c.status !== 'DRAFT' ? (
               <a className="btn btn-ghost btn-sm" href={`/competitions/${c.slug}`}>
                 Public page ↗

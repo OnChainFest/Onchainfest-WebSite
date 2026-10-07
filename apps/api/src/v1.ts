@@ -1116,7 +1116,10 @@ export function registerV1(app: FastifyInstance, deps: V1Deps): RouteInfo[] {
   );
 
   if (deps.competition !== undefined)
-    registerCompetitionV1({ route, requireAuth, operator, key }, deps.competition);
+    registerCompetitionV1(
+      { route, requireAuth, operator, key },
+      { ...deps.competition, identity: deps.identity },
+    );
   if (deps.evidence !== undefined)
     registerEvidenceV1({ route, requireAuth, operator, key }, deps.evidence);
   if (deps.verification !== undefined)

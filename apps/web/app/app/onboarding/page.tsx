@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { appContext } from '../../_lib/app-context';
+import { validateContinuationRoute } from '../../_lib/auth/continuation';
 import { parseOnboardingHint } from '../../_lib/auth/onboarding';
 import { ORGANIZATION_TYPES } from '../../_lib/onboarding-input';
 import { one, type SearchParams } from '../../_lib/search-params';
@@ -17,7 +18,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
   if (ctx.kind !== 'ok') return null;
   const adding = one(params.add) === '1';
   const hasAthlete = ctx.account.me.athletes.length > 0;
-  if (ctx.onboarding === 'active' && !adding) redirect('/app');
+  // ONCF-04: a validated continuation (e.g. a registration) resumed after the profile exists.
+  const next = validateContinuationRoute(one(params.next));
+  const carry = next === null ? '' : `&next=${encodeURIComponent(next)}`;
+  if (ctx.onboarding === 'active' && !adding) redirect(next ?? '/app');
   let path = parseOnboardingHint(one(params.path));
   if (path === 'athlete' && hasAthlete) path = null;
   // Keys are fixed per rendered form, so a retried submission never creates duplicates.
@@ -46,7 +50,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
           {!hasAthlete ? (
             <a
               className="lane athlete"
-              href="/app/onboarding?path=athlete"
+              href={`/app/onboarding?path=athlete${adding ? '&add=1' : ''}${carry}`}
               aria-current={path === 'athlete' ? 'true' : undefined}
             >
               <span className="mono">01</span>
@@ -56,7 +60,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
           ) : null}
           <a
             className="lane organization"
-            href={`/app/onboarding?path=organization${adding ? '&add=1' : ''}`}
+            href={`/app/onboarding?path=organization${adding ? '&add=1' : ''}${carry}`}
             aria-current={path === 'organization' ? 'true' : undefined}
           >
             <span className="mono">{hasAthlete ? '01' : '02'}</span>
@@ -67,6 +71,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
 
         {path === 'athlete' ? (
           <form action={createAthleteProfileAction} className="form-col">
+            {next !== null ? <input type="hidden" name="next" value={next} /> : null}
             <input type="hidden" name="personKey" value={personKey} />
             <input type="hidden" name="profileKey" value={profileKey} />
             <label className="field">

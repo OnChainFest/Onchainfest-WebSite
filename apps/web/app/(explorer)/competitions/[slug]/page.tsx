@@ -1,6 +1,7 @@
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getPublic } from '../../../_lib/api';
 import { StatusPill, when, type PublicCompetition } from '../../../_lib/competition';
+import { RegistrationCtaLink } from '../../../_lib/registration-cta';
 import { Unavailable } from '../../../_lib/trust';
 
 export const dynamic = 'force-dynamic';
@@ -65,6 +66,11 @@ export default async function CompetitionPage({ params }: Params) {
               <li key={e.id} style={{ marginBottom: '0.5rem' }}>
                 <a href={`/competitions/${c.slug}/events/${e.slug}`}>{e.name}</a>
                 <StatusPill status={e.status} />
+                <RegistrationCtaLink
+                  event={e}
+                  competitionStatus={c.status}
+                  competitionSlug={c.slug}
+                />
                 <br />
                 <small style={{ color: '#6b7280' }}>
                   {e.discipline.name} (v{e.discipline.version}) · {e.format.name} ·{' '}

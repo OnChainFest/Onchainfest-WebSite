@@ -104,6 +104,51 @@ export const ACTIVE_REGISTRATION_STATUSES: readonly RegistrationStatus[] = [
   'CONFIRMED',
 ];
 
+/** Organizer decisions on a registration and the status each one records. */
+export const REGISTRATION_DECISIONS = {
+  CONFIRM: 'CONFIRMED',
+  WAITLIST: 'WAITLISTED',
+  DECLINE: 'DECLINED',
+  CANCEL: 'CANCELLED',
+} as const satisfies Record<string, RegistrationStatus>;
+export type RegistrationDecision = keyof typeof REGISTRATION_DECISIONS;
+
+/**
+ * Registration windows (ONCF-04). The single statement of what the competition store enforces, so
+ * the organizer and athlete read models can report available actions without restating the rules:
+ *  - organizer decisions are taken while registration is open or closed, never after the lock;
+ *  - a registration can be withdrawn until the field is locked (then it is a Participant matter).
+ */
+export function registrationDecisionsOpen(eventStatus: EventStatus): boolean {
+  return eventStatus === 'REGISTRATION_OPEN' || eventStatus === 'REGISTRATION_CLOSED';
+}
+
+export function registrationWithdrawable(eventStatus: EventStatus): boolean {
+  return eventStatus === 'DRAFT' || registrationDecisionsOpen(eventStatus);
+}
+
+/** Decisions the lifecycle allows from `status` while the event is in `eventStatus`. */
+export function availableRegistrationDecisions(
+  status: RegistrationStatus,
+  eventStatus: EventStatus,
+): RegistrationDecision[] {
+  if (!registrationDecisionsOpen(eventStatus)) return [];
+  return (Object.keys(REGISTRATION_DECISIONS) as RegistrationDecision[]).filter((d) =>
+    canTransition(RegistrationLifecycle, status, REGISTRATION_DECISIONS[d]),
+  );
+}
+
+/** Whether a withdrawal (entrant or organizer) is possible now. */
+export function registrationCanWithdraw(
+  status: RegistrationStatus,
+  eventStatus: EventStatus,
+): boolean {
+  return (
+    registrationWithdrawable(eventStatus) &&
+    canTransition(RegistrationLifecycle, status, 'WITHDRAWN')
+  );
+}
+
 export type ContestStatus =
   'PLANNED' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'VOID';
 export const ContestLifecycle = lifecycle<ContestStatus>('contest', ['PLANNED'], {

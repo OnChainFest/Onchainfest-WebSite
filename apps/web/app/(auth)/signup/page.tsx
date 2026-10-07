@@ -2,6 +2,7 @@ import { AuthShell } from '../../_product/auth-shell';
 import { Flash } from '../../_product/flash';
 import { SubmitButton } from '../../_product/submit-button';
 import { signUpAction } from '../../_lib/auth/actions';
+import { validateContinuationRoute } from '../../_lib/auth/continuation';
 import { parseOnboardingHint } from '../../_lib/auth/onboarding';
 import { one, type SearchParams } from '../../_lib/search-params';
 
@@ -16,6 +17,11 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
   const params = await searchParams;
   const path = parseOnboardingHint(one(params.path));
   const error = one(params.error);
+  // ONCF-04: a validated /app continuation (e.g. a registration) survives sign-up and the email link.
+  const next = validateContinuationRoute(one(params.next));
+  const withNext = (q: Record<string, string>) =>
+    `?${new URLSearchParams(next === null ? q : { ...q, next })}`;
+  const signIn = `/signin${next === null ? '' : withNext({})}`;
 
   if (path === null) {
     return (
@@ -29,7 +35,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
         <Flash error={error} />
         <nav className="lanes" aria-label="Account type">
           {(['athlete', 'organization'] as const).map((lane, i) => (
-            <a key={lane} className={`lane ${lane}`} href={`/signup?path=${lane}`}>
+            <a key={lane} className={`lane ${lane}`} href={`/signup${withNext({ path: lane })}`}>
               <span className="mono">0{i + 1}</span>
               <strong>{LANES[lane].label}</strong>
               <span>{LANES[lane].line}</span>
@@ -38,7 +44,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
           ))}
         </nav>
         <p className="form-foot">
-          Already registered? <a href="/signin">Sign in</a>
+          Already registered? <a href={signIn}>Sign in</a>
         </p>
       </AuthShell>
     );
@@ -57,7 +63,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
           <a
             key={lane}
             className="chip mono"
-            href={`/signup?path=${lane}`}
+            href={`/signup${withNext({ path: lane })}`}
             aria-current={lane === path ? 'true' : undefined}
           >
             {LANES[lane].label}
@@ -67,6 +73,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
       <Flash error={error} />
       <form action={signUpAction}>
         <input type="hidden" name="path" value={path} />
+        {next !== null ? <input type="hidden" name="next" value={next} /> : null}
         <label className="field">
           <span>Email</span>
           <input
@@ -96,7 +103,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Searc
         {path === 'athlete'
           ? 'Your athlete profile comes next.'
           : 'Your organization profile comes next.'}{' '}
-        Already registered? <a href="/signin">Sign in</a>
+        Already registered? <a href={signIn}>Sign in</a>
       </p>
     </AuthShell>
   );

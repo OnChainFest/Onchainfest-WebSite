@@ -11,6 +11,8 @@ export interface EventSummary {
   slug: string;
   name: string;
   status: string;
+  /** ONCF-04 (may be absent on older API builds). */
+  entrantKind?: 'INDIVIDUAL' | 'TEAM';
   sport: { code: string; name: string };
   discipline: { code: string; name: string; version: number };
   format: { code: string; name: string; version: number; engine: string };

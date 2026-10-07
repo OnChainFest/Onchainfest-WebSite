@@ -38,6 +38,18 @@ export const ERROR_MESSAGES = {
   catalog_combination:
     'That sport, format and entrant combination can’t run. Pick from the options shown.',
   reason_required: 'Give a short reason. Participants and staff will see it.',
+  registration_duplicate:
+    'This athlete is already entered in this category. Your existing entry is below.',
+  registration_closed:
+    'Registration isn’t open for this category right now — it may not have opened yet or has closed.',
+  registration_full: 'This category is full. No place is available right now.',
+  registration_invalid:
+    'This entry can’t be made: confirm your eligibility and check this category takes individual entries.',
+  registration_not_permitted: 'You can only register athletes you manage.',
+  registration_not_found: 'That registration doesn’t exist or isn’t yours to see.',
+  registration_transition:
+    'That entry has already changed. The page now shows its current status and options.',
+  eligibility_required: 'Confirm that the athlete meets this category’s requirements.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -70,6 +82,12 @@ export const NOTICE_MESSAGES = {
   registration_opened: 'Registration is open.',
   registration_closed: 'Registration is closed.',
   category_cancelled: 'Category cancelled.',
+  registration_received: 'Entry received. Here’s where it stands.',
+  registration_withdrawn: 'Entry withdrawn.',
+  registration_confirmed: 'Registration confirmed.',
+  registration_waitlisted: 'Registration moved to the waitlist.',
+  registration_declined: 'Registration declined.',
+  registration_cancelled: 'Registration cancelled.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

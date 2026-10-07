@@ -60,7 +60,10 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
         <SubmitButton pending="Signing in">Sign in</SubmitButton>
       </form>
       <p className="form-foot">
-        New to OnChainFest? <a href="/signup">Create an account</a>
+        New to OnChainFest?{' '}
+        <a href={next === null ? '/signup' : `/signup?${new URLSearchParams({ next })}`}>
+          Create an account
+        </a>
       </p>
     </AuthShell>
   );

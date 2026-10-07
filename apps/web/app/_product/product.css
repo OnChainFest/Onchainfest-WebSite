@@ -2267,3 +2267,619 @@
     padding: 0.7rem 0.7rem;
   }
 }
+
+/* ── Registration (ONCF-04) ─────────────────────────────── */
+/* Athlete pages live outside the organization area: default brand (an organizer's accent, when
+   known, is applied inline on the registration flow). */
+.oc-app main {
+  --brand: var(--cyan);
+}
+.oc .rg-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem 0.3rem 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--tone, var(--faint)) 55%, transparent);
+  background: color-mix(in srgb, var(--tone, var(--faint)) 14%, rgba(5, 6, 8, 0.7));
+  color: var(--white);
+  white-space: nowrap;
+}
+.oc .rg-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35em;
+  height: 1.35em;
+  border-radius: 50%;
+  background: var(--tone, var(--faint));
+  color: var(--ink);
+  font-size: 0.95em;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.oc .rg-status-lg {
+  font-size: 0.85rem;
+  padding: 0.5rem 0.95rem 0.5rem 0.5rem;
+}
+.oc [data-status='REQUESTED'] {
+  --tone: var(--gold);
+}
+.oc [data-status='WAITLISTED'] {
+  --tone: var(--violet);
+}
+.oc [data-status='CONFIRMED'] {
+  --tone: var(--green);
+}
+.oc [data-status='DECLINED'],
+.oc .rg-status[data-status='CANCELLED'],
+.oc .rg-item[data-status='CANCELLED'],
+.oc .rg-ticket[data-status='CANCELLED'],
+.oc .rg-result[data-status='CANCELLED'],
+.oc .rg-timeline [data-status='CANCELLED'] {
+  --tone: var(--danger);
+}
+.oc [data-status='WITHDRAWN'] {
+  --tone: var(--faint);
+}
+
+/* Athlete flow */
+.oc-app .rg-flow {
+  display: grid;
+  gap: 1.5rem;
+}
+.oc-app .rg-flow > .tb-crumbs,
+.oc-app .rg-flow > .tb-hero {
+  margin-bottom: 0;
+}
+.oc-app .rg-org {
+  align-self: flex-start;
+  padding: 0.3rem 0.55rem;
+  background: rgba(5, 6, 8, 0.65);
+  border: 1px solid var(--line);
+}
+.oc-app .rg-sport {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+}
+.oc-app .rg-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .rg-progress li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.8rem 0.6rem 0.8rem 0;
+  border-top: 2px solid rgba(255, 255, 255, 0.1);
+  color: var(--faint);
+  font-weight: 700;
+}
+.oc-app .rg-progress li[data-state='done'] {
+  border-top-color: var(--green);
+  color: var(--muted);
+}
+.oc-app .rg-progress li[data-state='current'] {
+  border-top-color: var(--brand);
+  color: var(--white);
+}
+.oc-app .rg-panel {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+  padding: clamp(1.1rem, 3vw, 1.75rem);
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  max-width: 52rem;
+}
+.oc-app .rg-panel > * {
+  max-width: 100%;
+}
+.oc-app .rg-panel[data-tone='muted'] {
+  background: var(--ink-3);
+}
+.oc-app .rg-h2,
+.oc-app .rg-panel > h2.mono {
+  margin: 0;
+}
+.oc-app .rg-h2 {
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.oc-app .rg-row-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.oc-app .rg-pick,
+.oc-app .rg-confirm-entry {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+}
+.oc-app .rg-athletes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.6rem;
+}
+.oc-app .rg-athlete {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  cursor: pointer;
+}
+.oc-app .rg-athlete input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.oc-app .rg-athlete:has(input:checked) {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+.oc-app .rg-athlete:has(input:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+.oc-app .rg-athlete .rg-status {
+  margin-left: auto;
+}
+.oc .rg-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.oc .rg-who-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.oc .rg-who-text strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.oc .rg-who-text a:hover {
+  text-decoration: underline;
+}
+.oc .rg-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 25%, #050608));
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 0.85rem;
+  letter-spacing: -0.02em;
+}
+.oc .rg-avatar[data-private='true'] {
+  background: var(--ink-3);
+  color: var(--faint);
+  border: 1px dashed var(--line-strong);
+}
+.oc-app .rg-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0;
+  width: 100%;
+  border-top: 1px solid var(--line);
+}
+.oc-app .rg-summary > div {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem 0.85rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .rg-summary dt {
+  color: var(--faint);
+}
+.oc-app .rg-summary dd {
+  margin: 0;
+  font-weight: 700;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.oc-app .rg-declare {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-3);
+  cursor: pointer;
+}
+.oc-app .rg-declare input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.15rem;
+  accent-color: var(--cyan);
+  flex: none;
+}
+.oc-app .rg-cta {
+  min-height: 58px;
+  font-size: 0.85rem;
+}
+
+/* Result */
+.oc-app .rg-result {
+  position: relative;
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+  padding: clamp(1.4rem, 4vw, 2.5rem);
+  margin-bottom: 1.75rem;
+  border: 1px solid color-mix(in srgb, var(--tone, var(--faint)) 45%, transparent);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--tone, var(--faint)) 22%, transparent),
+      transparent 55%
+    ),
+    var(--ink-3);
+  overflow: hidden;
+}
+.oc-app .rg-result-title {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+  font-weight: 900;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.oc-app .rg-result-copy {
+  margin: 0;
+  max-width: 40rem;
+  font-size: 1.1rem;
+}
+.oc-app .rg-result-reason {
+  margin: 0;
+}
+.oc-app .rg-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+}
+.oc-app .rg-main {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.oc .rg-reason {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Tickets (history, result, detail) */
+.oc-app .rg-group {
+  display: grid;
+  gap: 0.9rem;
+  margin-bottom: 2.25rem;
+}
+.oc-app .rg-tickets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.oc .rg-ticket {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.1rem;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tone, var(--faint));
+  background: var(--ink-2);
+}
+.oc a.rg-ticket:hover {
+  border-color: var(--line-strong);
+  border-left-color: var(--tone, var(--faint));
+}
+.oc .rg-stub {
+  display: grid;
+  justify-items: center;
+  min-width: 58px;
+  padding: 0.45rem 0.5rem;
+  background: var(--white);
+  color: var(--ink);
+  line-height: 1;
+}
+.oc .rg-stub strong {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+.oc .rg-ticket-body {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.oc .rg-ticket-title {
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.oc .rg-ticket-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.oc .rg-ticket-side {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+}
+
+/* Timeline */
+.oc .rg-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.oc .rg-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0.85rem;
+  padding-bottom: 1.1rem;
+}
+.oc .rg-timeline li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 28px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+.oc .rg-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--tone, var(--faint));
+  color: var(--tone, var(--faint));
+  font-size: 0.85rem;
+}
+.oc .rg-timeline li[data-current='true'] .rg-dot {
+  background: var(--tone, var(--faint));
+  color: var(--ink);
+}
+.oc .rg-step {
+  display: grid;
+  gap: 0.2rem;
+  padding-top: 0.2rem;
+}
+
+/* Decisions */
+.oc .rg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.oc .rg-actions .btn-sm {
+  min-height: 38px;
+}
+.oc .rg-confirm[open] {
+  flex-basis: 100%;
+}
+.oc .rg-confirm-form {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-3);
+}
+
+/* Organizer console */
+.oc-app .rg-console-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.oc-app .rg-filters {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+.oc-app .rg-filter {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--ink-2);
+  border-top: 2px solid transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.oc-app .rg-filter strong {
+  font-size: 1.6rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--white);
+}
+.oc-app .rg-filter:hover {
+  background: var(--ink-3);
+}
+.oc-app .rg-filter[aria-current='true'] {
+  border-top-color: var(--tone, var(--faint));
+  background: var(--ink-3);
+  color: var(--white);
+}
+.oc-app .rg-board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.oc-app .rg-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
+  grid-template-areas: 'who cat status actions' 'reason reason reason reason';
+  gap: 0.6rem 1.25rem;
+  align-items: center;
+  padding: 0.95rem 0.75rem 0.95rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--tone, var(--faint));
+}
+.oc-app .rg-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.oc-app .rg-item-who {
+  grid-area: who;
+  min-width: 0;
+}
+.oc-app .rg-item-cat {
+  grid-area: cat;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.oc-app .rg-item-status {
+  grid-area: status;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+.oc-app .rg-item-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+.oc-app .rg-item-reason {
+  grid-area: reason;
+  font-size: 0.85rem;
+}
+.oc-app .rg-item:not(:has(.rg-item-cat)) {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  grid-template-areas: 'who status actions' 'reason reason reason';
+}
+.oc-app .rg-more {
+  margin-top: 1rem;
+}
+.oc-app .rg-cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.oc-app .rg-cats a {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.6rem;
+  border-left: 2px solid transparent;
+}
+.oc-app .rg-cats a:hover {
+  background: var(--ink-3);
+}
+.oc-app .rg-cats a[aria-current='true'] {
+  border-left-color: var(--brand);
+  background: var(--ink-3);
+}
+.oc-app .rg-cat-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.oc-app .rg-person {
+  max-width: none;
+}
+
+@media (max-width: 1100px) {
+  .oc-app .rg-filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .oc-app .rg-progress li {
+    font-size: 0.8rem;
+  }
+  .oc-app .rg-progress li .mono {
+    display: none;
+  }
+  .oc-app .rg-filters {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .oc-app .rg-filter {
+    flex: 0 0 auto;
+    min-width: 112px;
+  }
+  /* The category list comes first on phones: it is the main filter. */
+  .oc-app .rg-console > .tb-side {
+    order: -1;
+  }
+  .oc-app .rg-console .rg-cats {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .oc-app .rg-console .rg-cats li {
+    flex: 0 0 auto;
+  }
+  /* Rows become cards: identity and status on top, decisions full width below. */
+  .oc-app .rg-item,
+  .oc-app .rg-item:not(:has(.rg-item-cat)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'who status' 'cat cat' 'actions actions' 'reason reason';
+    padding: 1rem 0.75rem;
+  }
+  .oc-app .rg-item-status {
+    justify-items: end;
+  }
+  .oc-app .rg-item-actions {
+    justify-content: flex-start;
+  }
+  .oc .rg-ticket {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .oc .rg-ticket-side {
+    grid-column: 1 / -1;
+    grid-auto-flow: column;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+@media (max-width: 520px) {
+  .oc-app .rg-progress {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    font-size: 0.72rem;
+  }
+  .oc-app .rg-when {
+    display: none;
+  }
+}

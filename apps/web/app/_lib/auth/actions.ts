@@ -71,7 +71,10 @@ export async function signUpAction(form: FormData): Promise<never> {
   const email = field(form, 'email').trim();
   const password = field(form, 'password');
   const hint = parseOnboardingHint(field(form, 'path'));
-  const back = (error: AuthErrorCode) => redirect(query('/signup', { path: hint, error }));
+  // ONCF-04: only a validated /app continuation is carried (into the email link, then re-validated
+  // on landing by successRedirect). Never Supabase metadata.
+  const next = validateContinuationRoute(field(form, 'next'));
+  const back = (error: AuthErrorCode) => redirect(query('/signup', { path: hint, next, error }));
 
   if (email === '' || password === '') back('missing_fields');
   if (!EMAIL_RE.test(email)) back('invalid_email');
@@ -84,7 +87,7 @@ export async function signUpAction(form: FormData): Promise<never> {
   const supabase = await createSupabaseServerClient();
   if (supabase === null || base === null) back('not_configured');
   // The lane choice travels only as a UI hint in the confirmation link — never as metadata.
-  const emailRedirectTo = `${base}${query('/auth/callback', { flow: 'signup', path: hint })}`;
+  const emailRedirectTo = `${base}${query('/auth/callback', { flow: 'signup', path: hint, next })}`;
   let token: string | null = null;
   try {
     const { data, error } = await supabase!.auth.signUp({
@@ -100,15 +103,16 @@ export async function signUpAction(form: FormData): Promise<never> {
   }
   // Email confirmation on (the production setting) ⇒ no session yet. Supabase also answers this way
   // for an already-registered address, so the screen never reveals whether an account exists.
-  if (token === null) redirect(query('/signup/confirm-email', { path: hint }));
-  redirect(await postAuthDestination(token, { hint }));
+  if (token === null) redirect(query('/signup/confirm-email', { path: hint, next }));
+  redirect(await postAuthDestination(token, { hint, requested: next }));
 }
 
 export async function resendConfirmationAction(form: FormData): Promise<never> {
   const email = field(form, 'email').trim();
   const hint = parseOnboardingHint(field(form, 'path'));
+  const next = validateContinuationRoute(field(form, 'next'));
   const back = (params: Record<string, string>) =>
-    redirect(query('/signup/confirm-email', { path: hint, ...params }));
+    redirect(query('/signup/confirm-email', { path: hint, next, ...params }));
   if (!EMAIL_RE.test(email)) back({ error: 'invalid_email' });
   if (
     !authRateLimiter.attempt(`email:${emailKey(email)}`, RATE_RULES.email) ||
@@ -123,7 +127,7 @@ export async function resendConfirmationAction(form: FormData): Promise<never> {
       type: 'signup',
       email,
       options: {
-        emailRedirectTo: `${base}${query('/auth/callback', { flow: 'signup', path: hint })}`,
+        emailRedirectTo: `${base}${query('/auth/callback', { flow: 'signup', path: hint, next })}`,
       },
     });
     if (error !== null && authErrorCode(error) !== 'unknown') back({ error: authErrorCode(error) });

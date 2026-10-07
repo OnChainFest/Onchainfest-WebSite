@@ -1,5 +1,6 @@
 import {
   ACTIVE_REGISTRATION_STATUSES,
+  availableRegistrationDecisions,
   canonicalFormatConfig,
   canTransition,
   competitionAcceptsEvents,
@@ -10,13 +11,18 @@ import {
   eventSettingsEditable,
   formatEngine,
   isTerminal,
+  REGISTRATION_DECISIONS,
+  registrationCanWithdraw,
+  registrationDecisionsOpen,
   RegistrationLifecycle,
+  registrationWithdrawable,
   validateCategory,
   type CompetitionStatus,
   type CompPermission,
   type DisciplineVersionSpec,
   type EventCategory,
   type EventStatus,
+  type RegistrationDecision,
   type RegistrationStatus,
   type StaffRole,
 } from '@br/competition';
@@ -253,6 +259,211 @@ export interface ManagedCompetition {
     readonly statusChangedAt: string;
   }[];
   readonly access: { readonly staffRoles: StaffRole[]; readonly permissions: CompPermission[] };
+}
+
+/** ONCF-04: one registration with its event and competition context (never public). */
+export interface RegistrationEntry {
+  readonly id: string;
+  readonly status: RegistrationStatus;
+  readonly entrantType: 'INDIVIDUAL' | 'TEAM';
+  readonly athleteId: string | null;
+  /** Team names are public by design; athlete identity is resolved by the caller's privacy rule. */
+  readonly team: { readonly id: string; readonly name: string } | null;
+  readonly eligibilityBasis: 'DECLARED' | 'ORGANIZER_ACCEPTED' | null;
+  /** The reason recorded with the current status, if any. */
+  readonly reason: string | null;
+  readonly requestedAt: string;
+  readonly statusChangedAt: string;
+  readonly event: {
+    readonly id: string;
+    readonly slug: string;
+    readonly name: string;
+    readonly status: EventStatus;
+    readonly entrantKind: 'INDIVIDUAL' | 'TEAM';
+    readonly sport: { readonly code: string; readonly name: string };
+    readonly discipline: { readonly code: string; readonly name: string };
+    readonly format: { readonly code: string; readonly name: string };
+    readonly capacity: number | null;
+    readonly registrationMode: 'AUTO_CONFIRM' | 'ORGANIZER_APPROVAL';
+    readonly registrationClosesAt: string | null;
+    readonly startsAt: string | null;
+    readonly endsAt: string | null;
+    readonly timezone: string;
+  };
+  readonly competition: {
+    readonly id: string;
+    readonly slug: string;
+    readonly name: string;
+    readonly status: CompetitionStatus;
+    readonly startsAt: string | null;
+    readonly endsAt: string | null;
+    readonly timezone: string;
+    readonly locationLabel: string | null;
+  };
+  /**
+   * What the caller may do now. Restates the registration lifecycle and windows the commands
+   * enforce (capacity is still decided by the command); it grants nothing.
+   */
+  readonly actions: {
+    readonly decisions: RegistrationDecision[];
+    readonly withdraw: boolean;
+  };
+}
+
+/** ONCF-04: one registration for its entrant or the competition's staff, with its status history. */
+export interface RegistrationDetail extends RegistrationEntry {
+  readonly history: {
+    readonly status: RegistrationStatus;
+    readonly reason: string | null;
+    readonly recordedAt: string;
+  }[];
+  readonly viewer: { readonly entrant: boolean; readonly staff: boolean };
+}
+
+/** ONCF-04: a page of a competition's registrations for its staff. */
+export interface CompetitionRegistrations {
+  readonly items: RegistrationEntry[];
+  /** Current status counts over the whole selection (event filter applied, status filter not). */
+  readonly counts: Record<RegistrationStatus, number>;
+  readonly nextCursor: string | null;
+  readonly access: { readonly permissions: CompPermission[] };
+}
+
+const REGISTRATION_STATUSES: readonly RegistrationStatus[] = RegistrationLifecycle.states;
+
+interface RegistrationRow {
+  id: string;
+  status: RegistrationStatus;
+  entrant_type: 'INDIVIDUAL' | 'TEAM';
+  athlete_id: string | null;
+  team_id: string | null;
+  team_name: string | null;
+  eligibility_basis: 'DECLARED' | 'ORGANIZER_ACCEPTED' | null;
+  reason: string | null;
+  requested_at: Date;
+  status_changed_at: Date;
+  event_id: string;
+  event_slug: string;
+  event_name: string;
+  event_status: EventStatus;
+  entrant_kind: 'INDIVIDUAL' | 'TEAM';
+  sport_code: string;
+  sport_name: string;
+  discipline_code: string;
+  discipline_name: string;
+  format_code: string;
+  format_name: string;
+  capacity: number | null;
+  registration_mode: 'AUTO_CONFIRM' | 'ORGANIZER_APPROVAL';
+  registration_closes_at: Date | null;
+  event_starts_at: Date | null;
+  event_ends_at: Date | null;
+  event_timezone: string;
+  competition_id: string;
+  organizer_organization_id: string;
+  competition_slug: string;
+  competition_name: string;
+  competition_status: CompetitionStatus;
+  competition_starts_at: Date | null;
+  competition_ends_at: Date | null;
+  competition_timezone: string;
+  location_label: string | null;
+}
+
+/** Registrations with their context; `where` filters on `r` (registration) and `e` (event). */
+async function registrationRows(
+  ctx: TxContext,
+  where: ReturnType<typeof sql>,
+  order: ReturnType<typeof sql>,
+  limit: number,
+): Promise<RegistrationRow[]> {
+  const { rows } = await sql<RegistrationRow>`
+    SELECT r.id, v.status, r.entrant_type, r.athlete_id, r.team_id, tp.display_name AS team_name,
+           v.eligibility_basis, cur.reason, r.recorded_at AS requested_at, v.recorded_at AS status_changed_at,
+           e.id AS event_id, esl.slug AS event_slug, ep.name AS event_name, est.status AS event_status, e.entrant_kind,
+           s.code AS sport_code, s.name AS sport_name, d.code AS discipline_code, d.name AS discipline_name,
+           t.code AS format_code, t.name AS format_name, ep.capacity, ep.registration_mode, ep.registration_closes_at,
+           ep.starts_at AS event_starts_at, ep.ends_at AS event_ends_at, ep.timezone AS event_timezone,
+           c.id AS competition_id, c.organizer_organization_id, csl.slug AS competition_slug, cp.name AS competition_name,
+           cst.status AS competition_status, cp.starts_at AS competition_starts_at, cp.ends_at AS competition_ends_at,
+           cp.timezone AS competition_timezone, cp.location_label
+    FROM competition.registration r
+    JOIN competition.v_registration_current v ON v.registration_id = r.id
+    JOIN LATERAL (SELECT sc.reason FROM competition.registration_status_change sc
+                  WHERE sc.registration_id = r.id ORDER BY sc.seq DESC LIMIT 1) cur ON true
+    LEFT JOIN competition.team_profile tp ON tp.team_id = r.team_id
+    JOIN competition.event e ON e.id = r.event_id
+    JOIN competition.event_profile ep ON ep.event_id = e.id
+    JOIN competition.v_event_current est ON est.event_id = e.id
+    JOIN competition.v_event_slug_current esl ON esl.event_id = e.id
+    JOIN sports.discipline_version dv ON dv.id = e.discipline_version_id
+    JOIN sports.discipline d ON d.id = dv.discipline_id
+    JOIN sports.sport s ON s.id = d.sport_id
+    JOIN sports.format_version fv ON fv.id = e.format_version_id
+    JOIN sports.format_template t ON t.id = fv.template_id
+    JOIN competition.competition c ON c.id = e.competition_id
+    JOIN competition.competition_profile cp ON cp.competition_id = c.id
+    JOIN competition.v_competition_current cst ON cst.competition_id = c.id
+    JOIN competition.v_competition_slug_current csl ON csl.competition_id = c.id
+    WHERE ${where}
+    ORDER BY ${order}
+    LIMIT ${limit}`.execute(ctx.trx);
+  return rows;
+}
+
+function registrationEntry(
+  r: RegistrationRow,
+  actions: RegistrationEntry['actions'],
+): RegistrationEntry {
+  return {
+    id: r.id,
+    status: r.status,
+    entrantType: r.entrant_type,
+    athleteId: r.athlete_id,
+    team: r.team_id === null ? null : { id: r.team_id, name: r.team_name ?? 'Team' },
+    eligibilityBasis: r.eligibility_basis,
+    reason: r.reason,
+    requestedAt: r.requested_at.toISOString(),
+    statusChangedAt: r.status_changed_at.toISOString(),
+    event: {
+      id: r.event_id,
+      slug: r.event_slug,
+      name: r.event_name,
+      status: r.event_status,
+      entrantKind: r.entrant_kind,
+      sport: { code: r.sport_code, name: r.sport_name },
+      discipline: { code: r.discipline_code, name: r.discipline_name },
+      format: { code: r.format_code, name: r.format_name },
+      capacity: r.capacity,
+      registrationMode: r.registration_mode,
+      registrationClosesAt: isoOrNull(r.registration_closes_at),
+      startsAt: isoOrNull(r.event_starts_at),
+      endsAt: isoOrNull(r.event_ends_at),
+      timezone: r.event_timezone,
+    },
+    competition: {
+      id: r.competition_id,
+      slug: r.competition_slug,
+      name: r.competition_name,
+      status: r.competition_status,
+      startsAt: isoOrNull(r.competition_starts_at),
+      endsAt: isoOrNull(r.competition_ends_at),
+      timezone: r.competition_timezone,
+      locationLabel: r.location_label,
+    },
+    actions,
+  };
+}
+
+/** Actions for the entrant (withdraw) and for staff holding COMP_MANAGE_REGISTRATIONS. */
+function registrationActions(
+  r: Pick<RegistrationRow, 'status' | 'event_status'>,
+  who: { entrant: boolean; manager: boolean },
+): RegistrationEntry['actions'] {
+  return {
+    decisions: who.manager ? availableRegistrationDecisions(r.status, r.event_status) : [],
+    withdraw: (who.entrant || who.manager) && registrationCanWithdraw(r.status, r.event_status),
+  };
 }
 
 /**
@@ -1220,6 +1431,165 @@ export class CompetitionStore {
     });
   }
 
+  // ───────────────────────────── registration reads (ONCF-04) ─────────────────────────────
+
+  /**
+   * The caller's own registrations: entries of the athletes it may register (SELF or confirmed
+   * GUARDIAN, the REGISTER_FOR_EVENT person operation) and of the teams its SELF person manages.
+   * Newest first, at most 200.
+   */
+  myRegistrations(input: { actorAccountId: string }): Promise<RegistrationEntry[]> {
+    return this.tx(async (ctx) => {
+      const facts = await loadControlFacts(ctx, input.actorAccountId);
+      if (!facts.accountActive || facts.selfPersonId === undefined) return [];
+      const persons = [facts.selfPersonId, ...facts.activeDependentPersonIds].filter((p) =>
+        canOperateOnPerson(facts, p, 'REGISTER_FOR_EVENT'),
+      );
+      const { rows: athletes } =
+        persons.length === 0
+          ? { rows: [] as { id: string }[] }
+          : await sql<{ id: string }>`
+              SELECT id FROM identity.athlete WHERE person_id IN (${sql.join(persons)})`.execute(
+              ctx.trx,
+            );
+      const { rows: teams } = await sql<{ team_id: string }>`
+        SELECT team_id FROM competition.team_manager WHERE person_id = ${facts.selfPersonId}`.execute(
+        ctx.trx,
+      );
+      if (athletes.length === 0 && teams.length === 0) return [];
+      const athleteIds = athletes.map((a) => a.id);
+      const teamIds = teams.map((t) => t.team_id);
+      const rows = await registrationRows(
+        ctx,
+        sql`(${athleteIds.length === 0 ? sql`false` : sql`r.athlete_id IN (${sql.join(athleteIds)})`}
+             OR ${teamIds.length === 0 ? sql`false` : sql`r.team_id IN (${sql.join(teamIds)})`})`,
+        sql`r.recorded_at DESC, r.id`,
+        200,
+      );
+      return rows.map((r) =>
+        registrationEntry(r, registrationActions(r, { entrant: true, manager: false })),
+      );
+    });
+  }
+
+  /**
+   * One registration, for its entrant (athlete controller / team manager) or for staff with
+   * COMP_VIEW_PRIVATE on its competition. Anyone else gets FORBIDDEN (audited as a denied
+   * COMP_VIEW_PRIVATE); an unknown id is NOT_FOUND.
+   */
+  registration(input: {
+    actorAccountId: string;
+    registrationId: string;
+  }): Promise<RegistrationDetail> {
+    return this.tx(async (ctx) => {
+      const [r] = await registrationRows(ctx, sql`r.id = ${input.registrationId}`, sql`r.id`, 1);
+      if (r === undefined)
+        throw new DomainError(DomainErrorCode.NOT_FOUND, 'registration not found');
+      const entrant =
+        r.athlete_id !== null
+          ? await canActForAthlete(ctx, input.actorAccountId, r.athlete_id)
+          : await isTeamManager(ctx, input.actorAccountId, r.team_id as string);
+      const competition = {
+        id: r.competition_id,
+        organizerOrganizationId: r.organizer_organization_id,
+      };
+      const { permissions } = await competitionPermissions(ctx, input.actorAccountId, competition);
+      const staff = permissions.has('COMP_VIEW_PRIVATE');
+      if (!entrant && !staff)
+        await requireCompPermission(ctx, input.actorAccountId, competition, 'COMP_VIEW_PRIVATE');
+      const { rows: history } = await sql<{
+        status: RegistrationStatus;
+        reason: string | null;
+        recorded_at: Date;
+      }>`
+        SELECT status, reason, recorded_at FROM competition.registration_status_change
+        WHERE registration_id = ${r.id} ORDER BY seq`.execute(ctx.trx);
+      return {
+        ...registrationEntry(
+          r,
+          registrationActions(r, {
+            entrant,
+            manager: permissions.has('COMP_MANAGE_REGISTRATIONS'),
+          }),
+        ),
+        history: history.map((h) => ({
+          status: h.status,
+          reason: h.reason,
+          recordedAt: h.recorded_at.toISOString(),
+        })),
+        viewer: { entrant, staff },
+      };
+    });
+  }
+
+  /**
+   * A competition's registrations for its staff (COMP_VIEW_PRIVATE), in entry order (the order the
+   * waitlist is promoted in), filtered by event and/or current status. Keyset-paged: `after` is the
+   * last registration id of the previous page. Decisions are listed only for COMP_MANAGE_REGISTRATIONS.
+   */
+  competitionRegistrations(input: {
+    actorAccountId: string;
+    competitionId: string;
+    eventId?: string;
+    status?: RegistrationStatus;
+    after?: string;
+    limit?: number;
+  }): Promise<CompetitionRegistrations> {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    if (input.status !== undefined && !REGISTRATION_STATUSES.includes(input.status))
+      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'invalid status');
+    return this.tx(async (ctx) => {
+      const c = await loadCompetition(ctx, input.competitionId);
+      await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_VIEW_PRIVATE');
+      const { permissions } = await competitionPermissions(ctx, input.actorAccountId, c);
+      if (input.eventId !== undefined) {
+        const e = await loadEvent(ctx, input.eventId);
+        if (e.competitionId !== c.id)
+          throw new DomainError(DomainErrorCode.NOT_FOUND, 'event not found');
+      }
+      const scope =
+        input.eventId === undefined
+          ? sql`e.competition_id = ${c.id}`
+          : sql`e.id = ${input.eventId}`;
+      let cursor = sql`true`;
+      if (input.after !== undefined) {
+        const { rows } = await sql<{ n: number }>`
+          SELECT count(*)::int AS n FROM competition.registration r JOIN competition.event e ON e.id = r.event_id
+          WHERE r.id = ${input.after} AND ${scope}`.execute(ctx.trx);
+        if ((rows[0]?.n ?? 0) === 0)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, 'invalid cursor');
+        cursor = sql`(r.recorded_at, r.id) > (SELECT recorded_at, id FROM competition.registration WHERE id = ${input.after})`;
+      }
+      const statusFilter = input.status === undefined ? sql`true` : sql`v.status = ${input.status}`;
+      const rows = await registrationRows(
+        ctx,
+        sql`${scope} AND ${statusFilter} AND ${cursor}`,
+        sql`r.recorded_at, r.id`,
+        limit + 1,
+      );
+      const { rows: counted } = await sql<{ status: RegistrationStatus; n: number }>`
+        SELECT v.status, count(*)::int AS n FROM competition.registration r
+        JOIN competition.v_registration_current v ON v.registration_id = r.id
+        JOIN competition.event e ON e.id = r.event_id
+        WHERE ${scope} GROUP BY v.status`.execute(ctx.trx);
+      const counts = Object.fromEntries(REGISTRATION_STATUSES.map((st) => [st, 0])) as Record<
+        RegistrationStatus,
+        number
+      >;
+      for (const x of counted) counts[x.status] = x.n;
+      const page = rows.slice(0, limit);
+      const manager = permissions.has('COMP_MANAGE_REGISTRATIONS');
+      return {
+        items: page.map((r) =>
+          registrationEntry(r, registrationActions(r, { entrant: false, manager })),
+        ),
+        counts,
+        nextCursor: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
+        access: { permissions: [...permissions].sort() },
+      };
+    });
+  }
+
   // ───────────────────────────── registration ─────────────────────────────
 
   private async assertEntrantControl(
@@ -1444,18 +1814,13 @@ export class CompetitionStore {
   async decideRegistration(input: {
     actorAccountId: string;
     registrationId: string;
-    decision: 'CONFIRM' | 'WAITLIST' | 'DECLINE' | 'CANCEL';
+    decision: RegistrationDecision;
     reason?: string;
     idempotencyKey: string;
   }): Promise<{ registrationId: string; status: RegistrationStatus; created: boolean }> {
-    const to: RegistrationStatus = (
-      {
-        CONFIRM: 'CONFIRMED',
-        WAITLIST: 'WAITLISTED',
-        DECLINE: 'DECLINED',
-        CANCEL: 'CANCELLED',
-      } as const
-    )[input.decision];
+    const to: RegistrationStatus | undefined = Object.hasOwn(REGISTRATION_DECISIONS, input.decision)
+      ? REGISTRATION_DECISIONS[input.decision]
+      : undefined;
     if (to === undefined) throw new DomainError(DomainErrorCode.INVALID_INPUT, 'invalid decision');
     const reason = optionalText(input.reason, 500, 'reason');
     return this.tx(async (ctx) => {
@@ -1479,7 +1844,7 @@ export class CompetitionStore {
         await loadCompetition(ctx, e.competitionId),
         'COMP_MANAGE_REGISTRATIONS',
       );
-      if (!['REGISTRATION_OPEN', 'REGISTRATION_CLOSED'].includes(e.status))
+      if (!registrationDecisionsOpen(e.status))
         throw new DomainError(
           DomainErrorCode.INVALID_TRANSITION,
           'registrations are frozen once the field is locked',
@@ -1574,7 +1939,7 @@ export class CompetitionStore {
           targetId: input.registrationId,
         });
       }
-      if (!['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'DRAFT'].includes(e.status)) {
+      if (!registrationWithdrawable(e.status)) {
         throw new DomainError(
           DomainErrorCode.INVALID_TRANSITION,
           'the field is locked: withdraw the participant instead',

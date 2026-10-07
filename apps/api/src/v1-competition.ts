@@ -3,6 +3,8 @@ import type {
   CatalogStore,
   CompetitionReader,
   CompetitionStore,
+  IdentityStore,
+  RegistrationEntry,
   StructureStore,
   TeamStore,
 } from '@br/persistence';
@@ -40,7 +42,13 @@ const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `$
  * database facts. Catalog mutation is INTERNAL (operator flag). Commands that create or change
  * state take an Idempotency-Key.
  */
-export function registerCompetitionV1(t: V1Toolkit, deps: CompetitionV1Deps): void {
+export function registerCompetitionV1(
+  t: V1Toolkit,
+  deps: CompetitionV1Deps & {
+    /** ONCF-04: names registrations by the ONCF-02 roster rule (PUBLIC/AUTHENTICATED profiles). */
+    readonly identity: Pick<IdentityStore, 'visibleAthletes'>;
+  },
+): void {
   const { route, requireAuth, operator, key } = t;
   const slug = slugSchema;
   const lookup = lookupSlugSchema;
@@ -703,6 +711,80 @@ export function registerCompetitionV1(t: V1Toolkit, deps: CompetitionV1Deps): vo
   );
 
   // ───────────────────────────── registration (SELF / COMP_STAFF) ─────────────────────────────
+
+  // ONCF-04 registration reads. Never public. An athlete is named only when its profile is PUBLIC or
+  // AUTHENTICATED (the ONCF-02 roster rule); otherwise `athlete` is null and the row is a private
+  // athlete. Team names are public by design.
+  const named = async <T extends RegistrationEntry>(items: T[]) => {
+    const athletes = await deps.identity.visibleAthletes([
+      ...new Set(items.flatMap((r) => (r.athleteId === null ? [] : [r.athleteId]))),
+    ]);
+    return items.map((r) => ({
+      ...r,
+      athlete: r.athleteId === null ? null : (athletes.get(r.athleteId) ?? null),
+    }));
+  };
+
+  route('GET', '/v1/me/registrations', 'AUTHENTICATED', {}, async (request) => {
+    const ctx = requireAuth(request);
+    return {
+      items: await named(
+        await deps.competitions.myRegistrations({ actorAccountId: ctx.accountId }),
+      ),
+    };
+  });
+
+  route(
+    'GET',
+    '/v1/registrations/:registrationId',
+    'SELF',
+    { params: idParams('registrationId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const r = await deps.competitions.registration({
+        actorAccountId: ctx.accountId,
+        registrationId: params<{ registrationId: string }>(request).registrationId,
+      });
+      return (await named([r]))[0];
+    },
+  );
+
+  route(
+    'GET',
+    '/v1/competitions/:competitionId/registrations',
+    'COMP_STAFF',
+    {
+      params: idParams('competitionId'),
+      querystring: obj({
+        eventId: uuid,
+        status: {
+          enum: ['REQUESTED', 'WAITLISTED', 'CONFIRMED', 'DECLINED', 'WITHDRAWN', 'CANCELLED'],
+        },
+        after: uuid,
+        limit: { type: 'string', pattern: '^([1-9]|[1-9][0-9]|100)$' },
+      }),
+    },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const q = request.query as {
+        eventId?: string;
+        status?: 'REQUESTED';
+        after?: string;
+        limit?: string;
+      };
+      const page = await deps.competitions.competitionRegistrations(
+        defined({
+          actorAccountId: ctx.accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+          eventId: q.eventId,
+          status: q.status,
+          after: q.after,
+          limit: q.limit === undefined ? undefined : Number(q.limit),
+        }),
+      );
+      return { ...page, items: await named(page.items) };
+    },
+  );
 
   route(
     'POST',

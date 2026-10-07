@@ -57,9 +57,14 @@ describe('onboarding is derived from platform rows, never from metadata', () => 
   });
 
   it('unfinished onboarding overrides `next`; the sign-up hint only pre-selects a path', () => {
+    // ONCF-04: a valid continuation rides along so onboarding can resume it afterwards.
     expect(resolvePostAuthDestination({ facts: none, requested: '/app/orgs' })).toBe(
+      '/app/onboarding?next=%2Fapp%2Forgs',
+    );
+    expect(resolvePostAuthDestination({ facts: none, requested: 'https://evil.example' })).toBe(
       '/app/onboarding',
     );
+    expect(resolvePostAuthDestination({ facts: none })).toBe('/app/onboarding');
     expect(resolvePostAuthDestination({ facts: person, hint: 'organization' })).toBe(
       '/app/onboarding?path=organization',
     );

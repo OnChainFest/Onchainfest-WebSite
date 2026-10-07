@@ -149,7 +149,8 @@ describe('sign in', () => {
     const to = await redirectOf(() =>
       signInAction(form({ email: 'a@b.co', password: 'secret123', next: '/app/orgs' })),
     );
-    expect(to).toBe('/app/onboarding');
+    // Onboarding comes first; the safe continuation rides along to be resumed after (ONCF-04).
+    expect(to).toBe('/app/onboarding?next=%2Fapp%2Forgs');
     expect(h.auth.signInWithPassword).toHaveBeenCalledWith({
       email: 'a@b.co',
       password: 'secret123',
@@ -277,6 +278,57 @@ describe('sign up', () => {
     ).toBe('/app/onboarding?path=athlete');
   });
 
+  it('ONCF-04: a validated /app continuation rides through the email link; anything else is dropped', async () => {
+    const next = '/app/register/autumn-open/men-singles';
+    h.auth.signUp.mockResolvedValue({ data: { session: null, user: { id: 'u' } }, error: null });
+    expect(
+      await redirectOf(() =>
+        signUpAction(form({ email: 'new@b.co', password: 'secret123', path: 'athlete', next })),
+      ),
+    ).toBe(`/signup/confirm-email?path=athlete&next=${encodeURIComponent(next)}`);
+    const [args] = h.auth.signUp.mock.calls[0] as [{ options: Record<string, unknown> }];
+    expect(Object.keys(args.options)).toEqual(['emailRedirectTo']);
+    expect(args.options.emailRedirectTo).toBe(
+      `https://app.onchainfest.test/auth/callback?flow=signup&path=athlete&next=${encodeURIComponent(next)}`,
+    );
+    for (const bad of ['https://evil.example/app', '//evil.example/app', '/api/x', '/app/../api']) {
+      h.auth.signUp.mockClear();
+      expect(
+        await redirectOf(() =>
+          signUpAction(
+            form({ email: 'new@b.co', password: 'secret123', path: 'athlete', next: bad }),
+          ),
+        ),
+      ).toBe('/signup/confirm-email?path=athlete');
+      const [a] = h.auth.signUp.mock.calls[0] as [{ options: Record<string, unknown> }];
+      expect(a.options.emailRedirectTo).toBe(
+        'https://app.onchainfest.test/auth/callback?flow=signup&path=athlete',
+      );
+    }
+    // A refused attempt keeps it for the retry.
+    expect(
+      await redirectOf(() =>
+        signUpAction(form({ email: 'x@b.co', password: 'short', path: 'athlete', next })),
+      ),
+    ).toBe(`/signup?path=athlete&next=${encodeURIComponent(next)}&error=weak_password`);
+  });
+
+  it('ONCF-04: without confirmation, onboarding carries the continuation', async () => {
+    h.auth.signUp.mockResolvedValue(session());
+    expect(
+      await redirectOf(() =>
+        signUpAction(
+          form({
+            email: 'n@b.co',
+            password: 'secret123',
+            path: 'athlete',
+            next: '/app/register/a/b',
+          }),
+        ),
+      ),
+    ).toBe('/app/onboarding?path=athlete&next=%2Fapp%2Fregister%2Fa%2Fb');
+  });
+
   it('production without NEXT_PUBLIC_SITE_URL fails closed (no Host-derived email links)', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     delete process.env.NEXT_PUBLIC_SITE_URL;
@@ -380,6 +432,29 @@ describe('email link landing (callback / confirm)', () => {
       'https://app.test/app/onboarding?path=organization&notice=email_verified',
     );
     expect(apiCalls.every((c) => c.headers.authorization === 'Bearer new-user-token')).toBe(true);
+  });
+
+  it('ONCF-04: verified sign-up resumes a registration through onboarding; foreign next is ignored', async () => {
+    h.auth.exchangeCodeForSession.mockResolvedValue(session('new-user-token'));
+    const next = encodeURIComponent('/app/register/autumn-open/men-singles');
+    expect(
+      location(
+        await callback(
+          new Request(
+            `https://app.test/auth/callback?flow=signup&path=athlete&next=${next}&code=abc`,
+          ),
+        ),
+      ),
+    ).toBe(`https://app.test/app/onboarding?path=athlete&next=${next}&notice=email_verified`);
+    expect(
+      location(
+        await callback(
+          new Request(
+            'https://app.test/auth/callback?flow=signup&path=athlete&next=https%3A%2F%2Fevil.example&code=abc',
+          ),
+        ),
+      ),
+    ).toBe('https://app.test/app/onboarding?path=athlete&notice=email_verified');
   });
 
   it('missing code, foreign-browser code and junk are rejected with fixed codes', async () => {

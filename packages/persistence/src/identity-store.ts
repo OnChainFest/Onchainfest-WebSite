@@ -257,6 +257,29 @@ export class IdentityStore {
   }
 
   /**
+   * ONCF-04: the same rule keyed by athlete, to name registrations for competition staff. Only
+   * ACTIVE athletes whose profile is PUBLIC or AUTHENTICATED are returned; slug and display name only.
+   */
+  visibleAthletes(
+    athleteIds: readonly string[],
+  ): Promise<Map<string, { slug: string; displayName: string }>> {
+    if (athleteIds.length === 0) return Promise.resolve(new Map());
+    return this.tx(async (ctx) => {
+      const { rows } = await sql<{ athlete_id: string; slug: string; display_name: string }>`
+        SELECT a.id AS athlete_id, s.slug, p.display_name
+        FROM identity.athlete a
+        JOIN identity.v_athlete_current c ON c.athlete_id = a.id AND c.status = 'ACTIVE'
+        JOIN identity.v_athlete_slug_current s ON s.athlete_id = a.id
+        JOIN identity.athlete_profile p ON p.athlete_id = a.id
+          AND p.profile_visibility IN ('PUBLIC', 'AUTHENTICATED')
+        WHERE a.id IN (${sql.join([...athleteIds])})`.execute(ctx.trx);
+      return new Map(
+        rows.map((r) => [r.athlete_id, { slug: r.slug, displayName: r.display_name }]),
+      );
+    });
+  }
+
+  /**
    * ONCF-02: the person behind an athlete profile address, for organization invitations. Only
    * ACTIVE athletes with a PUBLIC or AUTHENTICATED profile resolve; anything else is undefined
    * (indistinguishable from an unknown address).

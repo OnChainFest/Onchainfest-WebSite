@@ -81,6 +81,26 @@ describe('sign up screen', () => {
   });
 });
 
+describe('ONCF-04 continuation through sign-up', () => {
+  const next = '/app/register/autumn-open/men-singles';
+  const enc = encodeURIComponent(next);
+
+  it('sign-in → create account → lane → form keeps a safe next; unsafe ones are dropped', async () => {
+    expect(html(await SignIn(sp({ next })))).toContain(`href="/signup?next=${enc}"`);
+    const chooser = html(await SignUp(sp({ next })));
+    expect(chooser).toContain(`href="/signup?path=athlete&amp;next=${enc}"`);
+    expect(chooser).toContain(`href="/signin?next=${enc}"`);
+    const formPage = html(await SignUp(sp({ path: 'athlete', next })));
+    expect(formPage).toContain(`name="next" value="${next}"`);
+    for (const bad of ['//evil.example', 'https://evil.example/app', '/api/x']) {
+      const out = html(await SignUp(sp({ path: 'athlete', next: bad })));
+      expect(out).not.toContain('name="next"');
+      expect(out).not.toContain('evil');
+      expect(html(await SignIn(sp({ next: bad })))).toContain('href="/signup"');
+    }
+  });
+});
+
 describe('reset password screen', () => {
   it('without a recovery session shows the invalid state and no password form', async () => {
     const out = html(await Reset(sp({})));

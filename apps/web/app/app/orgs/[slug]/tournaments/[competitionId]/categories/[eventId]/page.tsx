@@ -164,6 +164,9 @@ export default async function CategoryPage({
             {e.counts.waitlisted > 0 ? (
               <span className="mono muted small">{e.counts.waitlisted} waitlisted</span>
             ) : null}
+            <a className="btn btn-ghost btn-sm" href={`${base}/registrations?category=${e.id}`}>
+              Manage entries →
+            </a>
           </section>
           <section className="tb-panel" aria-labelledby="lc-h">
             <h3 id="lc-h" className="mono muted">

@@ -10,6 +10,7 @@ import {
   type PublicEvent,
   type StructureRound,
 } from '../../../../../_lib/competition';
+import { RegistrationCtaPanel } from '../../../../../_lib/registration-cta';
 import { Unavailable } from '../../../../../_lib/trust';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,11 @@ export default async function EventPage({ params }: Params) {
         {e.waitlistCount > 0 && ` · ${e.waitlistCount} on the waitlist`}
         {e.participantCount > 0 && ` · field locked with ${e.participantCount} participants`}
       </p>
+      <RegistrationCtaPanel
+        event={e}
+        competitionStatus={d.competition.status}
+        competitionSlug={d.competition.slug}
+      />
       <aside
         style={{
           background: '#f3f4f6',

@@ -2,6 +2,7 @@ import { AuthShell } from '../../../_product/auth-shell';
 import { Flash } from '../../../_product/flash';
 import { SubmitButton } from '../../../_product/submit-button';
 import { resendConfirmationAction } from '../../../_lib/auth/actions';
+import { validateContinuationRoute } from '../../../_lib/auth/continuation';
 import { parseOnboardingHint } from '../../../_lib/auth/onboarding';
 import { one, type SearchParams } from '../../../_lib/search-params';
 
@@ -10,6 +11,7 @@ export const metadata = { title: 'Confirm your email · OnChainFest' };
 export default async function ConfirmEmailPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const path = parseOnboardingHint(one(params.path));
+  const next = validateContinuationRoute(one(params.next));
   return (
     <AuthShell
       eyebrow="Verify email"
@@ -24,6 +26,7 @@ export default async function ConfirmEmailPage({ searchParams }: { searchParams:
       </p>
       <form action={resendConfirmationAction} className="stack">
         {path !== null ? <input type="hidden" name="path" value={path} /> : null}
+        {next !== null ? <input type="hidden" name="next" value={next} /> : null}
         <label className="field" style={{ marginBottom: 0 }}>
           <span>Didn’t get it? Resend to</span>
           <input
@@ -40,7 +43,8 @@ export default async function ConfirmEmailPage({ searchParams }: { searchParams:
         </SubmitButton>
       </form>
       <p className="form-foot">
-        Already confirmed? <a href="/signin">Sign in</a>
+        Already confirmed?{' '}
+        <a href={next === null ? '/signin' : `/signin?${new URLSearchParams({ next })}`}>Sign in</a>
       </p>
     </AuthShell>
   );

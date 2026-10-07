@@ -27,6 +27,7 @@ type EventSummaryRow = {
   slug: string;
   name: string;
   status: PublicEventSummary['status'];
+  entrant_kind: PublicEventSummary['entrantKind'];
   sport_code: string;
   sport_name: string;
   discipline_code: string;
@@ -63,6 +64,7 @@ function summary(r: EventSummaryRow): PublicEventSummary {
     slug: r.slug,
     name: r.name,
     status: r.status,
+    entrantKind: r.entrant_kind,
     sport: { code: r.sport_code, name: r.sport_name },
     discipline: { code: r.discipline_code, name: r.discipline_name, version: r.discipline_version },
     format: {
