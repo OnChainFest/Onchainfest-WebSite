@@ -1187,3 +1187,1083 @@
     flex-wrap: wrap;
   }
 }
+
+/* ── Tournaments (ONCF-03B) ─────────────────────────────── */
+.oc .tb-status {
+  --tone: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 12%, rgba(5, 6, 8, 0.7));
+  color: var(--white);
+  white-space: nowrap;
+}
+.oc .tb-status > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.oc .tb-status[data-status='DRAFT'] {
+  --tone: var(--gold);
+}
+.oc .tb-status[data-status='PUBLISHED'],
+.oc .tb-status[data-status='REGISTRATION_OPEN'] {
+  --tone: var(--cyan);
+}
+.oc .tb-status[data-status='ACTIVE'],
+.oc .tb-status[data-status='IN_PROGRESS'] {
+  --tone: var(--green);
+}
+.oc .tb-status[data-status='ACTIVE'] > span,
+.oc .tb-status[data-status='IN_PROGRESS'] > span,
+.oc .tb-status[data-status='REGISTRATION_OPEN'] > span {
+  box-shadow: 0 0 0 0 var(--tone);
+  animation: tb-live 1.8s ease-out infinite;
+}
+@keyframes tb-live {
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+.oc .tb-status[data-status='REGISTRATION_CLOSED'],
+.oc .tb-status[data-status='FIELD_LOCKED'] {
+  --tone: var(--violet);
+}
+.oc .tb-status[data-status='COMPLETED'] {
+  --tone: var(--muted);
+}
+.oc .tb-status[data-status='CANCELLED'] {
+  --tone: var(--danger);
+}
+
+/* Artwork */
+.oc .tb-art {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.9rem;
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(
+      circle at 85% 15%,
+      color-mix(in srgb, var(--brand) 55%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(circle at 5% 100%, rgba(124, 60, 255, 0.28), transparent 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 22%, #07090d), #050608 70%);
+}
+.oc .tb-art[data-status='CANCELLED'],
+.oc .tb-art[data-status='COMPLETED'] {
+  filter: saturate(0.25);
+}
+.oc .tb-art-hero {
+  aspect-ratio: auto;
+  min-height: 240px;
+}
+.oc .tb-court {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1.2;
+  transform: perspective(500px) rotateX(38deg) scale(1.25) translateY(14%);
+  transform-origin: 50% 100%;
+}
+.oc .tb-art-top {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.oc .tb-stub {
+  position: relative;
+  align-self: flex-start;
+  display: grid;
+  justify-items: center;
+  min-width: 64px;
+  padding: 0.45rem 0.6rem 0.5rem;
+  background: var(--white);
+  color: var(--ink);
+  line-height: 1;
+}
+.oc .tb-stub strong {
+  font-size: 1.9rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+.oc .tb-stub .mono {
+  font-size: 0.62rem;
+  margin-top: 0.2rem;
+}
+.oc .tb-stub-tbd {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+}
+.oc .tb-glyph {
+  --hue: 190;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #050608;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.55), transparent 40%),
+    linear-gradient(135deg, hsl(var(--hue) 90% 62%), hsl(calc(var(--hue) + 40) 80% 42%));
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+/* Breadcrumbs, headings */
+.oc-app .tb-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--faint);
+  margin-bottom: 1.25rem;
+}
+.oc-app .tb-crumbs a {
+  color: var(--muted);
+}
+.oc-app .tb-crumbs a:hover {
+  color: var(--white);
+}
+.oc-app .tb-h {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.oc-app .tb-h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+.oc-app .tb-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  font-size: 0.55em;
+  vertical-align: middle;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.oc-app .tb-page-head {
+  margin-bottom: 1.5rem;
+}
+
+/* Hub */
+.oc-app .tb-hub-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.oc-app .tb-group-section {
+  margin-bottom: 2.5rem;
+}
+.oc-app .tb-group-section > h3 {
+  margin: 0 0 1rem;
+}
+.oc-app .tb-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+}
+.oc-app .tb-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  transition:
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.oc-app .tb-card:hover {
+  border-color: var(--brand);
+  transform: translateY(-2px);
+}
+.oc-app .tb-card-body {
+  flex: 1;
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  padding: 1rem 1.1rem 1.1rem;
+}
+.oc-app .tb-card-title {
+  font-size: 1.35rem;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+.oc-app .tb-card-meta {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+}
+.oc-app .tb-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+.oc .tb-pill {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.oc-app .tb-card-new {
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+.oc .tb-plus {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--brand);
+  border-radius: 50%;
+  color: var(--brand);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.oc-app .tb-first {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+}
+.oc-app .tb-first-art .tb-art {
+  height: 100%;
+  min-height: 260px;
+  aspect-ratio: auto;
+}
+.oc-app .tb-first-body {
+  display: grid;
+  gap: 1.25rem;
+  align-content: center;
+  justify-items: start;
+  padding: clamp(1.5rem, 4vw, 3rem);
+}
+.oc-app .tb-first-body h3 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.6vw, 2.6rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+}
+.oc-app .tb-mini-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.oc-app .tb-mini-steps .mono {
+  display: inline-block;
+  width: 2.2rem;
+  color: var(--brand);
+}
+
+/* Builder rail */
+.oc-app .tb-rail {
+  list-style: none;
+  margin: 0 0 2rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .tb-rail li {
+  border-top: 2px solid rgba(255, 255, 255, 0.1);
+}
+.oc-app .tb-rail li[data-state='done'] {
+  border-top-color: var(--green);
+}
+.oc-app .tb-rail li[data-state='current'] {
+  border-top-color: var(--brand);
+}
+.oc-app .tb-rail li > a,
+.oc-app .tb-rail li:not(:has(a)) {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  padding: 0.9rem 0.9rem 1rem 0;
+}
+.oc-app .tb-rail li[data-state='todo'] {
+  color: var(--faint);
+}
+.oc-app .tb-rail-n {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-strong);
+}
+.oc-app .tb-rail li[data-state='done'] .tb-rail-n {
+  border-color: var(--green);
+  color: var(--green);
+}
+.oc-app .tb-rail li[data-state='current'] .tb-rail-n {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--ink);
+}
+.oc-app .tb-rail-t {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.oc-app .tb-rail-t strong {
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  font-size: 0.95rem;
+}
+
+/* Builder forms */
+.oc-app .tb-builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: start;
+}
+.oc-app .tb-form {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.oc .tb-group {
+  margin: 0;
+  padding: 1.25rem 0 0.25rem;
+  border: 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.oc .tb-group > legend {
+  padding: 0 0.6rem 0 0;
+  color: var(--brand);
+}
+.oc .tb-group .field:last-child {
+  margin-bottom: 0.5rem;
+}
+.oc .tb-name input {
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.oc .field > .tb-address {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #07090d;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: inherit;
+}
+.oc .field > .tb-address > .mono {
+  padding-left: 0.9rem;
+  white-space: nowrap;
+  font-size: 0.66rem;
+}
+.oc .field > .tb-address input {
+  border: 0;
+  padding-left: 0.3rem;
+  background: transparent;
+  min-width: 0;
+}
+.oc .field > .tb-address:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px var(--cyan);
+}
+.oc .field > .tb-address input:focus {
+  box-shadow: none;
+}
+.oc .tb-row-wide {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+.oc-app .tb-form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.oc .tb-seg {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  width: max-content;
+  max-width: 100%;
+}
+.oc .tb-seg label {
+  position: relative;
+  cursor: pointer;
+}
+.oc .tb-seg input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.oc .tb-seg span {
+  display: block;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.oc .tb-seg label + label span {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+.oc .tb-seg input:checked + span {
+  background: var(--brand);
+  color: var(--ink);
+  font-weight: 750;
+}
+.oc .tb-seg input:focus-visible + span {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+.oc .tb-more {
+  margin: 0 0 1rem;
+}
+.oc .tb-more > summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+}
+.oc-app .tb-locked {
+  margin: 0;
+  color: var(--gold);
+}
+.oc .tb-locked-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px dashed var(--line-strong);
+}
+.oc .tb-lock {
+  color: var(--gold);
+}
+.oc .tb-lock::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 0.45rem;
+  border: 1px solid currentColor;
+  border-top-width: 3px;
+}
+
+/* Poster preview */
+.oc-app .tb-aside {
+  position: sticky;
+  top: 88px;
+}
+.oc-app .tb-poster {
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+}
+.oc-app .tb-poster-body {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.1rem 1.2rem 1.3rem;
+}
+.oc-app .tb-poster-body strong {
+  font-size: 1.6rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+/* Tournament detail */
+.oc-app .tb-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.6fr);
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  margin-bottom: 1.75rem;
+}
+.oc-app .tb-hero-body {
+  display: grid;
+  gap: 1.1rem;
+  align-content: center;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  min-width: 0;
+}
+.oc-app .tb-hero-title {
+  margin: 0;
+  font-size: clamp(2rem, 4.6vw, 3.6rem);
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+  font-weight: 900;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.oc .tb-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.9rem 1.5rem;
+}
+.oc .tb-facts-col {
+  grid-template-columns: 1fr;
+}
+.oc .tb-fact {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.oc-app .tb-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.oc-app .tb-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+}
+.oc-app .tb-side {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 1rem;
+}
+.oc-app .tb-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+}
+.oc-app .tb-panel > h3 {
+  margin: 0;
+}
+.oc-app .tb-check {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+}
+.oc-app .tb-check li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  color: var(--muted);
+}
+.oc-app .tb-check li > span[aria-hidden] {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+}
+.oc-app .tb-check li[data-done='true'] {
+  color: var(--white);
+}
+.oc-app .tb-check li[data-done='true'] > span[aria-hidden] {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--ink);
+}
+.oc-app .tb-actions {
+  display: grid;
+  gap: 0.6rem;
+}
+.oc .tb-cancel > summary {
+  width: 100%;
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: #ffc2cb;
+}
+.oc .tb-cancel-form {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: rgba(255, 93, 119, 0.05);
+}
+.oc .tb-cancel-form .field {
+  margin: 0;
+}
+
+/* Lifecycle track */
+.oc .tb-track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.oc .tb-track li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--faint);
+}
+.oc .tb-track li::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.oc .tb-track li[data-state='done'] {
+  color: var(--green);
+}
+.oc .tb-track li[data-state='done']::before {
+  background: currentColor;
+}
+.oc .tb-track li[data-state='current'] {
+  color: var(--white);
+}
+.oc .tb-track li[data-state='current']::before {
+  border-color: var(--brand);
+  background: var(--brand);
+  box-shadow: 0 0 12px var(--brand);
+}
+.oc .tb-track li[data-state='off'] {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.oc .tb-track li[data-state='cancelled'] {
+  color: var(--danger);
+}
+.oc .tb-track li[data-state='cancelled']::before {
+  background: currentColor;
+}
+/* Category cards */
+.oc-app .tb-cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+.oc-app .tb-cat {
+  display: grid;
+  gap: 0.9rem;
+  height: 100%;
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  transition: border-color 0.18s ease;
+}
+.oc-app .tb-cat:hover {
+  border-color: var(--brand);
+}
+.oc-app .tb-cat[data-status='CANCELLED'] {
+  opacity: 0.55;
+}
+.oc-app .tb-cat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.oc-app .tb-cat-id {
+  display: grid;
+  min-width: 0;
+}
+.oc-app .tb-cat-id strong {
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.oc .tb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.oc .tb-chips .chip {
+  padding: 0.25rem 0.5rem;
+}
+.oc-app .tb-cat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem 1rem;
+  font-size: 0.9rem;
+}
+.oc-app .tb-capacity {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.oc .tb-meter {
+  display: block;
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.oc .tb-meter span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.oc-app .tb-cat-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+.oc-app .tb-card-foot .link,
+.oc-app .tb-cat-foot .link {
+  white-space: nowrap;
+}
+.oc-app .tb-slot {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 3rem 1.5rem;
+  border: 1px dashed var(--line-strong);
+  text-align: center;
+  transition: border-color 0.18s ease;
+}
+.oc-app .tb-slot:hover {
+  border-color: var(--brand);
+}
+.oc-app .tb-slot strong {
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+}
+.oc-app .tb-cat-hero {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.4rem;
+  margin-bottom: 1.75rem;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      color-mix(in srgb, var(--brand) 22%, transparent),
+      transparent 50%
+    ),
+    var(--ink-3);
+}
+.oc-app .tb-cat-hero-id {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  flex: 1;
+}
+.oc-app .tb-cat-hero > .tb-status {
+  align-self: flex-start;
+}
+.oc-app .tb-field-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.oc-app .tb-field-count strong {
+  font-size: 2.6rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+/* Mobile action dock (detail) */
+.oc-app .tb-dock {
+  display: none;
+}
+
+/* Category builder */
+.oc .cb-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.oc .cb-tile {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.oc .cb-tile:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+.oc .cb-tile input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.oc .cb-tile[data-on='true'] {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 9%, var(--ink-3));
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+.oc .cb-tile:has(input:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.oc .cb-tile strong {
+  font-size: 1.02rem;
+  letter-spacing: -0.02em;
+}
+.oc .cb-step[data-state='locked'] {
+  opacity: 0.4;
+}
+.oc .cb-step[data-state='locked'] > legend::after {
+  content: ' — pick the step above first';
+  color: var(--faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.oc .cb-step[data-state='done'] > legend {
+  color: var(--green);
+}
+.oc .cb-summary {
+  color: var(--white);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}
+.oc .cb-settings[data-locked='true'] {
+  opacity: 0.55;
+}
+.oc .cb-people {
+  display: flex;
+  gap: 4px;
+  height: 28px;
+  align-items: flex-end;
+}
+.oc .cb-people span {
+  width: 14px;
+  height: 22px;
+  border-radius: 7px 7px 2px 2px;
+  background: var(--brand);
+  box-shadow: 0 -9px 0 -3px var(--brand);
+  margin-top: 8px;
+}
+.oc .cb-format-art {
+  width: 80px;
+  height: 40px;
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 1.4;
+}
+.oc .cb-config {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0 0.9rem;
+}
+.oc .cb-check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.oc .cb-check input {
+  width: auto;
+  min-height: auto;
+}
+.oc-app .cb-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 1px solid var(--brand);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--brand) 25%, transparent),
+      transparent 55%
+    ),
+    var(--ink-3);
+}
+.oc-app .cb-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+.oc-app .cb-card-head > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+.oc-app .cb-card-head strong {
+  font-size: 1.3rem;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.oc-app .cb-ph-glyph {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px dashed var(--line-strong);
+}
+.oc .cb-ph {
+  border-style: dashed;
+  color: var(--faint);
+}
+.oc-app .cb-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+@media (max-width: 1100px) {
+  .oc-app .tb-rail {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .oc-app .tb-rail li {
+    flex: 0 0 auto;
+    min-width: 170px;
+  }
+}
+@media (max-width: 900px) {
+  .oc-app .tb-hub-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .oc-app .tb-first,
+  .oc-app .tb-hero,
+  .oc-app .tb-builder,
+  .oc-app .tb-layout {
+    grid-template-columns: 1fr;
+  }
+  .oc-app .tb-art-hero {
+    min-height: 150px;
+  }
+  .oc-app .tb-first-art .tb-art {
+    min-height: 150px;
+  }
+  .oc-app .tb-aside,
+  .oc-app .tb-side {
+    position: static;
+  }
+  /* A category's state and next action come before its long settings form on small screens. */
+  .oc-app .tb-layout-ops > .tb-side {
+    order: -1;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  /* Profile preview is decorative; on phones the rail carries the context. */
+  .oc-app .tb-builder:not(.cb) > .tb-aside {
+    display: none;
+  }
+  /* Category builder: the assembling card stays visible as a compact strip above the steps. */
+  .oc-app .cb > .cb-preview {
+    order: -1;
+    position: sticky;
+    top: 68px;
+    z-index: 5;
+    margin: 0 -1rem;
+    padding: 0.5rem 1rem;
+    background: rgba(5, 6, 8, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .oc-app .cb .cb-card {
+    padding: 0.6rem 0;
+    gap: 0.5rem;
+    border: 0;
+    background: none;
+  }
+  .oc-app .cb .cb-card-head strong {
+    font-size: 1rem;
+  }
+  .oc-app .cb .cb-card .tb-glyph,
+  .oc-app .cb .cb-ph-glyph {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 0.8rem;
+  }
+  .oc-app .cb .cb-card-foot {
+    display: none;
+  }
+  .oc .cb-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .oc .tb-row-wide {
+    grid-template-columns: 1fr;
+  }
+  .oc-app .tb-cat-hero {
+    flex-wrap: wrap;
+  }
+  .oc-app .tb-cats,
+  .oc-app .tb-cards {
+    grid-template-columns: 1fr;
+  }
+  .oc-app .tb-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: rgba(10, 13, 18, 0.95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line-strong);
+  }
+  .oc-app main:has(.tb-dock) {
+    padding-bottom: 7rem;
+  }
+}
+@media (max-width: 420px) {
+  .oc .tb-seg span {
+    padding: 0.7rem 0.7rem;
+  }
+}

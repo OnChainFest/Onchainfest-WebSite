@@ -266,11 +266,14 @@ describe('organization access', () => {
 describe('dashboard uses real data only', () => {
   it('counts members from the roster, shows pending to admins and a real empty tournament state', async () => {
     platform('OWNER', ALL);
+    // Organizers read the managed list (ONCF-03B), which includes drafts.
+    routes[`GET /v1/organizations/${ORG}/competitions/manage`] = () => json(200, { items: [] });
     const out = html(await Dashboard({ ...p(), ...sp() }));
     expect(out).toMatch(/Active members<\/span><strong>3<\/strong>/);
     expect(out).toMatch(/Pending invitations<\/span><strong>1<\/strong>/);
     expect(out).toMatch(/Tournaments<\/span><strong>0<\/strong>/);
-    expect(out).toContain('No published tournaments yet');
+    expect(out).toContain('No tournaments yet');
+    expect(out).toContain('href="/app/orgs/club-uno/tournaments/new"');
     expect(out.toLowerCase()).not.toContain('coming soon');
   });
 

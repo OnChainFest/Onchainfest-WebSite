@@ -35,6 +35,7 @@ export function OrgMark({
 
 const TABS = [
   { href: '', label: 'Overview' },
+  { href: '/tournaments', label: 'Tournaments', needs: ['ORG_MANAGE_COMPETITIONS'] },
   { href: '/profile', label: 'Profile' },
   { href: '/members', label: 'Members' },
   { href: '/invitations', label: 'Invitations', needs: ['ORG_INVITE_MEMBER', 'ORG_VIEW_PRIVATE'] },

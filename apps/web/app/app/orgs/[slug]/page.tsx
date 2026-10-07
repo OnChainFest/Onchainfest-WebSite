@@ -7,6 +7,8 @@ import {
   ROLE_LABEL,
 } from '../../../_lib/org-context';
 import { one, type SearchParams } from '../../../_lib/search-params';
+import { COMPETITION_STATUS_LABEL } from '../../../_lib/tournament-builder';
+import { tournamentsFor } from '../../../_lib/tournament-context';
 import { Flash } from '../../../_product/flash';
 
 export const metadata = { title: 'Organization · OnChainFest' };
@@ -29,7 +31,20 @@ export default async function OrgDashboard({
   const result = await orgContext(slug);
   if (result.kind !== 'ok') notFound();
   const { ctx } = result;
-  const [members, competitions] = await Promise.all([roster(ctx), publicCompetitions(slug)]);
+  // Organizers see every tournament (drafts included); everyone else sees the public list.
+  const manages = ctx.permissions.has('ORG_MANAGE_COMPETITIONS');
+  const [members, tournaments] = await Promise.all([
+    roster(ctx),
+    manages ? tournamentsFor(ctx) : publicCompetitions(slug),
+  ]);
+  const competitions = tournaments?.map((c) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    startsAt: c.startsAt,
+    href: manages ? `/app/orgs/${slug}/tournaments/${c.id}` : `/competitions/${c.slug}`,
+  }));
+  const drafts = competitions?.filter((c) => c.status === 'DRAFT').length ?? 0;
 
   const active = members?.filter((m) => m.status === 'ACTIVE') ?? [];
   const pending = members?.filter((m) => m.status === 'INVITED') ?? [];
@@ -83,8 +98,14 @@ export default async function OrgDashboard({
         ) : null}
         <div className="stat">
           <span className="mono muted">Tournaments</span>
-          <strong>{competitions === null ? '—' : competitions.length}</strong>
-          <span className="muted small">Published</span>
+          <strong>{competitions === undefined ? '—' : competitions.length}</strong>
+          {manages ? (
+            <a className="link mono small" href={`${base}/tournaments`}>
+              {drafts > 0 ? `${drafts} draft${drafts === 1 ? '' : 's'} · ` : ''}Open hub →
+            </a>
+          ) : (
+            <span className="muted small">Published</span>
+          )}
         </div>
         <div className="stat">
           <span className="mono muted">Public profile</span>
@@ -102,13 +123,19 @@ export default async function OrgDashboard({
           <h2 id="t-h" className="mono muted">
             Tournaments
           </h2>
-          {competitions === null ? (
+          {competitions === undefined ? (
             <p className="muted">Tournaments are unavailable right now.</p>
           ) : competitions.length === 0 ? (
             <div className="empty">
               <span className="empty-mark" aria-hidden="true" />
-              <strong>No published tournaments yet</strong>
-              <p className="muted">Published tournaments appear here and on your public page.</p>
+              <strong>{manages ? 'No tournaments yet' : 'No published tournaments yet'}</strong>
+              {manages ? (
+                <a className="link mono" href={`${base}/tournaments/new`}>
+                  Create your first tournament →
+                </a>
+              ) : (
+                <p className="muted">Published tournaments appear here and on your public page.</p>
+              )}
             </div>
           ) : (
             <ul className="list">
@@ -116,9 +143,11 @@ export default async function OrgDashboard({
                 <li key={c.id}>
                   <span>
                     <strong>{c.name}</strong>{' '}
-                    <span className="tag mono">{c.status.toLowerCase()}</span>
+                    <span className="tag mono">
+                      {(COMPETITION_STATUS_LABEL as Record<string, string>)[c.status] ?? c.status}
+                    </span>
                   </span>
-                  <a className="link mono" href={`/competitions/${c.slug}`}>
+                  <a className="link mono" href={c.href}>
                     {c.startsAt ? dateFmt.format(new Date(c.startsAt)) : 'Open'} →
                   </a>
                 </li>

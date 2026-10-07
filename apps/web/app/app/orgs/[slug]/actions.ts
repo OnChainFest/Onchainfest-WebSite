@@ -1,11 +1,11 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import type { AuthErrorCode, AuthNoticeCode } from '../../../_lib/auth/messages';
+import type { AuthErrorCode } from '../../../_lib/auth/messages';
 import { siteUrl } from '../../../_lib/auth/request-meta';
-import { verifiedSession } from '../../../_lib/auth/session';
-import { idempotencyKey, normalizeSlugInput, SLUG_RE } from '../../../_lib/onboarding-input';
-import { apiRequest, loadAccountState, type ApiResult } from '../../../_lib/platform';
+import { idempotencyKey, normalizeSlugInput } from '../../../_lib/onboarding-input';
+import { apiRequest } from '../../../_lib/platform';
+import { context, errorCode, field, optional, to, UUID_RE } from './action-support';
 
 /**
  * ONCF-02 organization administration actions. Each one re-verifies the session, resolves the
@@ -14,63 +14,7 @@ import { apiRequest, loadAccountState, type ApiResult } from '../../../_lib/plat
  * the authority. Errors map to the fixed message vocabulary.
  */
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ROLES = ['OWNER', 'ADMIN', 'STAFF', 'COACH', 'OFFICIAL', 'ATHLETE', 'MEMBER'] as const;
-
-const field = (form: FormData, name: string) => {
-  const v = form.get(name);
-  return typeof v === 'string' ? v : '';
-};
-
-type Area = 'profile' | 'members' | 'invitations' | 'settings' | '';
-
-function to(
-  slug: string,
-  area: Area,
-  params: { error?: AuthErrorCode; notice?: AuthNoticeCode },
-): never {
-  const q = params.error !== undefined ? `error=${params.error}` : `notice=${params.notice}`;
-  return redirect(`/app/orgs/${slug}${area === '' ? '' : `/${area}`}?${q}`);
-}
-
-function errorCode(result: Exclude<ApiResult<unknown>, { kind: 'ok' }>): AuthErrorCode {
-  if (result.kind === 'unavailable' || result.kind === 'unauthenticated')
-    return 'platform_unavailable';
-  switch (result.code) {
-    case 'FORBIDDEN':
-      return 'not_permitted';
-    case 'SLUG_TAKEN':
-      return 'profile_address_taken';
-    case 'SLUG_INVALID':
-      return 'profile_address_invalid';
-    case 'ALREADY_EXISTS':
-      return 'already_member';
-    case 'INVITATION_INVALID':
-      return 'invitation_invalid';
-    case 'NOT_FOUND':
-      return 'athlete_not_found';
-    case 'INVALID_TRANSITION':
-      return 'invalid_change';
-    default:
-      return result.status === 403 ? 'not_permitted' : 'profile_invalid';
-  }
-}
-
-/** Session + the caller's ACTIVE membership of `slug` (the organization id comes from the API). */
-async function context(slug: string) {
-  if (!SLUG_RE.test(slug)) redirect('/app');
-  const session = await verifiedSession();
-  if (session === null) redirect(`/signin?error=session_expired&next=%2Fapp%2Forgs%2F${slug}`);
-  const state = await loadAccountState(session.accessToken);
-  if (state.kind === 'unauthenticated') redirect('/signin?error=session_expired&next=%2Fapp');
-  if (state.kind === 'unavailable') to(slug, '', { error: 'platform_unavailable' });
-  const memberships = state.state.organizations.filter((o) => o.slug === slug);
-  const org = memberships[0];
-  if (org === undefined) redirect('/app');
-  return { token: session.accessToken, org, memberships };
-}
-
-const optional = (v: string) => (v.trim() === '' ? null : v.trim());
 
 export async function updateProfileAction(form: FormData): Promise<never> {
   const slug = field(form, 'slug');

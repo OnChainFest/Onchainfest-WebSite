@@ -30,6 +30,14 @@ export const ERROR_MESSAGES = {
   invalid_change: 'That change isn’t possible from the member’s current status.',
   invitation_invalid:
     'This invitation isn’t valid — it may be used, revoked, expired or meant for someone else.',
+  tournament_address_taken: 'That tournament address is already in use. Try another.',
+  tournament_transition: 'That step isn’t available in the current state. The page shows what is.',
+  tournament_invalid:
+    'Check the details: dates must be in order, and category dates must fall within the tournament’s.',
+  tournament_not_found: 'That tournament or category no longer exists.',
+  catalog_combination:
+    'That sport, format and entrant combination can’t run. Pick from the options shown.',
+  reason_required: 'Give a short reason. Participants and staff will see it.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -51,6 +59,17 @@ export const NOTICE_MESSAGES = {
   joined: 'You’ve joined the organization.',
   invitation_declined: 'Invitation declined.',
   left_organization: 'You’ve left the organization.',
+  tournament_created: 'Tournament created as a draft. Add its categories next.',
+  tournament_updated: 'Tournament details saved.',
+  published: 'Tournament published. It now appears on your public page.',
+  tournament_started: 'Tournament is live.',
+  tournament_completed: 'Tournament marked completed.',
+  tournament_cancelled: 'Tournament cancelled.',
+  category_added: 'Category added.',
+  category_updated: 'Category saved.',
+  registration_opened: 'Registration is open.',
+  registration_closed: 'Registration is closed.',
+  category_cancelled: 'Category cancelled.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;
