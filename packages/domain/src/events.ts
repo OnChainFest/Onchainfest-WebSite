@@ -62,6 +62,13 @@ export const DomainEventType = {
   AdvancementOverridden: 'AdvancementOverridden',
   AdvancementOverrideRevoked: 'AdvancementOverrideRevoked',
   DynamicContestsMaterialized: 'DynamicContestsMaterialized',
+  // ONCF-05E-A resources and availability (ADR-0067, ADR-0068)
+  ResourceCreated: 'ResourceCreated',
+  ResourceRevised: 'ResourceRevised',
+  ResourceRetired: 'ResourceRetired',
+  ResourceReactivated: 'ResourceReactivated',
+  AvailabilityAdded: 'AvailabilityAdded',
+  AvailabilityRevoked: 'AvailabilityRevoked',
   EventScoringPinned: 'EventScoringPinned',
   // BRT-05 competition operations (operational facts only — never results/verification)
   CompetitionCreated: 'CompetitionCreated',
@@ -181,6 +188,7 @@ export const AggregateType = {
   RULESET_VERSION: 'RULESET_VERSION',
   CLASSIFICATION_TEMPLATE_VERSION: 'CLASSIFICATION_TEMPLATE_VERSION',
   ADVANCEMENT_POLICY_VERSION: 'ADVANCEMENT_POLICY_VERSION',
+  RESOURCE: 'RESOURCE',
   COMPETITION: 'COMPETITION',
   EVENT: 'EVENT',
   REGISTRATION: 'REGISTRATION',

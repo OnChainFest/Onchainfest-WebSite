@@ -29,6 +29,7 @@ import {
   PersonPrincipalService,
   AdvancementStore,
   ContestResultService,
+  ResourceStore,
   PersonPrivateDataService,
   PrincipalKeyCeremony,
   ScoringStore,
@@ -207,6 +208,7 @@ export function buildServer(options: ApiOptions): ApiServer {
       reader: new CompetitionReader(options.db),
       scoring,
       advancement,
+      resources: new ResourceStore(options.db),
       results: new ContestResultService(
         options.db,
         scoring,

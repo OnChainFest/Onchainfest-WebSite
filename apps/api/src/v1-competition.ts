@@ -7,6 +7,7 @@ import type {
   RegistrationEntry,
   AdvancementStore,
   ContestResultService,
+  ResourceStore,
   ScoringStore,
   StructureStore,
   TeamStore,
@@ -41,6 +42,8 @@ export interface CompetitionV1Deps {
   readonly advancement?: AdvancementStore;
   /** ONCF-05D contest-result lifecycle (submit, accept, declare official, correct). */
   readonly results?: ContestResultService;
+  /** ONCF-05E-A competition resources and availability. */
+  readonly resources?: ResourceStore;
 }
 
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
@@ -1198,6 +1201,243 @@ export function registerCompetitionV1(
             idempotencyKey: key(request),
           }),
       );
+  }
+
+  // ───────────────────────────── resources & availability (ONCF-05E-A; COMP_STAFF) ─────────────────────────────
+
+  // Reads need COMP_VIEW_PRIVATE and changes COMP_EDIT, decided in the store from database facts.
+  // Availability answers only "is the resource intrinsically available" — no schedule, participant
+  // or dependency logic exists here (later 05E phases). Query values are strings (no coercion).
+  const resources = deps.resources;
+  if (resources !== undefined) {
+    const resourceTypes = [
+      'TENNIS_COURT',
+      'PADEL_COURT',
+      'BASKETBALL_COURT',
+      'BASKETBALL_HALF_COURT',
+      'BOWLING_LANE_PAIR',
+      'POOL',
+      'TRACK',
+      'ROAD_COURSE',
+      'OPEN_WATER_COURSE',
+      'CYCLING_COURSE',
+      'GOLF_COURSE',
+    ];
+    const resourceFields = {
+      label: { type: 'string', minLength: 1, maxLength: 80 },
+      attributes: { type: 'object', maxProperties: 16 },
+      capacity: { type: 'integer' },
+      exclusivityKeys: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 40 } },
+      venueOrganizationId: { type: ['string', 'null'], format: 'uuid' },
+      locationLabel: { type: ['string', 'null'], maxLength: 120 },
+      timezone: { type: ['string', 'null'], maxLength: 64 },
+    };
+    const reasonBody = obj({ reason: { type: 'string', minLength: 1, maxLength: 500 } }, [
+      'reason',
+    ]);
+    const hhmm = { type: 'string', maxLength: 5 };
+    const ymd = { type: 'string', maxLength: 10 };
+    const factSchema = {
+      oneOf: [
+        obj(
+          {
+            kind: { const: 'WEEKLY' },
+            weekday: { type: 'integer' },
+            start: hhmm,
+            end: hhmm,
+            validFrom: ymd,
+            validTo: ymd,
+          },
+          ['kind', 'weekday', 'start', 'end'],
+        ),
+        obj({ kind: { const: 'DATE_OPEN' }, date: ymd, start: hhmm, end: hhmm }, [
+          'kind',
+          'date',
+          'start',
+          'end',
+        ]),
+        obj({ kind: { const: 'DATE_CLOSED' }, date: ymd }, ['kind', 'date']),
+        obj(
+          {
+            kind: { enum: ['BLACKOUT', 'MAINTENANCE'] },
+            startsAt: { type: 'string', maxLength: 40 },
+            endsAt: { type: 'string', maxLength: 40 },
+            reason: { type: 'string', minLength: 1, maxLength: 500 },
+          },
+          ['kind', 'startsAt', 'endsAt', 'reason'],
+        ),
+      ],
+    };
+    route(
+      'GET',
+      '/v1/competitions/:competitionId/resources',
+      'COMP_STAFF',
+      { params: idParams('competitionId') },
+      async (request) =>
+        resources.listResources({
+          actorAccountId: requireAuth(request).accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+        }),
+    );
+    route(
+      'POST',
+      '/v1/competitions/:competitionId/resources',
+      'COMP_STAFF',
+      {
+        params: idParams('competitionId'),
+        headers: idempotencyHeaders,
+        body: obj({ typeCode: { enum: resourceTypes }, ...resourceFields }, ['typeCode', 'label']),
+      },
+      async (request, reply) => {
+        const { typeCode, ...resource } = body<{ typeCode: string; label: string }>(request);
+        const r = await resources.createResource({
+          actorAccountId: requireAuth(request).accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+          typeCode,
+          resource,
+          idempotencyKey: key(request),
+        });
+        reply.code(r.created ? 201 : 200);
+        return r;
+      },
+    );
+    route(
+      'GET',
+      '/v1/resources/:resourceId',
+      'COMP_STAFF',
+      { params: idParams('resourceId') },
+      async (request) =>
+        resources.getResource({
+          actorAccountId: requireAuth(request).accountId,
+          resourceId: params<{ resourceId: string }>(request).resourceId,
+        }),
+    );
+    route(
+      'PUT',
+      '/v1/resources/:resourceId',
+      'COMP_STAFF',
+      {
+        params: idParams('resourceId'),
+        headers: idempotencyHeaders,
+        body: obj(resourceFields, ['label']),
+      },
+      async (request) =>
+        resources.reviseResource({
+          actorAccountId: requireAuth(request).accountId,
+          resourceId: params<{ resourceId: string }>(request).resourceId,
+          resource: body<{ label: string }>(request),
+          idempotencyKey: key(request),
+        }),
+    );
+    for (const [path, status] of [
+      ['retire', 'RETIRED'],
+      ['reactivate', 'ACTIVE'],
+    ] as const)
+      route(
+        'POST',
+        `/v1/resources/:resourceId/${path}`,
+        'COMP_STAFF',
+        { params: idParams('resourceId'), headers: idempotencyHeaders, body: reasonBody },
+        async (request) =>
+          resources.setResourceStatus({
+            actorAccountId: requireAuth(request).accountId,
+            resourceId: params<{ resourceId: string }>(request).resourceId,
+            status,
+            reason: body<{ reason: string }>(request).reason,
+            idempotencyKey: key(request),
+          }),
+      );
+    route(
+      'GET',
+      '/v1/competitions/:competitionId/availability',
+      'COMP_STAFF',
+      { params: idParams('competitionId'), querystring: obj({ resource: uuid }) },
+      async (request) => {
+        const q = request.query as { resource?: string };
+        return resources.listAvailability(
+          defined({
+            actorAccountId: requireAuth(request).accountId,
+            competitionId: params<{ competitionId: string }>(request).competitionId,
+            resourceId: q.resource,
+          }),
+        );
+      },
+    );
+    route(
+      'POST',
+      '/v1/competitions/:competitionId/availability',
+      'COMP_STAFF',
+      {
+        params: idParams('competitionId'),
+        headers: idempotencyHeaders,
+        body: obj({ resourceId: { type: ['string', 'null'], format: 'uuid' }, fact: factSchema }, [
+          'resourceId',
+          'fact',
+        ]),
+      },
+      async (request, reply) => {
+        const b = body<{ resourceId: string | null; fact: never }>(request);
+        const r = await resources.addAvailability({
+          actorAccountId: requireAuth(request).accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+          resourceId: b.resourceId,
+          fact: b.fact,
+          idempotencyKey: key(request),
+        });
+        reply.code(r.created ? 201 : 200);
+        return r;
+      },
+    );
+    route(
+      'POST',
+      '/v1/availability/:availabilityId/revoke',
+      'COMP_STAFF',
+      { params: idParams('availabilityId'), headers: idempotencyHeaders, body: reasonBody },
+      async (request) =>
+        resources.revokeAvailability({
+          actorAccountId: requireAuth(request).accountId,
+          availabilityId: params<{ availabilityId: string }>(request).availabilityId,
+          reason: body<{ reason: string }>(request).reason,
+          idempotencyKey: key(request),
+        }),
+    );
+    const instantQuery = { type: 'string', maxLength: 40 };
+    route(
+      'GET',
+      '/v1/resources/:resourceId/availability',
+      'COMP_STAFF',
+      {
+        params: idParams('resourceId'),
+        querystring: obj({ from: instantQuery, to: instantQuery }, ['from', 'to']),
+      },
+      async (request) => {
+        const q = request.query as { from: string; to: string };
+        return resources.availability({
+          actorAccountId: requireAuth(request).accountId,
+          resourceId: params<{ resourceId: string }>(request).resourceId,
+          from: q.from,
+          to: q.to,
+        });
+      },
+    );
+    route(
+      'GET',
+      '/v1/resources/:resourceId/availability/check',
+      'COMP_STAFF',
+      {
+        params: idParams('resourceId'),
+        querystring: obj({ start: instantQuery, end: instantQuery }, ['start', 'end']),
+      },
+      async (request) => {
+        const q = request.query as { start: string; end: string };
+        return resources.check({
+          actorAccountId: requireAuth(request).accountId,
+          resourceId: params<{ resourceId: string }>(request).resourceId,
+          start: q.start,
+          end: q.end,
+        });
+      },
+    );
   }
 
   // ───────────────────────────── registration (SELF / COMP_STAFF) ─────────────────────────────
