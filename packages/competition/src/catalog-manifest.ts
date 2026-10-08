@@ -7,6 +7,7 @@ import type {
   ParticipationSpec,
 } from './catalog';
 import type { DisciplineCapabilitiesSpec } from './capabilities';
+import { RULESET_TEMPLATES, type RuleBasis, type RulesetSpec } from './ruleset';
 
 /**
  * The canonical OnChainFest sport catalog (ONCF-03A; eight sports since ONCF-05B). Catalog rows
@@ -35,6 +36,12 @@ export interface CatalogManifest {
     readonly name: string;
     /** Version history, oldest first: the engine each FormatVersion pins. */
     readonly versions: readonly { readonly engineId: string; readonly engineVersion: number }[];
+  }[];
+  /** ONCF-05C: Ruleset versions (how one contest is decided), version history oldest first. */
+  readonly rulesets?: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly versions: readonly { readonly spec: RulesetSpec; readonly basis: RuleBasis }[];
   }[];
 }
 
@@ -712,6 +719,11 @@ export const CANONICAL_CATALOG: CatalogManifest = {
       versions: [{ engineId: 'qualifying-knockout', engineVersion: 1 }],
     },
   ],
+  rulesets: RULESET_TEMPLATES.map((t) => ({
+    code: t.code,
+    name: t.name,
+    versions: [{ spec: t.spec, basis: t.basis }],
+  })),
 };
 
 /**

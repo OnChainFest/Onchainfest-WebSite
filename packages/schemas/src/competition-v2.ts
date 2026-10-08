@@ -325,3 +325,161 @@ export const ONCF05B_SCHEMAS: readonly BrRootSchema[] = [
   competitionPlanInputV2,
   competitionPlanV2,
 ];
+
+// ───────────────────────────── ONCF-05C ─────────────────────────────
+
+const shortValue: BrStringSchema = { type: 'string', maxLength: 64 };
+const entryPosition = {
+  participantId: uuid,
+  position: posInt(MAX_FIELD),
+  tied: { type: 'boolean' },
+} as const;
+
+/**
+ * `br:stage-classification@1` — the output of classification-engine/2 for one scope (a group, a
+ * heat round, a stage after round k). Deterministic, explainable; it is a PROPOSAL (ADR-0047): it
+ * becomes an official classification only when an authority submits it (ONCF-05D).
+ */
+export const stageClassificationV1 = root('br:stage-classification', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['engine', 'policy', 'scope', 'complete', 'inputs', 'entries', 'explanations'],
+  properties: {
+    engine: { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$', maxLength: 64 },
+    policy: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['code', 'version', 'specHash'],
+      properties: {
+        code: { type: 'string', pattern: '^[a-z0-9_-]{1,64}$' },
+        version: posInt(1000),
+        specHash: hashRef,
+      },
+    },
+    scope: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['eventId', 'stageKey'],
+      properties: { eventId: uuid, stageKey, groupKey, throughRound: posInt(100) },
+    },
+    complete: { type: 'boolean' },
+    inputs: {
+      ...setOf(
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['contestId'],
+          properties: { contestId: uuid, resultVersionId: uuid, contentHash: hashRef },
+        },
+        { sortBy: ['/contestId'], keyUnique: true },
+      ),
+      maxItems: MAX_FIELD,
+    },
+    entries: {
+      type: 'array',
+      maxItems: MAX_FIELD,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['participantId', 'position', 'tied', 'status', 'values'],
+        properties: {
+          ...entryPosition,
+          status: enumOf([
+            'CLASSIFIED',
+            'INCOMPLETE',
+            'PENDING',
+            'DNF',
+            'DNS',
+            'DQ',
+            'NOT_PLACED',
+            'PULLED',
+          ]),
+          values: {
+            type: 'array',
+            maxItems: 32,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['key', 'value'],
+              properties: { key: { type: 'string', maxLength: 80 }, value: shortValue },
+            },
+          },
+          decidedBy: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['criterion', 'kind'],
+            properties: {
+              criterion: { type: 'integer', minimum: 0, maximum: 64 },
+              kind: { type: 'string', maxLength: 80 },
+            },
+          },
+        },
+      },
+    },
+    explanations: {
+      type: 'array',
+      maxItems: MAX_FIELD,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['participants', 'criterion', 'kind', 'values'],
+        properties: {
+          participants: { type: 'array', items: uuid, maxItems: MAX_FIELD },
+          criterion: { type: 'integer', minimum: 0, maximum: 64 },
+          kind: { type: 'string', maxLength: 80 },
+          values: {
+            type: 'array',
+            maxItems: MAX_FIELD,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['participantId', 'value'],
+              properties: { participantId: uuid, value: shortValue },
+            },
+          },
+        },
+      },
+    },
+    subsets: {
+      type: 'array',
+      maxItems: 256,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['attribute', 'value', 'entries'],
+        properties: {
+          attribute: { type: 'string', pattern: '^[a-z][A-Za-z0-9]{0,31}$' },
+          value: shortValue,
+          entries: {
+            type: 'array',
+            maxItems: MAX_FIELD,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['participantId', 'position', 'tied'],
+              properties: entryPosition,
+            },
+          },
+        },
+      },
+    },
+    teams: {
+      type: 'array',
+      maxItems: 2000,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'position', 'tied', 'score', 'scorers'],
+        properties: {
+          label: shortValue,
+          position: posInt(MAX_FIELD),
+          tied: { type: 'boolean' },
+          score: shortValue,
+          scorers: { type: 'array', items: uuid, maxItems: 20 },
+        },
+      },
+    },
+  },
+});
+
+export const ONCF05C_SCHEMAS: readonly BrRootSchema[] = [stageClassificationV1];

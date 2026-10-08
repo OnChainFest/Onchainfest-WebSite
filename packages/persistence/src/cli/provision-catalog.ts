@@ -1,3 +1,4 @@
+import { CANONICAL_CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import { CANONICAL_CATALOG } from '@br/competition';
 import { CatalogStore } from '../catalog-store';
 import { operatorDatabaseUrl } from '../config';
@@ -37,6 +38,7 @@ try {
   const report = await new CatalogStore(db).provision({
     operatorAccountId,
     manifest: CANONICAL_CATALOG,
+    classificationTemplates: CANONICAL_CLASSIFICATION_TEMPLATES,
     dryRun,
   });
   for (const s of report.steps)

@@ -158,7 +158,48 @@ export class CompetitionReader {
           requires: engine === undefined ? null : engineRequirements(engine),
         };
       });
+      // ONCF-05C: the scoring catalog (published versions only), with each version's basis.
+      const { rows: rulesets } = await sql<{
+        id: string;
+        code: string;
+        name: string;
+        version: number;
+        family: string;
+        spec_hash: string;
+        spec: Record<string, unknown>;
+        basis: Record<string, unknown>;
+      }>`
+        SELECT v.id, r.code, r.name, v.version, v.family, v.spec_hash, v.spec, v.basis
+        FROM sports.ruleset_version v JOIN sports.ruleset r ON r.id = v.ruleset_id
+        JOIN sports.v_ruleset_version_current c ON c.ruleset_version_id = v.id
+        WHERE c.status = 'PUBLISHED' ORDER BY r.code, v.version`.execute(ctx.trx);
+      const { rows: templates } = await sql<{
+        id: string;
+        code: string;
+        name: string;
+        version: number;
+        family: string;
+        spec_hash: string;
+        spec: Record<string, unknown>;
+        basis: Record<string, unknown>;
+      }>`
+        SELECT v.id, t.code, t.name, v.version, v.family, v.spec_hash, v.spec, v.basis
+        FROM sports.classification_template_version v JOIN sports.classification_template t ON t.id = v.template_id
+        JOIN sports.v_classification_template_version_current c ON c.classification_template_version_id = v.id
+        WHERE c.status = 'PUBLISHED' ORDER BY t.code, v.version`.execute(ctx.trx);
+      const scoringVersion = (r: (typeof rulesets)[number]) => ({
+        versionId: r.id,
+        code: r.code,
+        name: r.name,
+        version: r.version,
+        family: r.family,
+        specHash: r.spec_hash,
+        spec: r.spec,
+        basis: r.basis,
+      });
       return {
+        rulesetVersions: rulesets.map(scoringVersion),
+        classificationTemplateVersions: templates.map(scoringVersion),
         disciplineVersions: disciplines.map((d) => ({
           disciplineVersionId: d.id,
           sport: { code: d.sport_code, name: d.sport_name },
@@ -172,6 +213,10 @@ export class CompetitionReader {
           capabilities: providedCapabilities(d.spec),
           roster: d.spec.participation.roster ?? null,
           entryAttributes: [...(d.spec.entryAttributes ?? [])],
+          // ONCF-05C: rulesets whose family the discipline provides (v1 disciplines provide none).
+          compatibleRulesetVersionIds: rulesets
+            .filter((r) => providedCapabilities(d.spec).rulesetFamilies.includes(r.family as never))
+            .map((r) => r.id),
           compatibleFormatVersionIds: formatVersions
             .filter(
               (f) =>

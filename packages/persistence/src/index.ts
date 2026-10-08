@@ -20,6 +20,7 @@ export * from './catalog-store';
 export * from './competition-support';
 export * from './competition-store';
 export * from './competition-structure-store';
+export * from './scoring-store';
 export * from './team-store';
 export * from './competition-projection';
 export * from './competition-reader';

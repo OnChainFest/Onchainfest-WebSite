@@ -58,7 +58,9 @@ type ParamRule =
       readonly min: number;
       readonly max: number;
       readonly optional?: true;
-    };
+    }
+  /** Names a declared entry attribute of the discipline (data, never a sport). */
+  | { readonly kind: 'attributeKey'; readonly optional?: true };
 
 const int = (min: number, max: number, optional?: true): ParamRule => ({
   kind: 'int',
@@ -104,6 +106,8 @@ export const RULESET_PARAMETERS: Readonly<
     overtimeMinutes: int(1, 30, true),
     drawAllowed: { kind: 'bool' },
     forfeitScoreFor: int(0, 100, true),
+    /** Score kept for the non-defaulting side when it was not ahead at the default (FIBA Art. 21: 2). */
+    defaultScoreFor: int(0, 100, true),
   },
   TIMED_OR_TARGET: {
     minutes: int(1, 60),
@@ -111,7 +115,11 @@ export const RULESET_PARAMETERS: Readonly<
     overtimeTargetMargin: int(1, 10),
     standingsPointCap: int(1, 100, true),
   },
-  ELAPSED_TIME: { ...TIMING },
+  ELAPSED_TIME: {
+    ...TIMING,
+    /** TEAM entrants (relays): the official time is the team finish, or the sum of its legs. */
+    teamTime: oneOf(['TEAM_FINISH', 'SUM_OF_LEGS'], true),
+  },
   FINISH_ORDER_WITH_TIME: {
     ...TIMING,
     sameTimeGroups: { kind: 'bool' },
@@ -125,17 +133,25 @@ export const RULESET_PARAMETERS: Readonly<
     gamesPerBlock: int(1, 24),
     handicapPercent: int(0, 100, true),
     handicapBasis: int(100, 300, true),
+    /** Team game bowled in frame rotation (one team score per game) vs. members' games summed. */
     baker: { kind: 'bool' },
+    /** The declared entry attribute holding the entering average (PARTICIPANT or MEMBER scope). */
+    handicapAverageAttribute: { kind: 'attributeKey', optional: true },
   },
   STROKES: {
     holes: oneOf(['9', '18']),
     scoring: oneOf(['GROSS', 'NET']),
     allowancePercent: int(0, 100, true),
     maxScorePerHole: oneOf(['NONE', 'NET_DOUBLE_BOGEY'], true),
+    /** INDIVIDUAL; BETTER_BALL (four-ball: best member score per hole); TEAM_BALL (one team ball). */
+    teamFormat: oneOf(['INDIVIDUAL', 'BETTER_BALL', 'TEAM_BALL'], true),
+    /** TEAM_BALL team handicap: members' course handicaps, lowest first, × these percentages. */
+    teamAllowancePercents: { kind: 'intList', min: 0, max: 100, optional: true },
   },
   STABLEFORD: {
     holes: oneOf(['9', '18']),
     allowancePercent: int(0, 100),
+    teamFormat: oneOf(['INDIVIDUAL', 'BETTER_BALL'], true),
   },
   MATCH_PLAY_HOLES: {
     holes: oneOf(['9', '18']),
@@ -164,6 +180,10 @@ function checkParam(rule: ParamRule, value: unknown, path: string, issues: Rules
     case 'decimal':
       if (typeof value !== 'string' || !/^-?(0|[1-9][0-9]{0,17})(\.[0-9]{1,9})?$/.test(value))
         issues.push({ path, message: 'must be a decimal string' });
+      return;
+    case 'attributeKey':
+      if (typeof value !== 'string' || !/^[a-z][A-Za-z0-9]{0,31}$/.test(value))
+        issues.push({ path, message: 'must name an entry attribute' });
       return;
     case 'intList':
       if (
@@ -209,8 +229,8 @@ export function validateRulesetSpec(spec: RulesetSpec): RulesetIssue[] {
 
 /**
  * Published ruleset templates (data). Each carries its basis: a governing-body source, or an
- * explicit COMMON_PRACTICE label. Organizers will pick from these in ONCF-05C; nothing here is
- * executed in ONCF-05B.
+ * explicit COMMON_PRACTICE label. Provisioned as catalog RulesetVersions (ONCF-05C) and pinned per
+ * event; executed by `scoring/` (ONCF-05C).
  */
 export interface RulesetTemplate {
   readonly code: string;
@@ -428,9 +448,68 @@ export const RULESET_TEMPLATES: readonly RulesetTemplate[] = [
     name: 'Bowling: handicap 90% of 220',
     spec: {
       family: 'FRAMES_PINFALL',
-      parameters: { gamesPerBlock: 3, handicapPercent: 90, handicapBasis: 220, baker: false },
+      parameters: {
+        gamesPerBlock: 3,
+        handicapPercent: 90,
+        handicapBasis: 220,
+        baker: false,
+        handicapAverageAttribute: 'average',
+      },
     },
     basis: { kind: 'COMMON_PRACTICE', note: 'league default; USBC formula % × (basis − average)' },
+  },
+  {
+    code: 'bowling-team-baker-5',
+    name: 'Bowling team, Baker format, 5 games',
+    spec: { family: 'FRAMES_PINFALL', parameters: { gamesPerBlock: 5, baker: true } },
+    basis: { kind: 'GOVERNING_RULE', source: 'IBF World Championships 2023 Rules & Regulations' },
+  },
+  {
+    code: 'golf-stroke-gross',
+    name: 'Golf stroke play, gross',
+    spec: { family: 'STROKES', parameters: { holes: '18', scoring: 'GROSS' } },
+    basis: { kind: 'GOVERNING_RULE', source: 'Rules of Golf 3.3' },
+  },
+  {
+    code: 'golf-fourball-net-85',
+    name: 'Golf four-ball stroke play, net, 85%',
+    spec: {
+      family: 'STROKES',
+      parameters: { holes: '18', scoring: 'NET', allowancePercent: 85, teamFormat: 'BETTER_BALL' },
+    },
+    basis: { kind: 'GOVERNING_RULE', source: 'Rules of Golf 23; WHS Appendix C (allowance [S])' },
+  },
+  {
+    code: 'golf-scramble-4-net',
+    name: 'Golf scramble (4), net, 25/20/15/10%',
+    spec: {
+      family: 'STROKES',
+      parameters: {
+        holes: '18',
+        scoring: 'NET',
+        teamFormat: 'TEAM_BALL',
+        teamAllowancePercents: [25, 20, 15, 10],
+      },
+    },
+    basis: {
+      kind: 'COMMON_PRACTICE',
+      note: 'scramble is not a Rules of Golf form; WHS allowances [S]',
+    },
+  },
+  {
+    code: 'relay-team-finish',
+    name: 'Relay: team finish time, 1/100 s',
+    spec: {
+      family: 'ELAPSED_TIME',
+      parameters: {
+        officialReference: 'GUN',
+        precisionMs: '10',
+        rounding: 'UP',
+        tieRule: 'FINER_PRECISION_THEN_LOTS',
+        teamTime: 'TEAM_FINISH',
+      },
+    },
+    basis: { kind: 'GOVERNING_RULE', source: 'World Athletics TR 24; World Aquatics Art. 10.4' },
   },
   {
     code: 'golf-stroke-net-95',

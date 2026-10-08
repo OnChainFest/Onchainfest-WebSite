@@ -4,7 +4,7 @@ import { BRT07_SCHEMAS } from './verification';
 import { BRT08_SCHEMAS } from './achievements';
 import { BRT09_SCHEMAS } from './records';
 import { BRT10_SCHEMAS } from './rankings';
-import { ONCF05B_SCHEMAS } from './competition-v2';
+import { ONCF05B_SCHEMAS, ONCF05C_SCHEMAS } from './competition-v2';
 
 export * from './definitions';
 export * from './verification';
@@ -42,6 +42,8 @@ export const SchemaRef = {
   competitionSeedingV2: { id: 'br:competition-seeding', version: 2 },
   competitionPlanInputV2: { id: 'br:competition-plan-input', version: 2 },
   competitionPlanV2: { id: 'br:competition-plan', version: 2 },
+  // ONCF-05C
+  stageClassification: { id: 'br:stage-classification', version: 1 },
   // BRT-06
   evidenceDescriptor: { id: 'br:evidence-descriptor', version: 1 },
   attestationStatement: { id: 'br:attestation-statement', version: 1 },
@@ -162,6 +164,7 @@ export function platformCanonicalizer(): Canonicalizer {
     ...BRT09_SCHEMAS,
     ...BRT10_SCHEMAS,
     ...ONCF05B_SCHEMAS,
+    ...ONCF05C_SCHEMAS,
   ]);
   return shared;
 }

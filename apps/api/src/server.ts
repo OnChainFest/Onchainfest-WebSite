@@ -28,6 +28,7 @@ import {
   PersonPrincipalService,
   PersonPrivateDataService,
   PrincipalKeyCeremony,
+  ScoringStore,
   StructureStore,
   TeamStore,
   VerificationPolicyStore,
@@ -192,6 +193,7 @@ export function buildServer(options: ApiOptions): ApiServer {
       structure: new StructureStore(options.db),
       teams: new TeamStore(options.db),
       reader: new CompetitionReader(options.db),
+      scoring: new ScoringStore(options.db),
     },
     ...(privateData === undefined ? {} : { privateData }),
     evidence: {

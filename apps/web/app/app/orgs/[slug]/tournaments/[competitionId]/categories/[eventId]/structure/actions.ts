@@ -119,3 +119,37 @@ export async function generatePlanAction(form: FormData): Promise<never> {
   if (r.kind !== 'ok') to(slug, back, { error: structureErrorCode(r, 'generate-plan') });
   to(slug, back, { notice: 'plan_generated' });
 }
+
+/**
+ * ONCF-05C: pins the category's scoring (ruleset + optional classification template). The API
+ * checks permission (COMP_EDIT), publication, capability fit and that the field is not locked.
+ */
+export async function pinScoringAction(form: FormData): Promise<never> {
+  const slug = field(form, 'slug');
+  const { token } = await context(slug);
+  const { eventId, back } = ids(form, slug);
+  const rulesetVersionId = field(form, 'rulesetVersionId');
+  const templateVersionId = field(form, 'classificationTemplateVersionId');
+  if (!UUID_RE.test(rulesetVersionId)) to(slug, back, { error: 'missing_fields' });
+  if (templateVersionId !== '' && !UUID_RE.test(templateVersionId))
+    to(slug, back, { error: 'scoring_invalid' });
+  const r = await apiRequest(token, 'PUT', `/v1/events/${eventId}/scoring`, {
+    idempotencyKey: idempotencyKey(field(form, 'key')),
+    body: {
+      rulesetVersionId,
+      ...(templateVersionId === '' ? {} : { classificationTemplateVersionId: templateVersionId }),
+    },
+  });
+  if (r.kind !== 'ok') {
+    const code =
+      r.kind === 'error' && r.code === 'INVALID_TRANSITION'
+        ? 'scoring_frozen'
+        : r.kind === 'error' && r.code === 'INVALID_INPUT'
+          ? 'scoring_invalid'
+          : r.kind === 'error' && (r.code === 'FORBIDDEN' || r.status === 403)
+            ? 'not_permitted'
+            : 'platform_unavailable';
+    to(slug, back, { error: code });
+  }
+  to(slug, back, { notice: 'scoring_pinned' });
+}

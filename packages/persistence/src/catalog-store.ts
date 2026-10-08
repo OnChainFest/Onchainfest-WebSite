@@ -13,7 +13,11 @@ import {
   formatVersionSpec,
   type AnyFormatEngine,
   type DisciplineVersionSpec,
+  type RuleBasis,
+  type RulesetSpec,
+  validateRulesetSpec,
 } from '@br/competition';
+import { validateClassificationPolicyV2, type ClassificationPolicyV2Spec } from '@br/rankings';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
 import { sql } from 'kysely';
 import { text, transitionError } from './competition-support';
@@ -30,12 +34,56 @@ function formatVersionSpecHash(engine: AnyFormatEngine): string {
   return catalogSpecHash('br:format-version-spec', formatVersionSpec(engine));
 }
 
+export type ScoringKind = 'ruleset' | 'classification-template';
+
+const SCORING = {
+  ruleset: {
+    label: 'Ruleset',
+    code: FORMAT_CODE,
+    parent: 'sports.ruleset',
+    version: 'sports.ruleset_version',
+    parentCol: 'ruleset_id',
+    status: 'sports.ruleset_version_status_change',
+    statusCol: 'ruleset_version_id',
+    view: 'sports.v_ruleset_version_current',
+    specSchema: 'br:ruleset-version-spec',
+    aggregate: 'RULESET_VERSION',
+    created: 'RulesetVersionCreated',
+    published: 'RulesetVersionPublished',
+    retired: 'RulesetVersionRetired',
+  },
+  'classification-template': {
+    label: 'ClassificationTemplate',
+    code: /^[a-z0-9_]+$/,
+    parent: 'sports.classification_template',
+    version: 'sports.classification_template_version',
+    parentCol: 'template_id',
+    status: 'sports.classification_template_version_status_change',
+    statusCol: 'classification_template_version_id',
+    view: 'sports.v_classification_template_version_current',
+    specSchema: 'br:classification-template-spec',
+    aggregate: 'CLASSIFICATION_TEMPLATE_VERSION',
+    created: 'ClassificationTemplateVersionCreated',
+    published: 'ClassificationTemplateVersionPublished',
+    retired: 'ClassificationTemplateVersionRetired',
+  },
+} as const;
+
 export type CatalogProvisionAction =
   'UNCHANGED' | 'CREATED' | 'PUBLISHED' | 'WOULD_CREATE' | 'WOULD_PUBLISH';
 
 export interface CatalogProvisionReport {
   readonly steps: readonly {
-    readonly kind: 'sport' | 'discipline' | 'discipline-version' | 'format' | 'format-version';
+    readonly kind:
+      | 'sport'
+      | 'discipline'
+      | 'discipline-version'
+      | 'format'
+      | 'format-version'
+      | 'ruleset'
+      | 'ruleset-version'
+      | 'classification-template'
+      | 'classification-template-version';
     readonly code: string;
     readonly action: CatalogProvisionAction;
     readonly id?: string;
@@ -459,6 +507,172 @@ export class CatalogStore {
     });
   }
 
+  // ───────────────────────────── scoring catalog (ONCF-05C) ─────────────────────────────
+
+  /**
+   * Rulesets (how ONE contest is decided, ADR-0059) and classification templates (how a scope is
+   * ordered, ADR-0060) follow the discipline / format pattern: a code, immutable versions with a
+   * validated, hashed spec and a basis (GOVERNING_RULE source or COMMON_PRACTICE note), and an
+   * append-only DRAFT → PUBLISHED → RETIRED lifecycle. Operator-only (br_catalog).
+   */
+  createScoringParent(input: {
+    operatorAccountId: string;
+    kind: ScoringKind;
+    code: string;
+    name: string;
+    idempotencyKey: string;
+  }): Promise<{ id: string; created: boolean }> {
+    const k = SCORING[input.kind];
+    if (!k.code.test(input.code) || input.code.length > 64)
+      return Promise.reject(
+        new DomainError(DomainErrorCode.INVALID_INPUT, `invalid ${input.kind} code`),
+      );
+    const name = text(input.name, 120, 'name');
+    return this.tx(async (ctx) => {
+      const idem = await identityIdempotency<{ id: string }>(ctx, {
+        command: `Create${k.label}`,
+        actorAccountId: input.operatorAccountId,
+        idempotencyKey: input.idempotencyKey,
+        params: { code: input.code, name },
+      });
+      if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
+      await lockKeys(ctx, `${input.kind}-code:${input.code}`);
+      const id = newId();
+      await this.unique(
+        () =>
+          sql`INSERT INTO ${sql.raw(k.parent)} (id, code, name, created_by_account_id, recorded_at)
+          VALUES (${id}, ${input.code}, ${name}, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
+            ctx.trx,
+          ),
+        `${input.kind} code`,
+      );
+      await recordAudit(ctx, {
+        actorAccountId: input.operatorAccountId,
+        action: `catalog.${input.kind}-created`,
+        targetType: k.aggregate,
+        targetId: id,
+      });
+      await idem.record({ id });
+      return { id, created: true };
+    });
+  }
+
+  /** New DRAFT version with a validated spec (refused when invalid; never coerced). */
+  createScoringVersion(input: {
+    operatorAccountId: string;
+    kind: ScoringKind;
+    parentId: string;
+    spec: RulesetSpec | ClassificationPolicyV2Spec;
+    basis: RuleBasis;
+    idempotencyKey: string;
+  }): Promise<{ id: string; version: number; specHash: string; created: boolean }> {
+    const k = SCORING[input.kind];
+    const issues =
+      input.kind === 'ruleset'
+        ? validateRulesetSpec(input.spec as RulesetSpec)
+        : validateClassificationPolicyV2(input.spec as ClassificationPolicyV2Spec);
+    const basisOk =
+      typeof input.basis === 'object' &&
+      input.basis !== null &&
+      ((input.basis.kind === 'GOVERNING_RULE' &&
+        typeof input.basis.source === 'string' &&
+        input.basis.source.length > 0) ||
+        (input.basis.kind === 'COMMON_PRACTICE' &&
+          typeof input.basis.note === 'string' &&
+          input.basis.note.length > 0));
+    if (issues.length > 0 || !basisOk)
+      return Promise.reject(
+        new DomainError(DomainErrorCode.INVALID_INPUT, `invalid ${input.kind} specification`, {
+          issues: issues.slice(0, 20),
+        }),
+      );
+    const specHash = catalogSpecHash(k.specSchema, input.spec);
+    const family = input.spec.family;
+    return this.tx(async (ctx) => {
+      const idem = await identityIdempotency<{ id: string; version: number; specHash: string }>(
+        ctx,
+        {
+          command: `Create${k.label}Version`,
+          actorAccountId: input.operatorAccountId,
+          idempotencyKey: input.idempotencyKey,
+          params: { parentId: input.parentId, specHash },
+        },
+      );
+      if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
+      await lockKeys(ctx, `${input.kind}-versions:${input.parentId}`);
+      const { rows } = await sql<{ n: number | null; exists: boolean }>`
+        SELECT (SELECT max(version) FROM ${sql.raw(k.version)} WHERE ${sql.ref(k.parentCol)} = ${input.parentId}) AS n,
+               EXISTS (SELECT 1 FROM ${sql.raw(k.parent)} WHERE id = ${input.parentId}) AS exists`.execute(
+        ctx.trx,
+      );
+      if (rows[0]?.exists !== true)
+        throw new DomainError(DomainErrorCode.NOT_FOUND, `${input.kind} not found`);
+      const version = (rows[0]?.n ?? 0) + 1;
+      const id = newId();
+      await sql`INSERT INTO ${sql.raw(k.version)} (id, ${sql.ref(k.parentCol)}, version, family, spec, spec_hash, basis, created_by_account_id, recorded_at)
+        VALUES (${id}, ${input.parentId}, ${version}, ${family}, ${JSON.stringify(input.spec)}::jsonb, ${specHash},
+                ${JSON.stringify(input.basis)}::jsonb, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+      await sql`INSERT INTO ${sql.raw(k.status)} (id, ${sql.ref(k.statusCol)}, status, actor_account_id, recorded_at)
+        VALUES (${newId()}, ${id}, 'DRAFT', ${input.operatorAccountId}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+      await emitEvent(ctx, {
+        eventType: k.created,
+        aggregateType: k.aggregate,
+        aggregateId: id as Uuid,
+        payload: { parentId: input.parentId, version, specHash },
+      });
+      await recordAudit(ctx, {
+        actorAccountId: input.operatorAccountId,
+        action: `catalog.${input.kind}-version-created`,
+        targetType: k.aggregate,
+        targetId: id,
+      });
+      const response = { id, version, specHash };
+      await idem.record(response);
+      return { ...response, created: true };
+    });
+  }
+
+  setScoringVersionStatus(input: {
+    operatorAccountId: string;
+    kind: ScoringKind;
+    versionId: string;
+    status: 'PUBLISHED' | 'RETIRED';
+  }): Promise<void> {
+    const k = SCORING[input.kind];
+    return this.tx(async (ctx) => {
+      await lockKeys(ctx, `catalog-version:${input.versionId}`);
+      const { rows } = await sql<{ status: CatalogVersionStatus }>`
+        SELECT status FROM ${sql.raw(k.view)} WHERE ${sql.ref(k.statusCol)} = ${input.versionId}`.execute(
+        ctx.trx,
+      );
+      const from = rows[0]?.status;
+      if (from === undefined)
+        throw new DomainError(DomainErrorCode.NOT_FOUND, `${input.kind} version not found`);
+      if (!canTransition(CatalogVersionLifecycle, from, input.status))
+        throw transitionError(`${input.kind} version`, from, input.status);
+      await sql`INSERT INTO ${sql.raw(k.status)} (id, ${sql.ref(k.statusCol)}, status, actor_account_id, recorded_at)
+        VALUES (${newId()}, ${input.versionId}, ${input.status}, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+      await emitEvent(ctx, {
+        eventType: input.status === 'PUBLISHED' ? k.published : k.retired,
+        aggregateType: k.aggregate,
+        aggregateId: input.versionId as Uuid,
+        payload: { status: input.status },
+      });
+      await recordAudit(ctx, {
+        actorAccountId: input.operatorAccountId,
+        action: `catalog.${input.kind}-version-${input.status.toLowerCase()}`,
+        targetType: k.aggregate,
+        targetId: input.versionId,
+      });
+    });
+  }
+
   // ───────────────────────────── provisioning (ONCF-03A) ─────────────────────────────
 
   /**
@@ -473,6 +687,15 @@ export class CatalogStore {
   async provision(input: {
     operatorAccountId: string;
     manifest: CatalogManifest;
+    /** ONCF-05C: classification templates (ClassificationPolicy v2), version histories. */
+    classificationTemplates?: readonly {
+      readonly code: string;
+      readonly name: string;
+      readonly versions: readonly {
+        readonly spec: ClassificationPolicyV2Spec;
+        readonly basis: RuleBasis;
+      }[];
+    }[];
     dryRun?: boolean;
   }): Promise<CatalogProvisionReport> {
     const op = input.operatorAccountId;
@@ -507,18 +730,55 @@ export class CatalogStore {
       return { ...f, versions };
     });
 
+    const scoring: {
+      kind: ScoringKind;
+      code: string;
+      name: string;
+      versions: readonly { spec: RulesetSpec | ClassificationPolicyV2Spec; basis: RuleBasis }[];
+    }[] = [
+      ...(input.manifest.rulesets ?? []).map((r) => ({ kind: 'ruleset' as const, ...r })),
+      ...(input.classificationTemplates ?? []).map((t) => ({
+        kind: 'classification-template' as const,
+        ...t,
+      })),
+    ];
+    for (const x of scoring) {
+      if (!SCORING[x.kind].code.test(x.code) || x.versions.length === 0)
+        throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid ${x.kind} ${x.code}`);
+      for (const v of x.versions) {
+        const issues =
+          x.kind === 'ruleset'
+            ? validateRulesetSpec(v.spec as RulesetSpec)
+            : validateClassificationPolicyV2(v.spec as ClassificationPolicyV2Spec);
+        if (issues.length > 0)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid spec for ${x.code}`, {
+            issues: issues.slice(0, 20),
+          });
+      }
+    }
     const steps: CatalogProvisionReport['steps'][number][] = [];
     const conflicts: { code: string; reason: string }[] = [];
     const key = (...parts: string[]) => `catalog-provision:${parts.join(':')}`;
-    const idOf = (table: 'sport' | 'discipline' | 'format_template', code: string) =>
+    const idOf = (
+      table: 'sport' | 'discipline' | 'format_template' | 'ruleset' | 'classification_template',
+      code: string,
+    ) =>
       this.tx(async (ctx) => {
         const { rows } = await sql<{
           id: string;
         }>`SELECT id FROM ${sql.raw(`sports.${table}`)} WHERE code = ${code}`.execute(ctx.trx);
         return rows[0]?.id;
       });
-    const versionsOf = (kind: 'discipline' | 'format', parentId: string) =>
+    const versionsOf = (kind: 'discipline' | 'format' | ScoringKind, parentId: string) =>
       this.tx(async (ctx) => {
+        if (kind === 'ruleset' || kind === 'classification-template') {
+          const k = SCORING[kind];
+          const { rows } = await sql<VersionRow>`
+            SELECT v.id, v.spec_hash, c.status FROM ${sql.raw(k.version)} v
+            JOIN ${sql.raw(k.view)} c ON c.${sql.ref(k.statusCol)} = v.id
+            WHERE v.${sql.ref(k.parentCol)} = ${parentId} ORDER BY v.version`.execute(ctx.trx);
+          return rows;
+        }
         const { rows } =
           kind === 'discipline'
             ? await sql<VersionRow>`
@@ -537,14 +797,16 @@ export class CatalogStore {
      * a conflict), and a declared version that does not exist yet is created and published.
      */
     const ensureVersion = async (
-      kind: 'discipline' | 'format',
+      kind: 'discipline' | 'format' | ScoringKind,
       code: string,
       parentId: string | undefined,
       specHash: string,
       history: readonly string[],
       create: () => Promise<string>,
     ) => {
-      const stepKind = kind === 'discipline' ? 'discipline-version' : 'format-version';
+      const stepKind = (
+        kind === 'discipline' ? 'discipline-version' : `${kind}-version`
+      ) as CatalogProvisionReport['steps'][number]['kind'];
       const versions = parentId === undefined ? [] : await versionsOf(kind, parentId);
       const match = versions.find((v) => v.spec_hash === specHash);
       if (versions.some((v) => !history.includes(v.spec_hash))) {
@@ -575,7 +837,15 @@ export class CatalogStore {
       const id = match?.id ?? (await create());
       if (kind === 'discipline')
         await this.publishDisciplineVersion({ operatorAccountId: op, disciplineVersionId: id });
-      else await this.publishFormatVersion({ operatorAccountId: op, formatVersionId: id });
+      else if (kind === 'format')
+        await this.publishFormatVersion({ operatorAccountId: op, formatVersionId: id });
+      else
+        await this.setScoringVersionStatus({
+          operatorAccountId: op,
+          kind,
+          versionId: id,
+          status: 'PUBLISHED',
+        });
       steps.push({
         kind: stepKind,
         code,
@@ -585,7 +855,7 @@ export class CatalogStore {
     };
     /** Reuse the row with this code, or create it (or report that it would be created). */
     const ensure = async (
-      kind: 'sport' | 'discipline' | 'format',
+      kind: 'sport' | 'discipline' | 'format' | ScoringKind,
       code: string,
       existing: string | undefined,
       create: () => Promise<string>,
@@ -690,6 +960,46 @@ export class CatalogStore {
                 idempotencyKey: key('format-version', f.code, specHash),
               })
             ).formatVersionId,
+        );
+      }
+    }
+    for (const x of scoring) {
+      const k = SCORING[x.kind];
+      const parentId = await ensure(
+        x.kind,
+        x.code,
+        await idOf(x.kind === 'ruleset' ? 'ruleset' : 'classification_template', x.code),
+        async () =>
+          (
+            await this.createScoringParent({
+              operatorAccountId: op,
+              kind: x.kind,
+              code: x.code,
+              name: x.name,
+              idempotencyKey: key(x.kind, x.code),
+            })
+          ).id,
+      );
+      const history = x.versions.map((v) => catalogSpecHash(k.specSchema, v.spec));
+      for (const [i, v] of x.versions.entries()) {
+        const specHash = history[i] as string;
+        await ensureVersion(
+          x.kind,
+          x.code,
+          parentId,
+          specHash,
+          history,
+          async () =>
+            (
+              await this.createScoringVersion({
+                operatorAccountId: op,
+                kind: x.kind,
+                parentId: parentId as string,
+                spec: v.spec,
+                basis: v.basis,
+                idempotencyKey: key(`${x.kind}-version`, x.code, specHash),
+              })
+            ).id,
         );
       }
     }

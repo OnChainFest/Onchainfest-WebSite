@@ -116,6 +116,19 @@ export interface CatalogDisciplineVersion {
   };
   roster?: { min: number; max: number } | null;
   entryAttributes?: EntryAttributeSpec[];
+  /** ONCF-05C: published ruleset versions whose family this discipline provides. */
+  compatibleRulesetVersionIds?: string[];
+}
+
+/** ONCF-05C: a published ruleset or classification template version, with its basis. */
+export interface CatalogScoringVersion {
+  versionId: string;
+  code: string;
+  name: string;
+  version: number;
+  family: string;
+  specHash: string;
+  basis: { kind: 'GOVERNING_RULE'; source: string } | { kind: 'COMMON_PRACTICE'; note: string };
 }
 
 export type EntryAttributeValueType = 'DURATION_MS' | 'INTEGER' | 'DECIMAL' | 'TEXT';
@@ -144,6 +157,8 @@ export interface CatalogFormatVersion {
 export interface Catalog {
   disciplineVersions: CatalogDisciplineVersion[];
   formatVersions: CatalogFormatVersion[];
+  rulesetVersions?: CatalogScoringVersion[];
+  classificationTemplateVersions?: CatalogScoringVersion[];
 }
 
 export function managedCompetitions(

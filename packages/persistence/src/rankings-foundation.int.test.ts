@@ -458,7 +458,8 @@ describe('BRT-10 migrations 0023–0025', () => {
     );
     const { rows: trg } = await sql<{ t: string }>`
       SELECT c.relname AS t FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid JOIN pg_namespace s ON s.oid = c.relnamespace
-      WHERE (s.nspname = 'ranking' OR c.relname LIKE 'classification\\_%') AND g.tgname LIKE '%\\_append\\_only'
+      WHERE (s.nspname = 'ranking' OR (s.nspname = 'results' AND c.relname LIKE 'classification\\_%'))
+        AND g.tgname LIKE '%\\_append\\_only'
       ORDER BY 1`.execute(owner);
     expect(trg).toHaveLength(12);
   });

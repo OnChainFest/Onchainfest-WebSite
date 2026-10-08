@@ -44,6 +44,14 @@ export const DomainEventType = {
   FormatVersionCreated: 'FormatVersionCreated',
   FormatVersionPublished: 'FormatVersionPublished',
   FormatVersionRetired: 'FormatVersionRetired',
+  // ONCF-05C scoring catalog and event scoring pins (definitions only — never a result or a table)
+  RulesetVersionCreated: 'RulesetVersionCreated',
+  RulesetVersionPublished: 'RulesetVersionPublished',
+  RulesetVersionRetired: 'RulesetVersionRetired',
+  ClassificationTemplateVersionCreated: 'ClassificationTemplateVersionCreated',
+  ClassificationTemplateVersionPublished: 'ClassificationTemplateVersionPublished',
+  ClassificationTemplateVersionRetired: 'ClassificationTemplateVersionRetired',
+  EventScoringPinned: 'EventScoringPinned',
   // BRT-05 competition operations (operational facts only — never results/verification)
   CompetitionCreated: 'CompetitionCreated',
   CompetitionPublished: 'CompetitionPublished',
@@ -159,6 +167,8 @@ export const AggregateType = {
   DISCIPLINE_VERSION: 'DISCIPLINE_VERSION',
   FORMAT_TEMPLATE: 'FORMAT_TEMPLATE',
   FORMAT_VERSION: 'FORMAT_VERSION',
+  RULESET_VERSION: 'RULESET_VERSION',
+  CLASSIFICATION_TEMPLATE_VERSION: 'CLASSIFICATION_TEMPLATE_VERSION',
   COMPETITION: 'COMPETITION',
   EVENT: 'EVENT',
   REGISTRATION: 'REGISTRATION',

@@ -24,3 +24,4 @@ export {
   evenGroupSizes,
   serpentineGroups,
 } from './format/stages';
+export * from './scoring';

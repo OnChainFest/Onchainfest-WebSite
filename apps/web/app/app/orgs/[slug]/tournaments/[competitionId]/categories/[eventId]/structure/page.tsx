@@ -19,10 +19,18 @@ import {
 } from '../../../../../../../../_lib/structure';
 import { tournamentFor } from '../../../../../../../../_lib/tournament-context';
 import { catalogDiscipline, tournamentCatalog } from '../../../../../../../../_lib/tournaments';
+import {
+  basisLabel,
+  compatibleRulesets,
+  decidedByLabel,
+  eventScoring,
+  stageClassification,
+  templatesFor,
+} from '../../../../../../../../_lib/scoring';
 import { Flash } from '../../../../../../../../_product/flash';
 import { SubmitButton } from '../../../../../../../../_product/submit-button';
 import { SportGlyph, StatusBadge } from '../../../../../../../../_product/tournament-ui';
-import { generatePlanAction, lockFieldAction, seedFieldAction } from './actions';
+import { pinScoringAction, generatePlanAction, lockFieldAction, seedFieldAction } from './actions';
 
 export const metadata = { title: 'Structure · OnChainFest' };
 
@@ -64,11 +72,27 @@ export default async function StructurePage({
   const category = `${base}/categories/${e.id}`;
   const publicEvent = `/competitions/${c.slug}/events/${e.slug}`;
 
-  const [field, preview, catalog] = await Promise.all([
+  const stageParam = one(query.stage);
+  const groupParam = one(query.group);
+  const [field, preview, catalog, scoringPin] = await Promise.all([
     r.fieldLocked ? lockedField(org.ctx.accessToken, e.id) : Promise.resolve(null),
     r.seeded && !r.planGenerated ? planPreview(org.ctx.accessToken, e.id) : Promise.resolve(null),
     tournamentCatalog(),
+    eventScoring(org.ctx.accessToken, e.id),
   ]);
+  const pinned = scoringPin.kind === 'ok' && scoringPin.data.pinned ? scoringPin.data : null;
+  const table =
+    pinned !== null &&
+    r.planGenerated &&
+    stageParam !== undefined &&
+    /^s[0-9]{1,2}$/.test(stageParam)
+      ? await stageClassification(
+          org.ctx.accessToken,
+          e.id,
+          stageParam,
+          groupParam !== undefined && /^g[0-9]{1,2}$/.test(groupParam) ? groupParam : undefined,
+        )
+      : null;
   const participants = field?.kind === 'ok' ? field.data.items : [];
   const discipline =
     catalog.kind === 'ok'
@@ -299,6 +323,55 @@ export default async function StructurePage({
               </a>
             </section>
           ) : null}
+          <ScoringPanel
+            pinned={pinned}
+            rulesets={
+              catalog.kind === 'ok'
+                ? compatibleRulesets(catalog.data, discipline?.disciplineVersionId)
+                : []
+            }
+            templates={(family) =>
+              catalog.kind === 'ok' ? templatesFor(catalog.data, family) : []
+            }
+            canPin={
+              !(scoringPin.kind === 'ok' && scoringPin.data.frozen) && perms.includes('COMP_EDIT')
+            }
+            hidden={hidden}
+          />
+
+          {pinned !== null && r.planGenerated && (r.stageList ?? []).length > 0 ? (
+            <section className="tb-panel" aria-labelledby="cls-h">
+              <h3 id="cls-h" className="mono muted">
+                Classification (proposal)
+              </h3>
+              <p className="muted small">
+                Computed from the current results under{' '}
+                {pinned.classificationTemplate?.name ?? 'the pinned template'}. Not official until
+                it is submitted by an authority.
+              </p>
+              <ul className="st-stage-links">
+                {(r.stageList ?? []).flatMap((st) =>
+                  (st.groups.length > 0 ? st.groups : [undefined]).map((g) => (
+                    <li key={`${st.key}-${g ?? ''}`}>
+                      <a href={`?stage=${st.key}${g === undefined ? '' : `&group=${g}`}`}>
+                        {st.label}
+                        {g === undefined ? '' : ` · Group ${g.slice(1)}`}
+                      </a>
+                    </li>
+                  )),
+                )}
+              </ul>
+              {table === null ? null : table.kind !== 'ok' ? (
+                <p className="muted small">
+                  This classification can’t be computed yet (check the pinned template and results).
+                </p>
+              ) : (
+                <div className="st-table-wrap">
+                  <ClassificationTable data={table.data} names={participants} />
+                </div>
+              )}
+            </section>
+          ) : null}
         </div>
 
         <aside className="tb-side">
@@ -518,5 +591,156 @@ function Preview({ plan }: { plan: PlanPreview }) {
         );
       })}
     </div>
+  );
+}
+
+function ScoringPanel({
+  pinned,
+  rulesets,
+  templates,
+  canPin,
+  hidden,
+}: {
+  pinned: Awaited<ReturnType<typeof eventScoring>> extends infer R
+    ? R extends { kind: 'ok'; data: infer D }
+      ? D | null
+      : never
+    : never;
+  rulesets: ReturnType<typeof compatibleRulesets>;
+  templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
+  canPin: boolean;
+  hidden: ReactNode;
+}) {
+  return (
+    <section className="tb-panel" aria-labelledby="sc-h">
+      <h3 id="sc-h" className="mono muted">
+        Scoring
+      </h3>
+      {pinned?.ruleset ? (
+        <dl className="st-scoring">
+          <dt>Ruleset</dt>
+          <dd>
+            {pinned.ruleset.name} <span className="mono muted">v{pinned.ruleset.version}</span>
+            <div className="muted small">{basisLabel(pinned.ruleset)}</div>
+          </dd>
+          <dt>Classification</dt>
+          <dd>
+            {pinned.classificationTemplate ? (
+              <>
+                {pinned.classificationTemplate.name}{' '}
+                <span className="mono muted">v{pinned.classificationTemplate.version}</span>
+                <div className="muted small">{basisLabel(pinned.classificationTemplate)}</div>
+              </>
+            ) : (
+              <span className="muted">None (no table for this format)</span>
+            )}
+          </dd>
+        </dl>
+      ) : (
+        <p className="muted small">
+          No scoring is set yet. Results can’t be validated or classified until it is.
+        </p>
+      )}
+      {canPin && rulesets.length > 0 ? (
+        <form action={pinScoringAction} className="tb-form">
+          {hidden}
+          <input type="hidden" name="key" value={`oc-scoring-${randomUUID()}`} />
+          <label>
+            Ruleset
+            <select
+              name="rulesetVersionId"
+              defaultValue={pinned?.ruleset?.versionId ?? ''}
+              required
+            >
+              <option value="">Choose…</option>
+              {rulesets.map((rs) => (
+                <option key={rs.versionId} value={rs.versionId}>
+                  {rs.name} (v{rs.version})
+                  {rs.basis.kind === 'COMMON_PRACTICE' ? ' · common practice' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Classification
+            <select
+              name="classificationTemplateVersionId"
+              defaultValue={pinned?.classificationTemplate?.versionId ?? ''}
+            >
+              <option value="">None</option>
+              {[
+                ...new Map(
+                  rulesets.flatMap((rs) => templates(rs.family)).map((t) => [t.versionId, t]),
+                ).values(),
+              ].map((t) => (
+                <option key={t.versionId} value={t.versionId}>
+                  {t.name} (v{t.version})
+                </option>
+              ))}
+            </select>
+          </label>
+          <SubmitButton pending="Saving" className="btn btn-ghost btn-sm">
+            {pinned === null ? 'Set scoring' : 'Change scoring'}
+          </SubmitButton>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function ClassificationTable({
+  data,
+  names,
+}: {
+  data: Awaited<ReturnType<typeof stageClassification>> extends infer R
+    ? R extends { kind: 'ok'; data: infer D }
+      ? D
+      : never
+    : never;
+  names: readonly {
+    participantId: string;
+    athlete: { displayName: string } | null;
+    teamName: string | null;
+  }[];
+}) {
+  const nameOf = (id: string) => {
+    const p = names.find((x) => x.participantId === id);
+    return p?.athlete?.displayName ?? p?.teamName ?? 'Private entrant';
+  };
+  return (
+    <>
+      <p className="mono muted small">
+        {data.document.complete
+          ? 'All results in'
+          : `${data.pendingContests.length} contest(s) pending`}{' '}
+        · {data.document.policy.code} v{data.document.policy.version}
+      </p>
+      <table className="st-table">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Entrant</th>
+            <th scope="col">Values</th>
+            <th scope="col">Decided by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.document.entries.map((x) => (
+            <tr key={x.participantId}>
+              <td className="mono">
+                {x.status === 'CLASSIFIED' ? `${x.position}${x.tied ? '=' : ''}` : x.status}
+              </td>
+              <td>{nameOf(x.participantId)}</td>
+              <td className="mono small">
+                {x.values.map((v) => `${v.key} ${v.value}`).join(' · ')}
+              </td>
+              <td className="muted small">
+                {decidedByLabel(x.decidedBy?.kind) ?? (x.tied ? 'tied' : '')}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

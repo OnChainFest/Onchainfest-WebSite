@@ -7,3 +7,4 @@ export * from './classification-engine';
 export * from './staleness';
 export * from './public';
 export * from './classification-policy-v2';
+export * from './classification-engine-v2';

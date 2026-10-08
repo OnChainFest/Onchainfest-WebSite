@@ -72,6 +72,10 @@ export const ResultOutcome = {
   WALKOVER_LOSS: 'WALKOVER_LOSS',
   RETIRED: 'RETIRED',
   NO_CONTEST: 'NO_CONTEST',
+  // ONCF-05C (ADR-0062): field statuses. NOT_PLACED = finished but not placed (e.g. outside a time
+  // limit relative to the winner); PULLED = taken out of a lapped race (classified by laps down).
+  NOT_PLACED: 'NOT_PLACED',
+  PULLED: 'PULLED',
 } as const;
 export type ResultOutcome = (typeof ResultOutcome)[keyof typeof ResultOutcome];
 

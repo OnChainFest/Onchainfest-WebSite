@@ -56,6 +56,9 @@ export const ERROR_MESSAGES = {
     'Check the seeding: seed numbers run 1, 2, 3… without gaps, and every override names an entrant, a position and a reason.',
   plan_invalid:
     'The structure can’t be generated for this field with the category’s format settings. Check the format settings and the number of entrants.',
+  scoring_invalid:
+    'That ruleset or classification doesn’t fit this category (its sport, format or contest type). Choose one from the list.',
+  scoring_frozen: 'Scoring is fixed once the field is locked.',
   structure_done:
     'That step is already done — the field, seeding and structure are set once and kept.',
   team_invalid: 'Give the team a name and choose pair or squad.',
@@ -104,6 +107,7 @@ export const NOTICE_MESSAGES = {
   field_locked: 'Field locked. The entrants, rosters and declared values are now fixed.',
   field_seeded: 'Field seeded. Preview the structure, then generate it.',
   plan_generated: 'Structure generated. It’s now on the public category page.',
+  scoring_pinned: 'Scoring set. Results will be validated and classified under these versions.',
   team_created: 'Team created. Invite its members next.',
   member_invited: 'Invitation sent. The athlete accepts it from their Teams page.',
   membership_accepted: 'You’ve joined the team.',

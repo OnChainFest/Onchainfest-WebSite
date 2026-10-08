@@ -5,6 +5,7 @@ import type {
   CompetitionStore,
   IdentityStore,
   RegistrationEntry,
+  ScoringStore,
   StructureStore,
   TeamStore,
 } from '@br/persistence';
@@ -32,6 +33,8 @@ export interface CompetitionV1Deps {
   readonly structure: StructureStore;
   readonly teams: TeamStore;
   readonly reader: CompetitionReader;
+  /** ONCF-05C scoring (pin, score-sheet validation, stage classification). Routes exist only when wired. */
+  readonly scoring?: ScoringStore;
 }
 
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
@@ -800,6 +803,125 @@ export function registerCompetitionV1(
       });
     },
   );
+
+  // ───────────────────────────── scoring (ONCF-05C; COMP_STAFF) ─────────────────────────────
+  // Organizer surface only: rulesets and templates are pinned before the field locks; score sheets
+  // are validated (never written — submission is the ResultLedger's, in 05D); classifications are
+  // computed on read from current results and are proposals (ADR-0047), never published here.
+  const scoring = deps.scoring;
+  if (scoring !== undefined) {
+    route(
+      'PUT',
+      '/v1/events/:eventId/scoring',
+      'COMP_STAFF',
+      {
+        params: idParams('eventId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            rulesetVersionId: uuid,
+            classificationTemplateVersionId: { type: ['string', 'null'], format: 'uuid' },
+            stageOverrides: {
+              type: 'object',
+              maxProperties: 16,
+              propertyNames: { pattern: '^s[0-9]{1,2}$' },
+              additionalProperties: obj({
+                rulesetVersionId: uuid,
+                classificationTemplateVersionId: uuid,
+              }),
+            },
+          },
+          ['rulesetVersionId'],
+        ),
+      },
+      async (request) => {
+        const ctx = requireAuth(request);
+        const b = body<{
+          rulesetVersionId: string;
+          classificationTemplateVersionId?: string | null;
+          stageOverrides?: Record<
+            string,
+            { rulesetVersionId?: string; classificationTemplateVersionId?: string }
+          >;
+        }>(request);
+        return scoring.pinScoring(
+          defined({
+            actorAccountId: ctx.accountId,
+            eventId: params<{ eventId: string }>(request).eventId,
+            ...b,
+            idempotencyKey: key(request),
+          }),
+        );
+      },
+    );
+
+    route(
+      'GET',
+      '/v1/events/:eventId/scoring',
+      'COMP_STAFF',
+      { params: idParams('eventId') },
+      async (request) => {
+        const ctx = requireAuth(request);
+        return scoring.scoring({
+          actorAccountId: ctx.accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+        });
+      },
+    );
+
+    route(
+      'POST',
+      '/v1/contests/:contestId/score-sheets/validate',
+      'COMP_STAFF',
+      {
+        params: idParams('contestId'),
+        body: {
+          type: 'object',
+          required: ['sheet'],
+          additionalProperties: false,
+          properties: { sheet: { type: 'object' } },
+        },
+      },
+      async (request) => {
+        const ctx = requireAuth(request);
+        return scoring.validateScoreSheet({
+          actorAccountId: ctx.accountId,
+          contestId: params<{ contestId: string }>(request).contestId,
+          sheet: body<{ sheet: never }>(request).sheet,
+        });
+      },
+    );
+
+    route(
+      'GET',
+      '/v1/events/:eventId/stages/:stageKey/classification',
+      'COMP_STAFF',
+      {
+        params: obj({ eventId: uuid, stageKey: { type: 'string', pattern: '^s[0-9]{1,2}$' } }, [
+          'eventId',
+          'stageKey',
+        ]),
+        querystring: obj({
+          group: { type: 'string', pattern: '^g[0-9]{1,2}$' },
+          throughRound: { type: 'integer', minimum: 1, maximum: 100 },
+        }),
+      },
+      async (request) => {
+        const ctx = requireAuth(request);
+        const p = params<{ eventId: string; stageKey: string }>(request);
+        const q = request.query as { group?: string; throughRound?: number };
+        return scoring.classify(
+          defined({
+            actorAccountId: ctx.accountId,
+            eventId: p.eventId,
+            stageKey: p.stageKey,
+            groupKey: q.group,
+            throughRound: q.throughRound,
+          }),
+        );
+      },
+    );
+  }
 
   // ───────────────────────────── registration (SELF / COMP_STAFF) ─────────────────────────────
 

@@ -3005,3 +3005,25 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ONCF-05C scoring panel + classification proposal */
+.oc-app .st-scoring {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.oc-app .st-scoring dt {
+  color: var(--muted);
+}
+.oc-app .st-scoring dd {
+  margin: 0;
+}
+.oc-app .st-stage-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0.75rem;
+}

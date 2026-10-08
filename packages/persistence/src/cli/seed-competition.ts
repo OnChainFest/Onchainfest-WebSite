@@ -1,3 +1,4 @@
+import { CANONICAL_CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import {
   CANONICAL_CATALOG,
   type CatalogManifest,
@@ -117,7 +118,11 @@ try {
     ),
     formats: CANONICAL_CATALOG.formats,
   };
-  const provisioned = await catalog.provision({ operatorAccountId: op, manifest: DEV_CATALOG });
+  const provisioned = await catalog.provision({
+    operatorAccountId: op,
+    manifest: DEV_CATALOG,
+    classificationTemplates: CANONICAL_CLASSIFICATION_TEMPLATES,
+  });
   if (provisioned.conflicts.length > 0)
     throw new Error(`catalog conflicts: ${JSON.stringify(provisioned.conflicts)}`);
   const idOf = (kind: 'discipline-version' | 'format-version', code: string): string => {

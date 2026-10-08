@@ -646,7 +646,26 @@ export class StructureStore {
       else if (r.engine === null) blockers.push('NO_PLAN');
       if (r.engine !== null && r.scheduled < r.contests) warnings.push('CONTESTS_UNSCHEDULED');
       if (r.dynamic_rounds > 0) warnings.push('ROUNDS_AWAIT_ADVANCEMENT');
+      // ONCF-05C: the generated stages and their groups (for per-stage classification views).
+      const { rows: stageRows } = await sql<{
+        key: string;
+        label: string;
+        primitive: string;
+        groups: string[] | null;
+      }>`
+        SELECT st.plan_key AS key, st.label, st.primitive,
+               (SELECT array_agg(DISTINCT r.group_key ORDER BY r.group_key) FROM competition.round r
+                 WHERE r.stage_id = st.id AND r.group_key IS NOT NULL) AS groups
+        FROM competition.stage st WHERE st.event_id = ${e.id} ORDER BY st.sequence`.execute(
+        ctx.trx,
+      );
       return {
+        stageList: stageRows.map((x) => ({
+          key: x.key,
+          label: x.label,
+          primitive: x.primitive,
+          groups: x.groups ?? [],
+        })),
         eventId: e.id,
         status: e.status,
         fieldLocked: r.field_version !== null,

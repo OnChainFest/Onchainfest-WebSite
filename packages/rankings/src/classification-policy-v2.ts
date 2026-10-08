@@ -90,10 +90,11 @@ export interface MetricPolicySpec {
   readonly tieBreak: readonly MetricTieBreak[];
   /** Finishers first; then non-finishers in this order. */
   readonly statusOrder: readonly ('NOT_PLACED' | 'PULLED' | 'DNF' | 'DQ' | 'DNS')[];
-  /** Sub-classifications of the same contests by declared category labels. */
-  readonly categorySubsets?: readonly (
-    'genderCategory' | 'ageCategory' | 'skillClass' | 'division'
-  )[];
+  /**
+   * Sub-classifications of the same contests by a DECLARED entry attribute (e.g. ageBand). Gender
+   * or age is never inferred from identity data, so subsets group by declared values only.
+   */
+  readonly subsetsByAttribute?: readonly string[];
   /** Team score derived from INDIVIDUAL results grouped by a declared team affiliation. */
   readonly teamDerived?: {
     readonly groupByAttribute: string;
@@ -203,6 +204,10 @@ export function validateClassificationPolicyV2(spec: ClassificationPolicyV2Spec)
     const last = spec.tieBreak.at(-1)?.kind;
     if (last !== 'SHARED' && last !== 'ORGANIZER_LOT')
       out.push({ path: '/tieBreak', message: 'must end with SHARED or ORGANIZER_LOT' });
+    (spec.subsetsByAttribute ?? []).forEach((a, i) => {
+      if (!/^[a-z][A-Za-z0-9]{0,31}$/.test(a))
+        out.push({ path: `/subsetsByAttribute/${i}`, message: 'names a declared entry attribute' });
+    });
     if (
       spec.teamDerived !== undefined &&
       (spec.teamDerived.scorers < 1 || spec.teamDerived.scorers > 20)
@@ -357,7 +362,7 @@ export const CLASSIFICATION_TEMPLATES: readonly ClassificationTemplate[] = [
       keys: [{ metric: 'elapsedTimeMs', order: 'LOWER_IS_BETTER', source: 'PRIMARY_MARK' }],
       tieBreak: [{ kind: 'SHARED' }],
       statusOrder: ['DNF', 'DQ', 'DNS'],
-      categorySubsets: ['genderCategory', 'ageCategory'],
+      subsetsByAttribute: ['ageBand'],
       minimumInputStatus: 'PROVISIONAL',
     },
   },
@@ -372,7 +377,7 @@ export const CLASSIFICATION_TEMPLATES: readonly ClassificationTemplate[] = [
       keys: [{ metric: 'elapsedTimeMs', order: 'LOWER_IS_BETTER', source: 'PRIMARY_MARK' }],
       tieBreak: [{ kind: 'SHARED' }],
       statusOrder: ['DQ', 'DNS'],
-      categorySubsets: ['genderCategory', 'ageCategory'],
+      subsetsByAttribute: ['ageBand'],
       minimumInputStatus: 'PROVISIONAL',
     },
   },
@@ -434,8 +439,22 @@ export const CLASSIFICATION_TEMPLATES: readonly ClassificationTemplate[] = [
         { kind: 'SHARED' },
       ],
       statusOrder: ['NOT_PLACED', 'DNF', 'DQ', 'DNS'],
-      categorySubsets: ['ageCategory'],
+      subsetsByAttribute: ['ageBand'],
       minimumInputStatus: 'PROVISIONAL',
     },
   },
 ];
+
+/** The canonical classification templates as a provisioning manifest (version histories). */
+export const CANONICAL_CLASSIFICATION_TEMPLATES: readonly {
+  readonly code: string;
+  readonly name: string;
+  readonly versions: readonly {
+    readonly spec: ClassificationPolicyV2Spec;
+    readonly basis: RuleBasis;
+  }[];
+}[] = CLASSIFICATION_TEMPLATES.map((t) => ({
+  code: t.code,
+  name: t.name,
+  versions: [{ spec: t.spec, basis: t.basis }],
+}));

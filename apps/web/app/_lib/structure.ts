@@ -29,6 +29,8 @@ export interface Readiness {
   contestsScheduled: { scheduled: number; total: number };
   blockers: string[];
   warnings: string[];
+  /** ONCF-05C: generated stages and their groups (absent on older API builds). */
+  stageList?: { key: string; label: string; primitive: string; groups: string[] }[];
 }
 
 export interface FieldParticipant {

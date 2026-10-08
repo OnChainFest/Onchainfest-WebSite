@@ -417,7 +417,15 @@ describe('BRT-10 /v1 rankings — canonical lane', () => {
   });
 
   it('exactly the nine BRT-10 routes, classified as decided; no write, publish, evaluate or qualification route', () => {
-    const brt10 = app.v1Routes.filter((r) => /ranking|classification/.test(r.url));
+    // ONCF-05C adds exactly one in-event classification route: a COMP_STAFF read of a computed
+    // proposal (ADR-0063). It is pinned here so it can never become a write surface unnoticed.
+    const oncf05c = (r: { url: string }) => r.url.startsWith('/v1/events/');
+    expect(
+      app.v1Routes
+        .filter((r) => oncf05c(r) && /ranking|classification/.test(r.url))
+        .map((r) => `${r.method} ${r.url} ${r.classification}`),
+    ).toEqual(['GET /v1/events/:eventId/stages/:stageKey/classification COMP_STAFF']);
+    const brt10 = app.v1Routes.filter((r) => !oncf05c(r) && /ranking|classification/.test(r.url));
     expect(brt10.map((r) => `${r.method} ${r.url} ${r.classification}`).sort()).toEqual(
       [
         'GET /v1/ranking-systems PUBLIC',

@@ -566,7 +566,11 @@ function validateV2(spec: DisciplineVersionSpec, issues: CatalogIssue[]): void {
 
 /** Content hash of a catalog specification document (free-form but BR-JSON safe; JCS). */
 export function catalogSpecHash(
-  schemaId: 'br:discipline-version-spec' | 'br:format-version-spec',
+  schemaId:
+    | 'br:discipline-version-spec'
+    | 'br:format-version-spec'
+    | 'br:ruleset-version-spec'
+    | 'br:classification-template-spec',
   spec: unknown,
 ): ContentHash {
   return toContentHash(
