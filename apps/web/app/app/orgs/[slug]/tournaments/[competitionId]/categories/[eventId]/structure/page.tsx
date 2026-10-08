@@ -318,6 +318,9 @@ export default async function StructurePage({
                 {r.plan?.contests ?? 0} contests in {r.plan?.stages || 1} stage
                 {(r.plan?.stages ?? 1) > 1 ? 's' : ''} · {r.plan?.engine}
               </p>
+              <a className="btn btn-ghost btn-sm" href={`${category}/progression`}>
+                Results & progression
+              </a>{' '}
               <a className="btn btn-cyan btn-sm" href={publicEvent}>
                 See it on the public category page ↗
               </a>
@@ -333,6 +336,7 @@ export default async function StructurePage({
             templates={(family) =>
               catalog.kind === 'ok' ? templatesFor(catalog.data, family) : []
             }
+            policies={catalog.kind === 'ok' ? (catalog.data.advancementPolicyVersions ?? []) : []}
             canPin={
               !(scoringPin.kind === 'ok' && scoringPin.data.frozen) && perms.includes('COMP_EDIT')
             }
@@ -598,6 +602,7 @@ function ScoringPanel({
   pinned,
   rulesets,
   templates,
+  policies,
   canPin,
   hidden,
 }: {
@@ -608,6 +613,7 @@ function ScoringPanel({
     : never;
   rulesets: ReturnType<typeof compatibleRulesets>;
   templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
+  policies: ReturnType<typeof templatesFor>;
   canPin: boolean;
   hidden: ReactNode;
 }) {
@@ -633,6 +639,18 @@ function ScoringPanel({
               </>
             ) : (
               <span className="muted">None (no table for this format)</span>
+            )}
+          </dd>
+          <dt>Advancement</dt>
+          <dd>
+            {pinned.advancementPolicy ? (
+              <>
+                {pinned.advancementPolicy.name}{' '}
+                <span className="mono muted">v{pinned.advancementPolicy.version}</span>
+                <div className="muted small">{basisLabel(pinned.advancementPolicy)}</div>
+              </>
+            ) : (
+              <span className="muted">None — next-stage slots can’t be resolved</span>
             )}
           </dd>
         </dl>
@@ -675,6 +693,21 @@ function ScoringPanel({
               ].map((t) => (
                 <option key={t.versionId} value={t.versionId}>
                   {t.name} (v{t.version})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Advancement
+            <select
+              name="advancementPolicyVersionId"
+              defaultValue={pinned?.advancementPolicy?.versionId ?? ''}
+            >
+              <option value="">None</option>
+              {policies.map((p) => (
+                <option key={p.versionId} value={p.versionId}>
+                  {p.name} (v{p.version})
+                  {p.basis.kind === 'COMMON_PRACTICE' ? ' · common practice' : ''}
                 </option>
               ))}
             </select>

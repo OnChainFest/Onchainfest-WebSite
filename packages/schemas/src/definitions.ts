@@ -378,6 +378,19 @@ export const commandSchemas = [
     },
     ['resultVersionId', 'toStatus', 'actorPrincipalId', 'scope'],
   ),
+  // ONCF-05D: an atomic correction (T2 + T3 of the new version, T7 of the version it supersedes).
+  idempotentCommand(
+    'br:cmd-correct-result-version',
+    {
+      draftId: uuid,
+      supersedesVersionId: uuid,
+      actorPrincipalId: uuid,
+      contentHash: hashRef,
+      scope: authorityScope,
+      reason: shortText,
+    },
+    ['draftId', 'supersedesVersionId', 'actorPrincipalId', 'contentHash', 'scope', 'reason'],
+  ),
   idempotentCommand('br:cmd-issue-grant', { grantHash: hashRef, actorPrincipalId: uuid }, [
     'grantHash',
     'actorPrincipalId',

@@ -187,6 +187,11 @@ export class CompetitionReader {
         FROM sports.classification_template_version v JOIN sports.classification_template t ON t.id = v.template_id
         JOIN sports.v_classification_template_version_current c ON c.classification_template_version_id = v.id
         WHERE c.status = 'PUBLISHED' ORDER BY t.code, v.version`.execute(ctx.trx);
+      const { rows: policies } = await sql<(typeof templates)[number]>`
+        SELECT v.id, p.code, p.name, v.version, v.family, v.spec_hash, v.spec, v.basis
+        FROM sports.advancement_policy_version v JOIN sports.advancement_policy p ON p.id = v.policy_id
+        JOIN sports.v_advancement_policy_version_current c ON c.advancement_policy_version_id = v.id
+        WHERE c.status = 'PUBLISHED' ORDER BY p.code, v.version`.execute(ctx.trx);
       const scoringVersion = (r: (typeof rulesets)[number]) => ({
         versionId: r.id,
         code: r.code,
@@ -200,6 +205,7 @@ export class CompetitionReader {
       return {
         rulesetVersions: rulesets.map(scoringVersion),
         classificationTemplateVersions: templates.map(scoringVersion),
+        advancementPolicyVersions: policies.map(scoringVersion),
         disciplineVersions: disciplines.map((d) => ({
           disciplineVersionId: d.id,
           sport: { code: d.sport_code, name: d.sport_name },
@@ -534,6 +540,14 @@ export class CompetitionReader {
         venue:
           c.venue_organization_id === null ? null : await this.org(ctx, c.venue_organization_id),
         slots: c.slots.map((s): PublicSlot => {
+          const occupancy =
+            s.participantId === undefined
+              ? ({ resolved: false } as const)
+              : ({
+                  resolved: true,
+                  participantId: s.participantId,
+                  display: displays.get(s.participantId) ?? { kind: 'PRIVATE_ENTRANT' },
+                } as const);
           switch (s.kind) {
             case 'PARTICIPANT':
               return {
@@ -549,7 +563,7 @@ export class CompetitionReader {
                 stageKey: s.stageKey ?? null,
                 groupKey: s.groupKey ?? null,
                 rank: s.rank as number,
-                resolved: false,
+                ...occupancy,
               };
             case 'BEST_RANKED_FROM_STAGE':
               return {
@@ -558,7 +572,7 @@ export class CompetitionReader {
                 stageKey: s.stageKey as string,
                 rank: s.rank as number,
                 ordinal: s.ordinal as number,
-                resolved: false,
+                ...occupancy,
               };
             case 'QUALIFIER':
               return {
@@ -566,7 +580,7 @@ export class CompetitionReader {
                 kind: 'QUALIFIER',
                 transitionKey: s.transitionKey as string,
                 ordinal: s.ordinal as number,
-                resolved: false,
+                ...occupancy,
               };
             default:
               return {
@@ -574,7 +588,7 @@ export class CompetitionReader {
                 kind: s.kind as 'WINNER_OF_CONTEST' | 'LOSER_OF_CONTEST',
                 contestId: s.contestId as string,
                 contestSequence: s.contestSequence as number,
-                resolved: false,
+                ...occupancy,
               };
           }
         }),

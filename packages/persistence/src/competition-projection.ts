@@ -104,21 +104,36 @@ export async function refreshEventReadModels(ctx: TxContext, eventId: string): P
                       CASE WHEN ct.source_kind = 'PARTICIPANT'
                         THEN jsonb_build_object('slot', ct.slot, 'kind', 'PARTICIPANT', 'participantId', ct.participant_id)
                         WHEN ct.source_kind IN ('WINNER_OF_CONTEST', 'LOSER_OF_CONTEST')
-                        THEN jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind, 'contestId', ct.source_contest_id,
-                                                'contestSequence', (SELECT src.sequence FROM competition.contest src WHERE src.id = ct.source_contest_id))
+                        THEN jsonb_strip_nulls(jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind, 'contestId', ct.source_contest_id,
+                                                'contestSequence', (SELECT src.sequence FROM competition.contest src WHERE src.id = ct.source_contest_id),
+                                                'participantId', o.participant_id))
                         -- ONCF-05B stage-graph dependencies (plan keys only; unresolved)
                         ELSE jsonb_strip_nulls(jsonb_build_object('slot', ct.slot, 'kind', ct.source_kind,
                                'stageKey', (SELECT s.plan_key FROM competition.stage s WHERE s.id = ct.source_stage_id),
                                'groupKey', ct.source_group_key, 'rank', ct.source_rank, 'ordinal', ct.source_ordinal,
-                               'transitionKey', (SELECT t.plan_key FROM competition.stage_transition t WHERE t.id = ct.source_transition_id)))
+                               'transitionKey', (SELECT t.plan_key FROM competition.stage_transition t WHERE t.id = ct.source_transition_id),
+                               'participantId', o.participant_id))
                       END ORDER BY ct.slot)
-             FROM competition.contestant ct WHERE ct.contest_id = c.id), '[]'::jsonb),
+             FROM competition.contestant ct
+             -- ONCF-05D: the current occupant of a dependent slot (committed advancement facts only)
+             LEFT JOIN competition.v_contest_occupant o ON o.contest_id = ct.contest_id AND o.place = ct.slot
+                   AND ct.source_kind <> 'PARTICIPANT'
+             WHERE ct.contest_id = c.id), '[]'::jsonb),
            c.partition_key,
-           (SELECT count(*)::int FROM competition.contest_entry ce WHERE ce.contest_id = c.id),
+           (SELECT count(*)::int FROM competition.contest_entry ce WHERE ce.contest_id = c.id)
+             + (SELECT count(*)::int FROM competition.v_contest_occupant o
+                WHERE o.contest_id = c.id AND o.participant_id IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM competition.contestant x WHERE x.contest_id = c.id)),
            coalesce((
              SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('participantId', ce.participant_id, 'position', ce.start_order,
                                                                     'startOffsetSeconds', ce.start_offset_seconds)) ORDER BY ce.start_order)
-             FROM competition.contest_entry ce WHERE ce.contest_id = c.id), '[]'::jsonb)
+             FROM competition.contest_entry ce WHERE ce.contest_id = c.id),
+             -- ONCF-05D: a materialized dynamic-round contest lists its resolved field
+             (SELECT jsonb_agg(jsonb_build_object('participantId', o.participant_id, 'position', o.place) ORDER BY o.place)
+              FROM competition.v_contest_occupant o
+              WHERE o.contest_id = c.id AND o.participant_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM competition.contestant x WHERE x.contest_id = c.id)),
+             '[]'::jsonb)
     FROM competition.contest c
     JOIN competition.v_contest_current st ON st.contest_id = c.id
     LEFT JOIN competition.contest_schedule sc ON sc.contest_id = c.id

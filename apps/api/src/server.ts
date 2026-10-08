@@ -1,3 +1,4 @@
+import type { ConflictOfInterestChecker } from '@br/authority';
 import { DomainError } from '@br/domain';
 import {
   eip155EoaPersonalSignVerifier,
@@ -26,6 +27,8 @@ import {
   EvidenceBundleService,
   EvidenceStore,
   PersonPrincipalService,
+  AdvancementStore,
+  ContestResultService,
   PersonPrivateDataService,
   PrincipalKeyCeremony,
   ScoringStore,
@@ -82,6 +85,11 @@ export interface ApiOptions {
   readonly evidenceBlobStore?: EvidenceBlobStore;
   /** Signature audience (environment binding) for signed statements, e.g. "bragging-rights:prod". */
   readonly signatureAudience?: string;
+  /**
+   * ONCF-05D: conflict-of-interest participation source for result authority decisions. Without
+   * one, conflict-sensitive result actions fail closed (BRT-03R) — there is no permissive default.
+   */
+  readonly resultConflictChecker?: ConflictOfInterestChecker;
   readonly logger?: boolean;
   /** Destination for the (redacted) logger; enables logging. Used by tests to inspect log output. */
   readonly logStream?: { write(line: string): void };
@@ -95,6 +103,8 @@ export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInf
  * Logs never include request bodies or the Authorization header.
  */
 export function buildServer(options: ApiOptions): ApiServer {
+  const scoring = new ScoringStore(options.db);
+  const advancement = new AdvancementStore(options.db, scoring);
   const app = Fastify({
     // Unknown DTO fields are rejected, never silently stripped or coerced.
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false, allErrors: false } },
@@ -190,10 +200,20 @@ export function buildServer(options: ApiOptions): ApiServer {
         ? {}
         : { catalog: new CatalogStore(options.operatorDb) }),
       competitions: new CompetitionStore(options.db),
-      structure: new StructureStore(options.db),
+      structure: new StructureStore(options.db, {
+        startGuard: (contestId) => advancement.contestBlockers(contestId),
+      }),
       teams: new TeamStore(options.db),
       reader: new CompetitionReader(options.db),
-      scoring: new ScoringStore(options.db),
+      scoring,
+      advancement,
+      results: new ContestResultService(
+        options.db,
+        scoring,
+        options.resultConflictChecker === undefined
+          ? {}
+          : { conflictChecker: options.resultConflictChecker },
+      ),
     },
     ...(privateData === undefined ? {} : { privateData }),
     evidence: {

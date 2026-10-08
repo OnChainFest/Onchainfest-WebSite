@@ -483,3 +483,170 @@ export const stageClassificationV1 = root('br:stage-classification', 1, {
 });
 
 export const ONCF05C_SCHEMAS: readonly BrRootSchema[] = [stageClassificationV1];
+
+// ───────────────────────────── ONCF-05D advancement (ADR-0065) ─────────────────────────────
+
+const valueList: BrSchema = {
+  type: 'array',
+  maxItems: 16,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['key', 'value'],
+    properties: { key: { type: 'string', maxLength: 80 }, value: shortValue },
+  },
+};
+const advancementTarget: BrSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind'],
+  properties: {
+    kind: enumOf(['SLOT', 'FIELD']),
+    contestId: uuid,
+    slot: posInt(64),
+    transitionKey,
+    ordinal: posInt(MAX_FIELD),
+  },
+};
+const advancementProvenance: BrSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['family', 'source'],
+  properties: {
+    family: enumOf([
+      'DIRECT_WINNER',
+      'DIRECT_LOSER',
+      'GROUP_RANK',
+      'TOP_N',
+      'BEST_N_ACROSS_GROUPS',
+      'CUT',
+      'STAGE_TOTAL',
+      'MANUAL_OVERRIDE',
+    ]),
+    source: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind'],
+      properties: {
+        kind: { type: 'string', pattern: '^[A-Z_]{1,40}$' },
+        contestId: uuid,
+        stageKey,
+        groupKey,
+        rank: posInt(MAX_FIELD),
+        ordinal: posInt(MAX_FIELD),
+        transitionKey,
+        slot: posInt(64),
+      },
+    },
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['contestId', 'resultVersionId', 'contentHash', 'status', 'outcome'],
+      properties: {
+        contestId: uuid,
+        resultVersionId: uuid,
+        contentHash: hashRef,
+        status: { type: 'string', pattern: '^[A-Z_]{1,20}$' },
+        outcome: { type: 'string', pattern: '^[A-Z_]{1,20}$' },
+        opponentId: uuid,
+      },
+    },
+    classification: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['stageKey', 'hash'],
+      properties: {
+        stageKey,
+        groupKey,
+        throughRound: posInt(100),
+        hash: hashRef,
+        position: posInt(MAX_FIELD),
+        tied: { type: 'boolean' },
+      },
+    },
+    heat: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['contestId', 'place'],
+      properties: { contestId: uuid, place: posInt(64) },
+    },
+    comparison: {
+      type: 'array',
+      maxItems: 64,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['participantId', 'groupKey', 'values'],
+        properties: { participantId: uuid, groupKey, values: valueList },
+      },
+    },
+    candidates: { type: 'array', maxItems: 64, items: uuid },
+    decidedBy: enumOf(['SEED']),
+    replaces: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['assignmentDigest'],
+      properties: { participantId: uuid, assignmentDigest: hashRef },
+    },
+  },
+};
+
+/** One target's decided state with its structured provenance (the digest stored per fact). */
+export const advancementAssignmentV1 = root('br:advancement-assignment', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['target', 'state', 'provenance'],
+  properties: {
+    target: advancementTarget,
+    state: enumOf(['RESOLVED', 'VACANT', 'PENDING', 'HELD']),
+    participantId: uuid,
+    reason: { type: 'string', pattern: '^[A-Z_]{1,40}$' },
+    provenance: advancementProvenance,
+  },
+});
+
+/** A committed (or previewed) decision for one advancement unit. */
+export const advancementDecisionV1 = root('br:advancement-decision', 1, {
+  type: 'object',
+  additionalProperties: false,
+  required: ['engine', 'eventId', 'unit', 'kind', 'policy', 'assignments'],
+  properties: {
+    engine: { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$', maxLength: 64 },
+    eventId: uuid,
+    unit: { type: 'string', pattern: '^[a-z]+:[A-Za-z0-9:_-]{1,120}$' },
+    kind: enumOf(['RESOLUTION', 'OVERRIDE', 'OVERRIDE_REVOKED']),
+    policy: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['code', 'version', 'specHash'],
+      properties: {
+        code: { type: 'string', pattern: '^[a-z0-9_-]{1,64}$' },
+        version: posInt(1000),
+        specHash: hashRef,
+      },
+    },
+    reason: { type: 'string', minLength: 1, maxLength: 500 },
+    assignments: {
+      type: 'array',
+      maxItems: MAX_FIELD,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['target', 'state', 'provenance', 'digest'],
+        properties: {
+          target: advancementTarget,
+          state: enumOf(['RESOLVED', 'VACANT', 'PENDING', 'HELD']),
+          participantId: uuid,
+          reason: { type: 'string', pattern: '^[A-Z_]{1,40}$' },
+          provenance: advancementProvenance,
+          digest: hashRef,
+        },
+      },
+    },
+  },
+});
+
+export const ONCF05D_SCHEMAS: readonly BrRootSchema[] = [
+  advancementAssignmentV1,
+  advancementDecisionV1,
+];

@@ -25,10 +25,10 @@ export const TransitionCode = {
   T2: 'T2', // DRAFT → SUBMITTED
   T3: 'T3', // SUBMITTED → PROVISIONAL
   T4: 'T4', // SUBMITTED → REJECTED
-  T5: 'T5', // PROVISIONAL → OFFICIAL      (not implemented in BRT-03)
-  T6: 'T6', // OFFICIAL → FINAL            (not implemented in BRT-03)
-  T7: 'T7', // → SUPERSEDED                (not implemented in BRT-03)
-  T8: 'T8', // → REVOKED                   (not implemented in BRT-03)
+  T5: 'T5', // PROVISIONAL → OFFICIAL      (ONCF-05D, capability DECLARE_OFFICIAL)
+  T6: 'T6', // OFFICIAL → FINAL            (not implemented)
+  T7: 'T7', // → SUPERSEDED                (ONCF-05D, only inside an atomic correction)
+  T8: 'T8', // → REVOKED                   (not implemented)
 } as const;
 export type TransitionCode = (typeof TransitionCode)[keyof typeof TransitionCode];
 
@@ -38,11 +38,22 @@ export interface TransitionRule {
   readonly to: ResultVersionStatus;
 }
 
-/** Transitions implemented in BRT-03. No transition ever goes backwards (R-3). */
+/**
+ * Transitions implemented (BRT-03: T2–T4; ONCF-05D: T5 and T7, ADR-0064). No transition ever goes
+ * backwards (R-3). T7 is never requested on its own: it is recorded only by an atomic correction,
+ * in the same transaction that makes the correcting version current (`CORRECTION_TRANSITIONS`).
+ */
 export const IMPLEMENTED_TRANSITIONS: readonly TransitionRule[] = [
   { code: 'T2', from: 'DRAFT', to: 'SUBMITTED' },
   { code: 'T3', from: 'SUBMITTED', to: 'PROVISIONAL' },
   { code: 'T4', from: 'SUBMITTED', to: 'REJECTED' },
+  { code: 'T5', from: 'PROVISIONAL', to: 'OFFICIAL' },
+];
+
+/** T7: the current version a correction replaces (PROVISIONAL or OFFICIAL) becomes SUPERSEDED. */
+export const CORRECTION_TRANSITIONS: readonly TransitionRule[] = [
+  { code: 'T7', from: 'PROVISIONAL', to: 'SUPERSEDED' },
+  { code: 'T7', from: 'OFFICIAL', to: 'SUPERSEDED' },
 ];
 
 export function findTransition(

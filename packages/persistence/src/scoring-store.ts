@@ -1,4 +1,7 @@
 import {
+  crossGroupKeysUsed,
+  type AdvancementPolicySpec,
+  type ContestEvidence,
   capabilityIssues,
   engineRequirements,
   formatEngine,
@@ -62,6 +65,7 @@ const STATUS_FLOOR: Record<string, readonly string[]> = {
 interface Pinned {
   readonly rulesetVersionId: string;
   readonly classificationTemplateVersionId: string | null;
+  readonly advancementPolicyVersionId: string | null;
   readonly stageOverrides: Readonly<
     Record<string, { rulesetVersionId?: string; classificationTemplateVersionId?: string }>
   >;
@@ -97,12 +101,25 @@ async function templateVersion(ctx: TxContext, id: string): Promise<VersionRow |
   return rows[0];
 }
 
-async function currentPin(ctx: TxContext, eventId: string): Promise<Pinned | undefined> {
+export async function advancementPolicyVersion(
+  ctx: TxContext,
+  id: string,
+): Promise<VersionRow | undefined> {
+  const { rows } = await sql<VersionRow>`
+    SELECT v.id, p.code, v.version, v.family, v.spec, v.spec_hash, v.basis, c.status
+    FROM sports.advancement_policy_version v JOIN sports.advancement_policy p ON p.id = v.policy_id
+    JOIN sports.v_advancement_policy_version_current c ON c.advancement_policy_version_id = v.id
+    WHERE v.id = ${id}`.execute(ctx.trx);
+  return rows[0];
+}
+
+export async function currentPin(ctx: TxContext, eventId: string): Promise<Pinned | undefined> {
   const { rows } = await sql<{
     ruleset_version_id: string;
     classification_template_version_id: string | null;
+    advancement_policy_version_id: string | null;
     stage_overrides: Pinned['stageOverrides'];
-  }>`SELECT ruleset_version_id, classification_template_version_id, stage_overrides
+  }>`SELECT ruleset_version_id, classification_template_version_id, advancement_policy_version_id, stage_overrides
      FROM competition.v_event_scoring_current WHERE event_id = ${eventId}`.execute(ctx.trx);
   const r = rows[0];
   return r === undefined
@@ -110,8 +127,24 @@ async function currentPin(ctx: TxContext, eventId: string): Promise<Pinned | und
     : {
         rulesetVersionId: r.ruleset_version_id,
         classificationTemplateVersionId: r.classification_template_version_id,
+        advancementPolicyVersionId: r.advancement_policy_version_id,
         stageOverrides: r.stage_overrides,
       };
+}
+
+/** Value keys a STANDINGS classification document carries (base values + criteria metrics). */
+function standingsValueKeys(spec: ClassificationPolicyV2Spec): Set<string> {
+  const keys = new Set(['played', 'wins', 'points']);
+  const walk = (cs: readonly unknown[]) => {
+    for (const raw of cs) {
+      const c = raw as Record<string, unknown>;
+      for (const k of ['forMetric', 'againstMetric', 'metric'])
+        if (typeof c[k] === 'string') keys.add(c[k] as string);
+      if (Array.isArray(c['sub'])) walk(c['sub'] as unknown[]);
+    }
+  };
+  if (spec.family === 'STANDINGS') walk(spec.criteria);
+  return keys;
 }
 
 const view = (v: VersionRow) => ({
@@ -148,6 +181,8 @@ export class ScoringStore {
     eventId: string;
     rulesetVersionId: string;
     classificationTemplateVersionId?: string | null;
+    /** ONCF-05D: how classified entrants move to dependent slots (required for advancement). */
+    advancementPolicyVersionId?: string | null;
     stageOverrides?: Readonly<
       Record<string, { rulesetVersionId?: string; classificationTemplateVersionId?: string }>
     >;
@@ -173,6 +208,7 @@ export class ScoringStore {
           eventId: input.eventId,
           rulesetVersionId: input.rulesetVersionId,
           classificationTemplateVersionId: input.classificationTemplateVersionId ?? null,
+          advancementPolicyVersionId: input.advancementPolicyVersionId ?? null,
           overrides,
         },
       });
@@ -236,7 +272,7 @@ export class ScoringStore {
           );
         return r;
       };
-      const checkTemplate = async (id: string, ruleset: VersionRow) => {
+      const checkTemplate = async (id: string, ruleset: VersionRow): Promise<VersionRow> => {
         const t = await templateVersion(ctx, id);
         if (t === undefined || t.status !== 'PUBLISHED')
           throw new DomainError(
@@ -252,20 +288,48 @@ export class ScoringStore {
               reason: 'CAPABILITY_MISMATCH',
             },
           );
+        return t;
       };
       const base = await checkRuleset(input.rulesetVersionId);
-      if (
+      const baseTemplate =
         input.classificationTemplateVersionId !== undefined &&
         input.classificationTemplateVersionId !== null
-      )
-        await checkTemplate(input.classificationTemplateVersionId, base);
+          ? await checkTemplate(input.classificationTemplateVersionId, base)
+          : undefined;
+      if (
+        input.advancementPolicyVersionId !== undefined &&
+        input.advancementPolicyVersionId !== null
+      ) {
+        const a = await advancementPolicyVersion(ctx, input.advancementPolicyVersionId);
+        if (a === undefined || a.status !== 'PUBLISHED')
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            'advancement policy version not found or not published',
+          );
+        // A cross-group order can only read values the pinned standings template produces.
+        const used = crossGroupKeysUsed(a.spec as AdvancementPolicySpec);
+        if (used.length > 0) {
+          const available =
+            baseTemplate === undefined
+              ? new Set<string>()
+              : standingsValueKeys(baseTemplate.spec as ClassificationPolicyV2Spec);
+          const missing = used.filter((k) => !available.has(k));
+          if (missing.length > 0)
+            throw new DomainError(
+              DomainErrorCode.INVALID_INPUT,
+              `the advancement policy compares values the classification template does not produce: ${missing.join(', ')}`,
+              { reason: 'CAPABILITY_MISMATCH' },
+            );
+        }
+      }
       for (const o of Object.values(overrides)) {
         const r = o.rulesetVersionId === undefined ? base : await checkRuleset(o.rulesetVersionId);
         if (o.classificationTemplateVersionId !== undefined)
           await checkTemplate(o.classificationTemplateVersionId, r);
       }
-      await sql`INSERT INTO competition.event_scoring (id, event_id, ruleset_version_id, classification_template_version_id, stage_overrides, pinned_by_account_id, recorded_at)
+      await sql`INSERT INTO competition.event_scoring (id, event_id, ruleset_version_id, classification_template_version_id, advancement_policy_version_id, stage_overrides, pinned_by_account_id, recorded_at)
         VALUES (${newId()}, ${e.id}, ${input.rulesetVersionId}, ${input.classificationTemplateVersionId ?? null},
+                ${input.advancementPolicyVersionId ?? null},
                 ${JSON.stringify(overrides)}::jsonb, ${input.actorAccountId}, ${ctx.txTime})`.execute(
         ctx.trx,
       );
@@ -276,6 +340,7 @@ export class ScoringStore {
         payload: {
           rulesetVersionId: input.rulesetVersionId,
           classificationTemplateVersionId: input.classificationTemplateVersionId ?? null,
+          advancementPolicyVersionId: input.advancementPolicyVersionId ?? null,
         },
       });
       await recordAudit(ctx, {
@@ -315,12 +380,17 @@ export class ScoringStore {
         pin.classificationTemplateVersionId === null
           ? undefined
           : await templateVersion(ctx, pin.classificationTemplateVersionId);
+      const policy =
+        pin.advancementPolicyVersionId === null
+          ? undefined
+          : await advancementPolicyVersion(ctx, pin.advancementPolicyVersionId);
       return {
         eventId: e.id,
         pinned: true as const,
         frozen: !['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED'].includes(e.status),
         ruleset: ruleset === undefined ? null : view(ruleset),
         classificationTemplate: template === undefined ? null : view(template),
+        advancementPolicy: policy === undefined ? null : view(policy),
         stageOverrides: pin.stageOverrides,
       };
     });
@@ -351,15 +421,28 @@ export class ScoringStore {
     const ruleset = await rulesetVersion(ctx, override?.rulesetVersionId ?? pin.rulesetVersionId);
     if (ruleset === undefined)
       throw new DomainError(DomainErrorCode.NOT_FOUND, 'pinned ruleset not found');
-    const { rows: slots } = await sql<{ source_kind: string; participant_id: string | null }>`
-      SELECT source_kind, participant_id FROM competition.contestant WHERE contest_id = ${contestId} ORDER BY slot`.execute(
-      ctx.trx,
-    );
+    // ONCF-05D: dependent places read their CURRENT occupant (resolution facts; null = unresolved
+    // or decided vacant). A contest whose every place is decided vacant is not part of the field.
+    const { rows: slots } = await sql<{
+      source_kind: string;
+      participant_id: string | null;
+      assignment_id: string | null;
+    }>`
+      SELECT source_kind, participant_id, assignment_id FROM competition.v_contest_occupant
+      WHERE contest_id = ${contestId} ORDER BY place`.execute(ctx.trx);
     const { rows: entries } = await sql<{ participant_id: string }>`
       SELECT participant_id FROM competition.contest_entry WHERE contest_id = ${contestId} ORDER BY start_order`.execute(
       ctx.trx,
     );
-    const unresolved = slots.some((s) => s.participant_id === null);
+    const vacant =
+      slots.length > 0 && slots.every((s) => s.participant_id === null && s.assignment_id !== null);
+    const { rows: dynamicRows } = await sql<{ dynamic: boolean }>`
+      SELECT r.dynamic_transition_key IS NOT NULL AS dynamic FROM competition.contest c
+      JOIN competition.round r ON r.id = c.round_id WHERE c.id = ${contestId}`.execute(ctx.trx);
+    const unresolved =
+      !vacant &&
+      (slots.some((s) => s.participant_id === null) ||
+        (dynamicRows[0]?.dynamic === true && slots.length === 0));
     const participants = [
       ...slots.flatMap((s) => (s.participant_id === null ? [] : [s.participant_id])),
       ...entries.map((x) => x.participant_id),
@@ -401,6 +484,7 @@ export class ScoringStore {
       stageKey: c.stage_key,
       groupKey: c.group_key,
       unresolved,
+      vacant,
       ruleset,
       scoring,
     };
@@ -464,7 +548,7 @@ export class ScoringStore {
     groupKey?: string;
     throughRound?: number;
   }) {
-    const structure = await this.tx(async (ctx) => {
+    await this.tx(async (ctx) => {
       const e = await loadEvent(ctx, input.eventId);
       await requireCompPermission(
         ctx,
@@ -472,6 +556,34 @@ export class ScoringStore {
         await loadCompetition(ctx, e.competitionId),
         'COMP_VIEW_PRIVATE',
       );
+    });
+    return this.classification(input);
+  }
+
+  /**
+   * ONCF-05D: the same classification at an explicit result-status floor (the advancement policy's
+   * minimum — OFFICIAL by default — instead of the template's). NOT authorization-checked: called
+   * only by AdvancementStore after its own COMP_* check; never exposed as a route.
+   */
+  classificationAt(input: {
+    eventId: string;
+    stageKey: string;
+    groupKey?: string;
+    throughRound?: number;
+    floor: 'OFFICIAL' | 'PROVISIONAL';
+  }) {
+    return this.classification(input);
+  }
+
+  private async classification(input: {
+    eventId: string;
+    stageKey: string;
+    groupKey?: string;
+    throughRound?: number;
+    floor?: 'OFFICIAL' | 'PROVISIONAL';
+  }) {
+    const structure = await this.tx(async (ctx) => {
+      const e = await loadEvent(ctx, input.eventId);
       const pin = await currentPin(ctx, e.id);
       if (pin === undefined)
         throw new DomainError(
@@ -510,8 +622,15 @@ export class ScoringStore {
         WHERE r.stage_id = ${st.id} AND (${input.groupKey ?? null}::text IS NULL OR r.group_key = ${input.groupKey ?? null})
         ORDER BY r.sequence, c.sequence`.execute(ctx.trx);
       const contexts = [];
-      for (const c of contests)
-        contexts.push({ contestId: c.id, ...(await this.contestContext(ctx, c.id)) });
+      // Rounds after `throughRound` are outside the scope (a cut reads rounds 1..k only, even once
+      // the post-cut rounds exist).
+      for (const c of contests.filter(
+        (x) => input.throughRound === undefined || x.round_sequence <= input.throughRound,
+      )) {
+        const context = await this.contestContext(ctx, c.id);
+        // A contest decided vacant (its field place no longer selected) is not part of the stage.
+        if (!context.vacant) contexts.push({ contestId: c.id, ...context });
+      }
       const { rows: seeding } = await sql<{ seed_order: string[] }>`
         SELECT seed_order FROM competition.event_seeding WHERE event_id = ${e.id}`.execute(ctx.trx);
       const spec = template.spec as ClassificationPolicyV2Spec;
@@ -537,7 +656,9 @@ export class ScoringStore {
       };
     });
     const floor =
-      STATUS_FLOOR[structure.spec.minimumInputStatus] ?? STATUS_FLOOR['PROVISIONAL'] ?? [];
+      STATUS_FLOOR[input.floor ?? structure.spec.minimumInputStatus] ??
+      STATUS_FLOOR['PROVISIONAL'] ??
+      [];
     const contestIds = structure.contexts.map((c) => c.contestId);
     const current = await inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const { rows } = await sql<{
@@ -621,5 +742,65 @@ export class ScoringStore {
         { reason: 'CLASSIFICATION_REFUSED', issues: out.issues.slice(0, 20) },
       );
     return { document: out.document, hash: out.hash, pendingContests: pending };
+  }
+
+  /**
+   * ONCF-05D: the current result of each contest, re-validated under its pinned ruleset (the same
+   * fail-closed read-back as classification). `admissible` at the floor; `below` = the status of a
+   * current version that exists but is below the floor (e.g. PROVISIONAL when OFFICIAL is required).
+   * NOT authorization-checked (AdvancementStore only).
+   */
+  async contestEvidence(
+    contestIds: readonly string[],
+    floorStatus: 'OFFICIAL' | 'PROVISIONAL',
+  ): Promise<{ admissible: Map<string, ContestEvidence>; below: Map<string, string> }> {
+    const contexts = await this.tx(async (ctx) => {
+      const out = new Map<string, Awaited<ReturnType<ScoringStore['contestContext']>>>();
+      for (const id of contestIds) out.set(id, await this.contestContext(ctx, id));
+      return out;
+    });
+    const floor = STATUS_FLOOR[floorStatus] ?? [];
+    const rows = await inTransaction(this.db, ModuleRole.results, async (ctx) => {
+      const { rows } = await sql<{
+        contest_id: string;
+        result_version_id: string;
+        content: ResultVersionContent;
+        content_hash: string;
+        status: string;
+      }>`
+        SELECT r.scope_target_id AS contest_id, v.id AS result_version_id, v.content, v.content_hash, st.current_status AS status
+        FROM results.result r
+        JOIN results.result_state rs ON rs.result_id = r.id
+        JOIN results.result_version v ON v.id = rs.current_version_id
+        JOIN results.result_version_state st ON st.result_version_id = v.id
+        WHERE r.scope_type = 'CONTEST' AND r.scope_target_id = ANY(${[...contestIds]}::uuid[])
+        ORDER BY r.scope_target_id, r.recorded_at DESC, r.id DESC`.execute(ctx.trx);
+      return rows;
+    });
+    const admissible = new Map<string, ContestEvidence>();
+    const below = new Map<string, string>();
+    for (const r of rows) {
+      if (admissible.has(r.contest_id) || below.has(r.contest_id)) continue;
+      if (!floor.includes(r.status)) {
+        below.set(r.contest_id, r.status);
+        continue;
+      }
+      const c = contexts.get(r.contest_id);
+      if (c === undefined || c.unresolved) continue;
+      const read = readContestContent(c.scoring, r.content);
+      if (!read.ok)
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'a stored contest result does not validate under the pinned ruleset',
+          { reason: 'CONTEST_RESULT_INVALID', contests: [{ contestId: r.contest_id }] },
+        );
+      admissible.set(r.contest_id, {
+        resultVersionId: r.result_version_id,
+        contentHash: r.content_hash,
+        status: r.status,
+        result: read.result,
+      });
+    }
+    return { admissible, below };
   }
 }

@@ -25,3 +25,4 @@ export {
   serpentineGroups,
 } from './format/stages';
 export * from './scoring';
+export * from './advancement';

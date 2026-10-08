@@ -6,6 +6,9 @@ export const DomainEventType = {
   ResultSubmitted: 'ResultSubmitted',
   ResultProvisional: 'ResultProvisional',
   ResultRejected: 'ResultRejected',
+  // ONCF-05D (ADR-0064): T5 declared official; T7 superseded by an accepted correction.
+  ResultOfficial: 'ResultOfficial',
+  ResultSuperseded: 'ResultSuperseded',
   PrincipalRegistered: 'PrincipalRegistered',
   PrincipalKeyRegistered: 'PrincipalKeyRegistered',
   PrincipalKeyStatusChanged: 'PrincipalKeyStatusChanged',
@@ -51,6 +54,14 @@ export const DomainEventType = {
   ClassificationTemplateVersionCreated: 'ClassificationTemplateVersionCreated',
   ClassificationTemplateVersionPublished: 'ClassificationTemplateVersionPublished',
   ClassificationTemplateVersionRetired: 'ClassificationTemplateVersionRetired',
+  // ONCF-05D advancement (ADR-0065)
+  AdvancementPolicyVersionCreated: 'AdvancementPolicyVersionCreated',
+  AdvancementPolicyVersionPublished: 'AdvancementPolicyVersionPublished',
+  AdvancementPolicyVersionRetired: 'AdvancementPolicyVersionRetired',
+  AdvancementCommitted: 'AdvancementCommitted',
+  AdvancementOverridden: 'AdvancementOverridden',
+  AdvancementOverrideRevoked: 'AdvancementOverrideRevoked',
+  DynamicContestsMaterialized: 'DynamicContestsMaterialized',
   EventScoringPinned: 'EventScoringPinned',
   // BRT-05 competition operations (operational facts only — never results/verification)
   CompetitionCreated: 'CompetitionCreated',
@@ -169,6 +180,7 @@ export const AggregateType = {
   FORMAT_VERSION: 'FORMAT_VERSION',
   RULESET_VERSION: 'RULESET_VERSION',
   CLASSIFICATION_TEMPLATE_VERSION: 'CLASSIFICATION_TEMPLATE_VERSION',
+  ADVANCEMENT_POLICY_VERSION: 'ADVANCEMENT_POLICY_VERSION',
   COMPETITION: 'COMPETITION',
   EVENT: 'EVENT',
   REGISTRATION: 'REGISTRATION',

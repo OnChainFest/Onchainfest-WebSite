@@ -14,6 +14,8 @@ export interface EventScoring {
   frozen: boolean;
   ruleset?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
   classificationTemplate?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
+  /** ONCF-05D. */
+  advancementPolicy?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
 }
 
 export interface StageClassification {

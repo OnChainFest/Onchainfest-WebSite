@@ -60,33 +60,34 @@ export interface PublicEvent {
   redirected: boolean;
 }
 
+/** ONCF-05D: a dependent slot is unresolved ("TBD"), or holds the entrant advancement placed there. */
+export type Occupancy =
+  { resolved: false } | { resolved: true; participantId: string; display: EntrantDisplay };
+
 export type Slot =
   | { slot: number; kind: 'PARTICIPANT'; participantId: string; display: EntrantDisplay }
-  | {
+  | ({
       slot: number;
       kind: 'WINNER_OF_CONTEST' | 'LOSER_OF_CONTEST';
       contestId: string;
       contestSequence: number;
-      resolved: false;
-    }
-  // ONCF-05B stage-graph dependencies (unresolved until results exist).
-  | {
+    } & Occupancy)
+  // ONCF-05B stage-graph dependencies (resolved by advancement, ONCF-05D).
+  | ({
       slot: number;
       kind: 'RANK_FROM_STAGE';
       stageKey: string | null;
       groupKey: string | null;
       rank: number;
-      resolved: false;
-    }
-  | {
+    } & Occupancy)
+  | ({
       slot: number;
       kind: 'BEST_RANKED_FROM_STAGE';
       stageKey: string;
       rank: number;
       ordinal: number;
-      resolved: false;
-    }
-  | { slot: number; kind: 'QUALIFIER'; transitionKey: string; ordinal: number; resolved: false };
+    } & Occupancy)
+  | ({ slot: number; kind: 'QUALIFIER'; transitionKey: string; ordinal: number } & Occupancy);
 
 /** ONCF-05B field entry (mass start, wave, time trial, stage): no 64-slot ceiling. */
 export interface FieldEntry {
@@ -214,6 +215,13 @@ export function Entrant({ display }: { display: EntrantDisplay }): ReactNode {
 /** Unresolved slots are never given a name: "TBD" is presentation only. */
 export function SlotView({ slot }: { slot: Slot }): ReactNode {
   if (slot.kind === 'PARTICIPANT') return <Entrant display={slot.display} />;
+  if (slot.resolved)
+    return (
+      <span>
+        <Entrant display={slot.display} />{' '}
+        <small style={{ color: '#6b7280' }}>({dependencyLabel(slot)})</small>
+      </span>
+    );
   return (
     <span style={{ color: '#6b7280' }}>
       TBD <small>({dependencyLabel(slot)})</small>

@@ -59,6 +59,13 @@ export const ERROR_MESSAGES = {
   scoring_invalid:
     'That ruleset or classification doesn’t fit this category (its sport, format or contest type). Choose one from the list.',
   scoring_frozen: 'Scoring is fixed once the field is locked.',
+  advancement_changed:
+    'The results changed since this preview. Review the new preview, then confirm again.',
+  advancement_blocked:
+    'That can’t change now: a contest it affects has already started, or advancement is closed for this category.',
+  advancement_invalid:
+    'That entrant can’t take that place (not active in this category, or already placed in this round).',
+  advancement_reason: 'Give a reason — it is kept in the audit trail (never shown publicly).',
   structure_done:
     'That step is already done — the field, seeding and structure are set once and kept.',
   team_invalid: 'Give the team a name and choose pair or squad.',
@@ -108,6 +115,9 @@ export const NOTICE_MESSAGES = {
   field_seeded: 'Field seeded. Preview the structure, then generate it.',
   plan_generated: 'Structure generated. It’s now on the public category page.',
   scoring_pinned: 'Scoring set. Results will be validated and classified under these versions.',
+  advancement_committed: 'Advancement confirmed. The next-stage slots are filled and recorded.',
+  advancement_overridden: 'Override recorded. The automatic decision is kept alongside it.',
+  advancement_override_revoked: 'Override revoked. The slot follows the results again.',
   team_created: 'Team created. Invite its members next.',
   member_invited: 'Invitation sent. The athlete accepts it from their Teams page.',
   membership_accepted: 'You’ve joined the team.',

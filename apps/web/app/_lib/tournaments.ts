@@ -159,6 +159,8 @@ export interface Catalog {
   formatVersions: CatalogFormatVersion[];
   rulesetVersions?: CatalogScoringVersion[];
   classificationTemplateVersions?: CatalogScoringVersion[];
+  /** ONCF-05D: how classified entrants fill next-stage slots. */
+  advancementPolicyVersions?: CatalogScoringVersion[];
 }
 
 export function managedCompetitions(

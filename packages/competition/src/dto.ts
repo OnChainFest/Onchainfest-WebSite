@@ -89,6 +89,19 @@ export interface PublicEntry {
   readonly display: PublicEntrantDisplay;
 }
 
+/**
+ * A dependent slot's public occupancy (ONCF-05D): unresolved ("TBD", never a fabricated name), or
+ * the entrant a committed advancement fact placed there. Provenance, reasons and overrides are
+ * organizer-only and never appear here.
+ */
+export type DependentOccupancy =
+  | { readonly resolved: false }
+  | {
+      readonly resolved: true;
+      readonly participantId: string;
+      readonly display: PublicEntrantDisplay;
+    };
+
 export type PublicSlot =
   | {
       readonly slot: number;
@@ -96,38 +109,33 @@ export type PublicSlot =
       readonly participantId: string;
       readonly display: PublicEntrantDisplay;
     }
-  | {
+  | ({
       readonly slot: number;
       readonly kind: 'WINNER_OF_CONTEST' | 'LOSER_OF_CONTEST';
-      /** Unresolved dependency: shown as "TBD" by presentation layers; never a fabricated name. */
       readonly contestId: string;
       readonly contestSequence: number;
-      readonly resolved: false;
-    }
-  // ONCF-05B stage-graph dependencies (unresolved until advancement, ONCF-05D).
-  | {
+    } & DependentOccupancy)
+  // ONCF-05B stage-graph dependencies (resolved by advancement facts, ONCF-05D).
+  | ({
       readonly slot: number;
       readonly kind: 'RANK_FROM_STAGE';
       readonly stageKey: string | null;
       readonly groupKey: string | null;
       readonly rank: number;
-      readonly resolved: false;
-    }
-  | {
+    } & DependentOccupancy)
+  | ({
       readonly slot: number;
       readonly kind: 'BEST_RANKED_FROM_STAGE';
       readonly stageKey: string;
       readonly rank: number;
       readonly ordinal: number;
-      readonly resolved: false;
-    }
-  | {
+    } & DependentOccupancy)
+  | ({
       readonly slot: number;
       readonly kind: 'QUALIFIER';
       readonly transitionKey: string;
       readonly ordinal: number;
-      readonly resolved: false;
-    };
+    } & DependentOccupancy);
 
 /** ONCF-05B: a field entry (mass start, wave, time trial, stage) — no 64-slot ceiling. */
 export interface PublicFieldEntry {

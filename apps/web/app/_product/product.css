@@ -3027,3 +3027,53 @@
   padding: 0;
   margin: 0.5rem 0 0.75rem;
 }
+
+/* ONCF-05D progression */
+.oc-app .pg-unit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.oc-app .pg-chip,
+.oc-app .pg-state {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.oc-app .pg-chip[data-tone='ok'],
+.oc-app .pg-state[data-state='RESOLVED'] {
+  border-color: var(--cyan);
+}
+.oc-app .pg-state[data-state='STALE'] {
+  border-color: var(--gold);
+  font-weight: 600;
+}
+.oc-app .pg-state[data-state='OVERRIDDEN'] {
+  border-style: dashed;
+}
+.oc-app .pg-table tr[data-state='VACANT'] {
+  opacity: 0.7;
+}
+.oc-app .pg-confirm {
+  margin-top: 0.75rem;
+}
+.oc-app .pg-decide summary {
+  cursor: pointer;
+  display: inline;
+  margin-left: 0.5rem;
+}
+.oc-app .pg-history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.oc-app .pg-history li[data-status='INVALIDATED'] {
+  opacity: 0.65;
+}

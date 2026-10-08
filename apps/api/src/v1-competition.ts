@@ -5,6 +5,8 @@ import type {
   CompetitionStore,
   IdentityStore,
   RegistrationEntry,
+  AdvancementStore,
+  ContestResultService,
   ScoringStore,
   StructureStore,
   TeamStore,
@@ -35,6 +37,10 @@ export interface CompetitionV1Deps {
   readonly reader: CompetitionReader;
   /** ONCF-05C scoring (pin, score-sheet validation, stage classification). Routes exist only when wired. */
   readonly scoring?: ScoringStore;
+  /** ONCF-05D advancement (state, commit, override). Routes exist only when wired. */
+  readonly advancement?: AdvancementStore;
+  /** ONCF-05D contest-result lifecycle (submit, accept, declare official, correct). */
+  readonly results?: ContestResultService;
 }
 
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
@@ -821,6 +827,7 @@ export function registerCompetitionV1(
           {
             rulesetVersionId: uuid,
             classificationTemplateVersionId: { type: ['string', 'null'], format: 'uuid' },
+            advancementPolicyVersionId: { type: ['string', 'null'], format: 'uuid' },
             stageOverrides: {
               type: 'object',
               maxProperties: 16,
@@ -839,6 +846,7 @@ export function registerCompetitionV1(
         const b = body<{
           rulesetVersionId: string;
           classificationTemplateVersionId?: string | null;
+          advancementPolicyVersionId?: string | null;
           stageOverrides?: Record<
             string,
             { rulesetVersionId?: string; classificationTemplateVersionId?: string }
@@ -901,15 +909,20 @@ export function registerCompetitionV1(
           'eventId',
           'stageKey',
         ]),
+        // Query values are strings (no type coercion on this API): digits only, parsed below.
         querystring: obj({
           group: { type: 'string', pattern: '^g[0-9]{1,2}$' },
-          throughRound: { type: 'integer', minimum: 1, maximum: 100 },
+          throughRound: { type: 'string', pattern: '^[1-9][0-9]?$|^100$' },
         }),
       },
       async (request) => {
         const ctx = requireAuth(request);
         const p = params<{ eventId: string; stageKey: string }>(request);
-        const q = request.query as { group?: string; throughRound?: number };
+        const raw = request.query as { group?: string; throughRound?: string };
+        const q = {
+          group: raw.group,
+          throughRound: raw.throughRound === undefined ? undefined : Number(raw.throughRound),
+        };
         return scoring.classify(
           defined({
             actorAccountId: ctx.accountId,
@@ -921,6 +934,270 @@ export function registerCompetitionV1(
         );
       },
     );
+  }
+
+  // ───────────────────────────── advancement (ONCF-05D; COMP_STAFF) ─────────────────────────────
+
+  // Reads are COMP_VIEW_PRIVATE; commit / override / revoke are COMP_GENERATE_STRUCTURE (OWNER /
+  // ADMIN). There is no arbitrary slot mutation: a target changes only through a recomputed,
+  // hash-confirmed decision or an explicit, reasoned override.
+  const targetSchema = {
+    oneOf: [
+      // `kind` is optional so a target read from GET …/advancement can be sent back unchanged.
+      obj(
+        {
+          kind: { const: 'SLOT' },
+          contestId: uuid,
+          slot: { type: 'integer', minimum: 1, maximum: 64 },
+        },
+        ['contestId', 'slot'],
+      ),
+      obj(
+        {
+          kind: { const: 'FIELD' },
+          transitionKey: { type: 'string', pattern: '^t[0-9]{1,2}$' },
+          ordinal: { type: 'integer', minimum: 1, maximum: 20000 },
+        },
+        ['transitionKey', 'ordinal'],
+      ),
+    ],
+  };
+  const reasonSchema = { type: 'string', minLength: 1, maxLength: 500 };
+  const advancement = deps.advancement;
+  if (advancement !== undefined) {
+    route(
+      'GET',
+      '/v1/events/:eventId/advancement',
+      'COMP_STAFF',
+      { params: idParams('eventId') },
+      async (request) =>
+        advancement.state({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+        }),
+    );
+    route(
+      'GET',
+      '/v1/events/:eventId/advancement/history',
+      'COMP_STAFF',
+      {
+        params: idParams('eventId'),
+        querystring: obj({
+          contest: uuid,
+          slot: { type: 'string', pattern: '^[1-9][0-9]?$' },
+          transition: { type: 'string', pattern: '^t[0-9]{1,2}$' },
+          ordinal: { type: 'string', pattern: '^[1-9][0-9]{0,4}$' },
+        }),
+      },
+      async (request) => {
+        const raw = request.query as {
+          contest?: string;
+          slot?: string;
+          transition?: string;
+          ordinal?: string;
+        };
+        const q = {
+          contest: raw.contest,
+          slot: raw.slot === undefined ? undefined : Number(raw.slot),
+          transition: raw.transition,
+          ordinal: raw.ordinal === undefined ? undefined : Number(raw.ordinal),
+        };
+        const target =
+          q.contest !== undefined && q.slot !== undefined
+            ? { contestId: q.contest, slot: q.slot }
+            : q.transition !== undefined && q.ordinal !== undefined
+              ? { transitionKey: q.transition, ordinal: q.ordinal }
+              : undefined;
+        if (target === undefined)
+          throw new DomainError(DomainErrorCode.INVALID_INPUT, 'name a target');
+        return advancement.history({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+          target,
+        });
+      },
+    );
+    route(
+      'POST',
+      '/v1/events/:eventId/advancement/commit',
+      'COMP_STAFF',
+      {
+        params: idParams('eventId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            units: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 200,
+              items: obj(
+                {
+                  unitKey: { type: 'string', pattern: '^[a-z]+:[A-Za-z0-9:_-]{1,120}$' },
+                  previewHash: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+                },
+                ['unitKey'],
+              ),
+            },
+          },
+          ['units'],
+        ),
+      },
+      async (request) =>
+        advancement.commit({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+          units: body<{ units: { unitKey: string; previewHash?: string }[] }>(request).units,
+          idempotencyKey: key(request),
+        }),
+    );
+    route(
+      'POST',
+      '/v1/events/:eventId/advancement/overrides',
+      'COMP_STAFF',
+      {
+        params: idParams('eventId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            target: targetSchema,
+            participantId: { type: ['string', 'null'], format: 'uuid' },
+            reason: reasonSchema,
+          },
+          ['target', 'participantId', 'reason'],
+        ),
+      },
+      async (request) => {
+        const b = body<{ target: never; participantId: string | null; reason: string }>(request);
+        return advancement.override({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+          target: b.target,
+          participantId: b.participantId,
+          reason: b.reason,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    route(
+      'POST',
+      '/v1/events/:eventId/advancement/overrides/revoke',
+      'COMP_STAFF',
+      {
+        params: idParams('eventId'),
+        headers: idempotencyHeaders,
+        body: obj({ target: targetSchema, reason: reasonSchema }, ['target', 'reason']),
+      },
+      async (request) => {
+        const b = body<{ target: never; reason: string }>(request);
+        return advancement.revokeOverride({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+          target: b.target,
+          reason: b.reason,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+  }
+
+  // ───────────────────────────── contest results (ONCF-05D; COMP_STAFF + authority) ─────────────────────────────
+
+  // Staff membership opens the door; the caller's own PERSON principal must also hold the Authority
+  // Engine capability for this contest (SUBMIT / ACCEPT / DECLARE_OFFICIAL / CORRECT_RESULT).
+  const results = deps.results;
+  if (results !== undefined) {
+    const level = {
+      type: 'string',
+      enum: ['CLUB', 'REGIONAL', 'NATIONAL', 'CONTINENTAL', 'WORLD', 'PLATFORM'],
+    };
+    route(
+      'GET',
+      '/v1/contests/:contestId/results',
+      'COMP_STAFF',
+      { params: idParams('contestId') },
+      async (request) =>
+        results.contestResult({
+          actorAccountId: requireAuth(request).accountId,
+          contestId: params<{ contestId: string }>(request).contestId,
+        }),
+    );
+    route(
+      'POST',
+      '/v1/contests/:contestId/results',
+      'COMP_STAFF',
+      {
+        params: idParams('contestId'),
+        headers: idempotencyHeaders,
+        body: obj({ sheet: { type: 'object' }, recognitionLevel: level }, [
+          'sheet',
+          'recognitionLevel',
+        ]),
+      },
+      async (request) => {
+        const b = body<{ sheet: never; recognitionLevel: string }>(request);
+        return results.submit({
+          actorAccountId: requireAuth(request).accountId,
+          contestId: params<{ contestId: string }>(request).contestId,
+          sheet: b.sheet,
+          recognitionLevel: b.recognitionLevel,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    route(
+      'POST',
+      '/v1/contests/:contestId/results/corrections',
+      'COMP_STAFF',
+      {
+        params: idParams('contestId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            sheet: { type: 'object' },
+            supersedesVersionId: uuid,
+            reason: { type: 'string', minLength: 1, maxLength: 200 },
+            recognitionLevel: level,
+          },
+          ['sheet', 'supersedesVersionId', 'reason', 'recognitionLevel'],
+        ),
+      },
+      async (request) => {
+        const b = body<{
+          sheet: never;
+          supersedesVersionId: string;
+          reason: string;
+          recognitionLevel: string;
+        }>(request);
+        return results.correct({
+          actorAccountId: requireAuth(request).accountId,
+          contestId: params<{ contestId: string }>(request).contestId,
+          ...b,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    for (const [path, toStatus] of [
+      ['accept', 'PROVISIONAL'],
+      ['declare-official', 'OFFICIAL'],
+    ] as const)
+      route(
+        'POST',
+        `/v1/result-versions/:resultVersionId/${path}`,
+        'COMP_STAFF',
+        {
+          params: idParams('resultVersionId'),
+          headers: idempotencyHeaders,
+          body: obj({ recognitionLevel: level }, ['recognitionLevel']),
+        },
+        async (request) =>
+          results.transition({
+            actorAccountId: requireAuth(request).accountId,
+            resultVersionId: params<{ resultVersionId: string }>(request).resultVersionId,
+            toStatus,
+            recognitionLevel: body<{ recognitionLevel: string }>(request).recognitionLevel,
+            idempotencyKey: key(request),
+          }),
+      );
   }
 
   // ───────────────────────────── registration (SELF / COMP_STAFF) ─────────────────────────────

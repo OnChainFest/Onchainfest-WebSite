@@ -277,7 +277,8 @@ const box = {
 /**
  * ONCF-05B stage-graph structure: rounds grouped under their stage, partitions (waves, heats,
  * start groups, groups) labelled, field entries listed, and dependencies shown only as where the
- * entrant will come from. Dynamic rounds say their field comes from results; nothing is resolved.
+ * entrant will come from. ONCF-05D: a dependent slot shows its entrant once advancement placed
+ * one there (provenance stays organizer-only); a dynamic round lists its field once committed.
  */
 function StageStructure({ rounds }: { rounds: StructureRound[] }) {
   const stages = [...new Map(rounds.map((r) => [r.stage?.key ?? '', r.stage])).values()];

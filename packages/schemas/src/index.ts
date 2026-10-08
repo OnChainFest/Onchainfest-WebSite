@@ -4,7 +4,7 @@ import { BRT07_SCHEMAS } from './verification';
 import { BRT08_SCHEMAS } from './achievements';
 import { BRT09_SCHEMAS } from './records';
 import { BRT10_SCHEMAS } from './rankings';
-import { ONCF05B_SCHEMAS, ONCF05C_SCHEMAS } from './competition-v2';
+import { ONCF05B_SCHEMAS, ONCF05C_SCHEMAS, ONCF05D_SCHEMAS } from './competition-v2';
 
 export * from './definitions';
 export * from './verification';
@@ -31,6 +31,7 @@ export const SchemaRef = {
   cmdCreateResult: { id: 'br:cmd-create-result', version: 1 },
   cmdSubmitResultVersion: { id: 'br:cmd-submit-result-version', version: 1 },
   cmdTransitionResultVersion: { id: 'br:cmd-transition-result-version', version: 1 },
+  cmdCorrectResultVersion: { id: 'br:cmd-correct-result-version', version: 1 },
   cmdIssueGrant: { id: 'br:cmd-issue-grant', version: 1 },
   cmdIdentity: { id: 'br:cmd-identity', version: 1 },
   competitionField: { id: 'br:competition-field', version: 1 },
@@ -44,6 +45,8 @@ export const SchemaRef = {
   competitionPlanV2: { id: 'br:competition-plan', version: 2 },
   // ONCF-05C
   stageClassification: { id: 'br:stage-classification', version: 1 },
+  advancementAssignment: { id: 'br:advancement-assignment', version: 1 },
+  advancementDecision: { id: 'br:advancement-decision', version: 1 },
   // BRT-06
   evidenceDescriptor: { id: 'br:evidence-descriptor', version: 1 },
   attestationStatement: { id: 'br:attestation-statement', version: 1 },
@@ -165,6 +168,7 @@ export function platformCanonicalizer(): Canonicalizer {
     ...BRT10_SCHEMAS,
     ...ONCF05B_SCHEMAS,
     ...ONCF05C_SCHEMAS,
+    ...ONCF05D_SCHEMAS,
   ]);
   return shared;
 }

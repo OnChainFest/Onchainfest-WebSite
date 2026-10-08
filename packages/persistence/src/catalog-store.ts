@@ -15,7 +15,9 @@ import {
   type DisciplineVersionSpec,
   type RuleBasis,
   type RulesetSpec,
+  validateAdvancementPolicy,
   validateRulesetSpec,
+  type AdvancementPolicySpec,
 } from '@br/competition';
 import { validateClassificationPolicyV2, type ClassificationPolicyV2Spec } from '@br/rankings';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
@@ -34,7 +36,7 @@ function formatVersionSpecHash(engine: AnyFormatEngine): string {
   return catalogSpecHash('br:format-version-spec', formatVersionSpec(engine));
 }
 
-export type ScoringKind = 'ruleset' | 'classification-template';
+export type ScoringKind = 'ruleset' | 'classification-template' | 'advancement-policy';
 
 const SCORING = {
   ruleset: {
@@ -67,7 +69,30 @@ const SCORING = {
     published: 'ClassificationTemplateVersionPublished',
     retired: 'ClassificationTemplateVersionRetired',
   },
+  'advancement-policy': {
+    label: 'AdvancementPolicy',
+    code: FORMAT_CODE,
+    parent: 'sports.advancement_policy',
+    version: 'sports.advancement_policy_version',
+    parentCol: 'policy_id',
+    status: 'sports.advancement_policy_version_status_change',
+    statusCol: 'advancement_policy_version_id',
+    view: 'sports.v_advancement_policy_version_current',
+    specSchema: 'br:advancement-policy-spec',
+    aggregate: 'ADVANCEMENT_POLICY_VERSION',
+    created: 'AdvancementPolicyVersionCreated',
+    published: 'AdvancementPolicyVersionPublished',
+    retired: 'AdvancementPolicyVersionRetired',
+  },
 } as const;
+
+function scoringSpecIssues(kind: ScoringKind, spec: unknown) {
+  return kind === 'ruleset'
+    ? validateRulesetSpec(spec as RulesetSpec)
+    : kind === 'classification-template'
+      ? validateClassificationPolicyV2(spec as ClassificationPolicyV2Spec)
+      : validateAdvancementPolicy(spec);
+}
 
 export type CatalogProvisionAction =
   'UNCHANGED' | 'CREATED' | 'PUBLISHED' | 'WOULD_CREATE' | 'WOULD_PUBLISH';
@@ -83,7 +108,9 @@ export interface CatalogProvisionReport {
       | 'ruleset'
       | 'ruleset-version'
       | 'classification-template'
-      | 'classification-template-version';
+      | 'classification-template-version'
+      | 'advancement-policy'
+      | 'advancement-policy-version';
     readonly code: string;
     readonly action: CatalogProvisionAction;
     readonly id?: string;
@@ -562,15 +589,12 @@ export class CatalogStore {
     operatorAccountId: string;
     kind: ScoringKind;
     parentId: string;
-    spec: RulesetSpec | ClassificationPolicyV2Spec;
+    spec: RulesetSpec | ClassificationPolicyV2Spec | AdvancementPolicySpec;
     basis: RuleBasis;
     idempotencyKey: string;
   }): Promise<{ id: string; version: number; specHash: string; created: boolean }> {
     const k = SCORING[input.kind];
-    const issues =
-      input.kind === 'ruleset'
-        ? validateRulesetSpec(input.spec as RulesetSpec)
-        : validateClassificationPolicyV2(input.spec as ClassificationPolicyV2Spec);
+    const issues = scoringSpecIssues(input.kind, input.spec);
     const basisOk =
       typeof input.basis === 'object' &&
       input.basis !== null &&
@@ -734,22 +758,26 @@ export class CatalogStore {
       kind: ScoringKind;
       code: string;
       name: string;
-      versions: readonly { spec: RulesetSpec | ClassificationPolicyV2Spec; basis: RuleBasis }[];
+      versions: readonly {
+        spec: RulesetSpec | ClassificationPolicyV2Spec | AdvancementPolicySpec;
+        basis: RuleBasis;
+      }[];
     }[] = [
       ...(input.manifest.rulesets ?? []).map((r) => ({ kind: 'ruleset' as const, ...r })),
       ...(input.classificationTemplates ?? []).map((t) => ({
         kind: 'classification-template' as const,
         ...t,
       })),
+      ...(input.manifest.advancementPolicies ?? []).map((a) => ({
+        kind: 'advancement-policy' as const,
+        ...a,
+      })),
     ];
     for (const x of scoring) {
       if (!SCORING[x.kind].code.test(x.code) || x.versions.length === 0)
         throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid ${x.kind} ${x.code}`);
       for (const v of x.versions) {
-        const issues =
-          x.kind === 'ruleset'
-            ? validateRulesetSpec(v.spec as RulesetSpec)
-            : validateClassificationPolicyV2(v.spec as ClassificationPolicyV2Spec);
+        const issues = scoringSpecIssues(x.kind, v.spec);
         if (issues.length > 0)
           throw new DomainError(DomainErrorCode.INVALID_INPUT, `invalid spec for ${x.code}`, {
             issues: issues.slice(0, 20),
@@ -760,7 +788,13 @@ export class CatalogStore {
     const conflicts: { code: string; reason: string }[] = [];
     const key = (...parts: string[]) => `catalog-provision:${parts.join(':')}`;
     const idOf = (
-      table: 'sport' | 'discipline' | 'format_template' | 'ruleset' | 'classification_template',
+      table:
+        | 'sport'
+        | 'discipline'
+        | 'format_template'
+        | 'ruleset'
+        | 'classification_template'
+        | 'advancement_policy',
       code: string,
     ) =>
       this.tx(async (ctx) => {
@@ -771,7 +805,7 @@ export class CatalogStore {
       });
     const versionsOf = (kind: 'discipline' | 'format' | ScoringKind, parentId: string) =>
       this.tx(async (ctx) => {
-        if (kind === 'ruleset' || kind === 'classification-template') {
+        if (kind !== 'discipline' && kind !== 'format') {
           const k = SCORING[kind];
           const { rows } = await sql<VersionRow>`
             SELECT v.id, v.spec_hash, c.status FROM ${sql.raw(k.version)} v
@@ -968,7 +1002,14 @@ export class CatalogStore {
       const parentId = await ensure(
         x.kind,
         x.code,
-        await idOf(x.kind === 'ruleset' ? 'ruleset' : 'classification_template', x.code),
+        await idOf(
+          x.kind === 'ruleset'
+            ? 'ruleset'
+            : x.kind === 'classification-template'
+              ? 'classification_template'
+              : 'advancement_policy',
+          x.code,
+        ),
         async () =>
           (
             await this.createScoringParent({

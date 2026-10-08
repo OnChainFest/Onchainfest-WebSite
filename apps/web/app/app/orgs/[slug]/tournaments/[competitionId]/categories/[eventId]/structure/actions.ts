@@ -130,6 +130,9 @@ export async function pinScoringAction(form: FormData): Promise<never> {
   const { eventId, back } = ids(form, slug);
   const rulesetVersionId = field(form, 'rulesetVersionId');
   const templateVersionId = field(form, 'classificationTemplateVersionId');
+  const policyVersionId = field(form, 'advancementPolicyVersionId');
+  if (policyVersionId !== '' && !UUID_RE.test(policyVersionId))
+    to(slug, back, { error: 'scoring_invalid' });
   if (!UUID_RE.test(rulesetVersionId)) to(slug, back, { error: 'missing_fields' });
   if (templateVersionId !== '' && !UUID_RE.test(templateVersionId))
     to(slug, back, { error: 'scoring_invalid' });
@@ -138,6 +141,7 @@ export async function pinScoringAction(form: FormData): Promise<never> {
     body: {
       rulesetVersionId,
       ...(templateVersionId === '' ? {} : { classificationTemplateVersionId: templateVersionId }),
+      ...(policyVersionId === '' ? {} : { advancementPolicyVersionId: policyVersionId }),
     },
   });
   if (r.kind !== 'ok') {

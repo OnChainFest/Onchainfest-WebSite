@@ -3,6 +3,7 @@ import {
   Capability,
   DomainError,
   DomainErrorCode,
+  CORRECTION_TRANSITIONS,
   findTransition,
   newId,
   type AuthorityScope,
@@ -123,9 +124,36 @@ export interface SubmitInput {
   readonly idempotencyKey: string;
 }
 
+/**
+ * ONCF-05D atomic correction (ADR-0064): the draft becomes a new version that supersedes the
+ * Result's CURRENT version in one transaction — T2 (SUBMITTED) and T3 (PROVISIONAL) of the new
+ * version and T7 (SUPERSEDED) of the replaced one. Requires CORRECT_RESULT and ACCEPT_RESULT. There
+ * is never a pending correction: a version references another as superseded only once it is.
+ */
+export interface CorrectInput {
+  readonly draftId: Uuid;
+  /** Must be the Result's current version (optimistic check: a stale correction is refused). */
+  readonly supersedesVersionId: Uuid;
+  readonly actorPrincipalId: Uuid;
+  readonly scope: AuthorityScope;
+  readonly reason: string;
+  readonly idempotencyKey: string;
+}
+
+export interface CorrectOutcome {
+  readonly resultVersionId: Uuid;
+  readonly versionNumber: number;
+  readonly contentHash: string;
+  readonly supersededVersionId: Uuid;
+  readonly status: 'PROVISIONAL';
+  readonly created: boolean;
+  readonly ledgerEntries: readonly LedgerEntryTable[];
+}
+
 export interface TransitionInput {
   readonly resultVersionId: Uuid;
-  readonly toStatus: 'PROVISIONAL' | 'REJECTED';
+  /** PROVISIONAL / REJECTED (ACCEPT_RESULT) or OFFICIAL (T5, DECLARE_OFFICIAL). */
+  readonly toStatus: 'PROVISIONAL' | 'REJECTED' | 'OFFICIAL';
   readonly actorPrincipalId: Uuid;
   readonly scope: AuthorityScope;
   readonly idempotencyKey: string;
@@ -540,7 +568,11 @@ export class ResultLedger {
     });
   }
 
-  /** T3 SUBMITTED → PROVISIONAL and T4 SUBMITTED → REJECTED (capability ACCEPT_RESULT). */
+  /**
+   * T3 SUBMITTED → PROVISIONAL and T4 SUBMITTED → REJECTED (capability ACCEPT_RESULT); T5
+   * PROVISIONAL → OFFICIAL (capability DECLARE_OFFICIAL, ONCF-05D). OFFICIAL keeps the same current
+   * version; only a correction (`correct`) replaces a current version.
+   */
   transition(input: TransitionInput): Promise<TransitionOutcome> {
     return inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const idem: IdempotencySpec = {
@@ -572,7 +604,8 @@ export class ResultLedger {
         ctx,
         {
           principalId: input.actorPrincipalId,
-          capability: Capability.ACCEPT_RESULT,
+          capability:
+            input.toStatus === 'OFFICIAL' ? Capability.DECLARE_OFFICIAL : Capability.ACCEPT_RESULT,
           scope: input.scope,
           atTime: ctx.txTime,
           asOf: ctx.txTime,
@@ -640,7 +673,9 @@ export class ResultLedger {
           DomainErrorCode.CONCURRENCY_CONFLICT,
           'version state moved concurrently',
         );
-      if (input.toStatus === 'PROVISIONAL') {
+      // Every transition into a current-eligible status (T3, T5) refreshes the result's projection,
+      // exactly as the ledger replay does (rebuildResultProjections).
+      if (input.toStatus === 'PROVISIONAL' || input.toStatus === 'OFFICIAL') {
         await ctx.trx
           .updateTable('results.result_state')
           .set({ current_version_id: version.id, updated_at: ctx.txTime })
@@ -650,7 +685,12 @@ export class ResultLedger {
       // BRT-10: a derived classification's card carries its latest status (no-op otherwise).
       await refreshClassificationCard(ctx, version.id);
       await emitEvent(ctx, {
-        eventType: input.toStatus === 'PROVISIONAL' ? 'ResultProvisional' : 'ResultRejected',
+        eventType:
+          input.toStatus === 'PROVISIONAL'
+            ? 'ResultProvisional'
+            : input.toStatus === 'OFFICIAL'
+              ? 'ResultOfficial'
+              : 'ResultRejected',
         aggregateType: 'RESULT_VERSION',
         aggregateId: version.id as Uuid,
         actorPrincipalId: input.actorPrincipalId,
@@ -671,6 +711,249 @@ export class ResultLedger {
         created: true,
         ledgerEntries: stream.entries,
         authorizationProofDigest: decision.proofDigest,
+      };
+      await recordIdempotency(ctx, idem, lookup.requestHash, { ...response, ledgerEntries: [] });
+      return response;
+    });
+  }
+
+  /** ONCF-05D atomic correction (see `CorrectInput`). */
+  correct(input: CorrectInput): Promise<CorrectOutcome> {
+    return inTransaction(this.db, ModuleRole.results, async (ctx) => {
+      const draft = await ctx.trx
+        .selectFrom('results.result_draft')
+        .selectAll()
+        .where('id', '=', input.draftId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (draft === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'draft not found');
+      const content = hashSubmittedContent(draft.content);
+      if (input.reason.trim().length === 0 || input.reason.length > 200)
+        throw new DomainError(DomainErrorCode.INVALID_INPUT, 'a correction needs a reason (1–200)');
+      const idem: IdempotencySpec = {
+        scope: input.actorPrincipalId,
+        key: input.idempotencyKey,
+        commandType: 'CorrectResultVersion',
+        requestSchema: SchemaRef.cmdCorrectResultVersion,
+        request: {
+          draftId: input.draftId,
+          supersedesVersionId: input.supersedesVersionId,
+          actorPrincipalId: input.actorPrincipalId,
+          contentHash: content.contentHash,
+          scope: input.scope,
+          reason: input.reason,
+        },
+      };
+      const lookup = await checkIdempotency<CorrectOutcome>(ctx, idem);
+      if (lookup.replay) return { ...lookup.response, created: false, ledgerEntries: [] };
+      if (draft.submitted_version_id !== null)
+        throw new DomainError(DomainErrorCode.IMMUTABLE, 'draft was already submitted');
+      if (content.contentSchema === CLASSIFICATION_CONTENT_SCHEMA)
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'a derived classification is corrected by re-derivation, not by a correction draft',
+        );
+      await this.assertResultScope(ctx, draft.result_id, input.scope);
+      const authorize = async (capability: Capability) => {
+        const d = await authorizeIn(
+          ctx,
+          {
+            principalId: input.actorPrincipalId,
+            capability,
+            scope: input.scope,
+            atTime: ctx.txTime,
+            asOf: ctx.txTime,
+          },
+          this.conflictChecker,
+        );
+        if (!d.authorized) throw denied(d);
+        return d;
+      };
+      const correctDecision = await authorize(Capability.CORRECT_RESULT);
+      const acceptDecision = await authorize(Capability.ACCEPT_RESULT);
+
+      const stream = await openStream(ctx, draft.result_id as Uuid, StreamType.RESULT);
+      const resultState = await ctx.trx
+        .selectFrom('results.result_state')
+        .selectAll()
+        .where('result_id', '=', draft.result_id)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      // Optimistic check: the correction names the version it replaces, which must still be current.
+      if (resultState.current_version_id !== input.supersedesVersionId)
+        throw new DomainError(
+          DomainErrorCode.CURRENT_VERSION_CONFLICT,
+          'the corrected version is not the current version of this result',
+          { currentVersionId: resultState.current_version_id },
+        );
+      const old = await ctx.trx
+        .selectFrom('results.result_version_state')
+        .selectAll()
+        .where('result_version_id', '=', input.supersedesVersionId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      const from = old.current_status as ResultVersionStatus;
+      const t7 = CORRECTION_TRANSITIONS.find((t) => t.from === from);
+      if (t7 === undefined)
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          `cannot correct a ${from} version`,
+        );
+      if (old.hold)
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'version is under an active hold',
+        );
+      const duplicate = await ctx.trx
+        .selectFrom('results.result_version')
+        .select('id')
+        .where('result_id', '=', draft.result_id)
+        .where('content_hash', '=', content.contentHash)
+        .executeTakeFirst();
+      if (duplicate !== undefined)
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'a correction must change the content (identical content already exists for this result)',
+        );
+
+      const versionNumber = resultState.latest_version_number + 1;
+      const resultVersionId = newId();
+      const versionRow: ResultVersionTable = {
+        id: resultVersionId,
+        result_id: draft.result_id,
+        version_number: versionNumber,
+        discipline_version_ref: draft.discipline_version_ref,
+        content_schema: content.contentSchema,
+        content: JSON.stringify(content.normalized),
+        content_hash: content.contentHash,
+        submitted_by_principal_id: input.actorPrincipalId,
+        supersedes_version_id: input.supersedesVersionId,
+        fact_hash: factHash(SchemaRef.resultVersionFact, {
+          resultVersionId,
+          resultId: draft.result_id,
+          versionNumber,
+          contentHash: content.contentHash,
+          contentSchema: content.contentSchema,
+          disciplineVersionRef: draft.discipline_version_ref,
+          submittedByPrincipalId: input.actorPrincipalId,
+          supersedesVersionId: input.supersedesVersionId,
+        }),
+        recorded_at: ctx.txTime,
+      };
+      await ctx.trx.insertInto('results.result_version').values(versionRow).execute();
+      await stream.append({
+        eventType: 'RESULT_VERSION_SUBMITTED',
+        factTable: 'results.result_version',
+        factRowId: resultVersionId,
+        payloadHash: versionRow.fact_hash,
+      });
+      // T7 first (the old version leaves the current set), then T2 + T3 of the correction (R-2).
+      await this.appendTransition(ctx, stream, {
+        resultVersionId: input.supersedesVersionId,
+        fromStatus: from,
+        toStatus: 'SUPERSEDED',
+        transitionCode: t7.code,
+        actorPrincipalId: input.actorPrincipalId,
+        proofDigest: correctDecision.proofDigest,
+        reason: input.reason,
+      });
+      const moved = await ctx.trx
+        .updateTable('results.result_version_state')
+        .set({ current_status: 'SUPERSEDED', updated_at: ctx.txTime })
+        .where('result_version_id', '=', input.supersedesVersionId)
+        .where('current_status', '=', from)
+        .where('hold', '=', false)
+        .executeTakeFirst();
+      if (moved.numUpdatedRows !== 1n)
+        throw new DomainError(
+          DomainErrorCode.CONCURRENCY_CONFLICT,
+          'version state moved concurrently',
+        );
+      await this.appendTransition(ctx, stream, {
+        resultVersionId,
+        fromStatus: null,
+        toStatus: 'SUBMITTED',
+        transitionCode: 'T2',
+        actorPrincipalId: input.actorPrincipalId,
+        proofDigest: correctDecision.proofDigest,
+      });
+      await this.appendTransition(ctx, stream, {
+        resultVersionId,
+        fromStatus: 'SUBMITTED',
+        toStatus: 'PROVISIONAL',
+        transitionCode: 'T3',
+        actorPrincipalId: input.actorPrincipalId,
+        proofDigest: acceptDecision.proofDigest,
+      });
+      await ctx.trx
+        .insertInto('results.result_version_state')
+        .values({
+          result_version_id: resultVersionId,
+          result_id: draft.result_id,
+          current_status: 'PROVISIONAL',
+          hold: false,
+          updated_at: ctx.txTime,
+        })
+        .execute();
+      const bumped = await ctx.trx
+        .updateTable('results.result_state')
+        .set({
+          latest_version_number: versionNumber,
+          current_version_id: resultVersionId,
+          updated_at: ctx.txTime,
+        })
+        .where('result_id', '=', draft.result_id)
+        .where('latest_version_number', '=', resultState.latest_version_number)
+        .executeTakeFirst();
+      if (bumped.numUpdatedRows !== 1n)
+        throw new DomainError(
+          DomainErrorCode.CONCURRENCY_CONFLICT,
+          'result state moved concurrently',
+        );
+      await ctx.trx
+        .updateTable('results.result_draft')
+        .set({ submitted_version_id: resultVersionId, updated_at: ctx.txTime })
+        .where('id', '=', draft.id)
+        .execute();
+      await emitEvent(ctx, {
+        eventType: 'ResultSuperseded',
+        aggregateType: 'RESULT_VERSION',
+        aggregateId: input.supersedesVersionId,
+        actorPrincipalId: input.actorPrincipalId,
+        causationId: input.idempotencyKey,
+        payload: {
+          resultId: draft.result_id,
+          from,
+          to: 'SUPERSEDED',
+          transitionCode: 'T7',
+          supersededBy: resultVersionId,
+        },
+      });
+      // The correction IS a T3 acceptance: existing consumers re-evaluate on ResultProvisional.
+      await emitEvent(ctx, {
+        eventType: 'ResultProvisional',
+        aggregateType: 'RESULT_VERSION',
+        aggregateId: resultVersionId,
+        actorPrincipalId: input.actorPrincipalId,
+        causationId: input.idempotencyKey,
+        payload: {
+          resultId: draft.result_id,
+          from: 'SUBMITTED',
+          to: 'PROVISIONAL',
+          transitionCode: 'T3',
+          contentHash: content.contentHash,
+          supersedes: input.supersedesVersionId,
+        },
+      });
+      await stream.close();
+      const response: CorrectOutcome = {
+        resultVersionId,
+        versionNumber,
+        contentHash: content.contentHash,
+        supersededVersionId: input.supersedesVersionId,
+        status: 'PROVISIONAL',
+        created: true,
+        ledgerEntries: stream.entries,
       };
       await recordIdempotency(ctx, idem, lookup.requestHash, { ...response, ledgerEntries: [] });
       return response;

@@ -1,3 +1,4 @@
+import { ADVANCEMENT_POLICY_TEMPLATES, type AdvancementPolicySpec } from './advancement/policy';
 import type { BrObjectSchema } from '@br/canonical';
 import type { EventCategory } from './category';
 import type {
@@ -42,6 +43,15 @@ export interface CatalogManifest {
     readonly code: string;
     readonly name: string;
     readonly versions: readonly { readonly spec: RulesetSpec; readonly basis: RuleBasis }[];
+  }[];
+  /** ONCF-05D: AdvancementPolicy versions (how classified entrants fill dependent slots). */
+  readonly advancementPolicies?: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly versions: readonly {
+      readonly spec: AdvancementPolicySpec;
+      readonly basis: RuleBasis;
+    }[];
   }[];
 }
 
@@ -720,6 +730,11 @@ export const CANONICAL_CATALOG: CatalogManifest = {
     },
   ],
   rulesets: RULESET_TEMPLATES.map((t) => ({
+    code: t.code,
+    name: t.name,
+    versions: [{ spec: t.spec, basis: t.basis }],
+  })),
+  advancementPolicies: ADVANCEMENT_POLICY_TEMPLATES.map((t) => ({
     code: t.code,
     name: t.name,
     versions: [{ spec: t.spec, basis: t.basis }],

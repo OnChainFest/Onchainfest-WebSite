@@ -105,11 +105,20 @@ function snapshotOf(eventId: string, participants: readonly FieldParticipant[]):
  * scheduling → lineups. The field, the seeding and the plan are immutable historical facts:
  * nothing here regenerates or overwrites them, and nothing resolves a dependent slot.
  */
+/**
+ * ONCF-05D: reports the dependent places of a contest whose occupant no longer follows from
+ * current official results (STALE). Injected by the composition root (AdvancementStore) so the
+ * structure store never reads results itself.
+ */
+export type ContestStartGuard = (contestId: string) => Promise<readonly string[]>;
+
 export class StructureStore {
   private readonly db: Db;
+  private readonly startGuard: ContestStartGuard | undefined;
 
-  constructor(db: Db) {
+  constructor(db: Db, options: { startGuard?: ContestStartGuard } = {}) {
     this.db = db;
+    this.startGuard = options.startGuard;
   }
 
   private tx<T>(fn: (ctx: TxContext) => Promise<T>): Promise<T> {
@@ -1262,7 +1271,14 @@ export class StructureStore {
   }
 
   /** SCHEDULED → IN_PROGRESS. Every slot must hold an ACTIVE participant (no unresolved dependency). */
-  startContest(input: { actorAccountId: string; contestId: string }): Promise<void> {
+  async startContest(input: { actorAccountId: string; contestId: string }): Promise<void> {
+    const stale = this.startGuard === undefined ? [] : await this.startGuard(input.contestId);
+    if (stale.length > 0)
+      throw new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        'an entrant of this contest no longer follows from the current official results; re-resolve advancement first',
+        { reason: 'ADVANCEMENT_STALE', targets: stale.slice(0, 20) },
+      );
     return this.setContestStatus(
       input.actorAccountId,
       input.contestId,
@@ -1332,13 +1348,22 @@ export class StructureStore {
             DomainErrorCode.INVALID_TRANSITION,
             'the event must be IN_PROGRESS',
           );
-        const { rows } = await sql<{ unready: number }>`
-          SELECT count(*)::int AS unready FROM competition.contestant ct
-          LEFT JOIN competition.v_participant_current pv ON pv.participant_id = ct.participant_id
-          WHERE ct.contest_id = ${contestId} AND (ct.source_kind <> 'PARTICIPANT' OR pv.status IS DISTINCT FROM 'ACTIVE')`.execute(
+        // ONCF-05D: a dependent place counts once a committed advancement fact fills it; a dynamic
+        // round's contest needs its committed field.
+        const { rows } = await sql<{ unready: number; places: number }>`
+          SELECT count(*) FILTER (WHERE pv.status IS DISTINCT FROM 'ACTIVE')::int AS unready, count(*)::int AS places
+          FROM competition.v_contest_occupant o
+          LEFT JOIN competition.v_participant_current pv ON pv.participant_id = o.participant_id
+          WHERE o.contest_id = ${contestId}`.execute(ctx.trx);
+        const { rows: dyn } = await sql<{ dynamic: boolean; entries: number }>`
+          SELECT r.dynamic_transition_key IS NOT NULL AS dynamic,
+                 (SELECT count(*)::int FROM competition.contest_entry ce WHERE ce.contest_id = c.id) AS entries
+          FROM competition.contest c JOIN competition.round r ON r.id = c.round_id WHERE c.id = ${contestId}`.execute(
           ctx.trx,
         );
-        if ((rows[0]?.unready ?? 1) > 0) {
+        const emptyDynamic =
+          dyn[0]?.dynamic === true && (rows[0]?.places ?? 0) === 0 && (dyn[0]?.entries ?? 0) === 0;
+        if ((rows[0]?.unready ?? 1) > 0 || emptyDynamic) {
           throw new DomainError(
             DomainErrorCode.INVALID_TRANSITION,
             'the contest has unresolved or inactive slots and cannot start',

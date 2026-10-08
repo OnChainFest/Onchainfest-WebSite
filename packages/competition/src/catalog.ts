@@ -570,7 +570,8 @@ export function catalogSpecHash(
     | 'br:discipline-version-spec'
     | 'br:format-version-spec'
     | 'br:ruleset-version-spec'
-    | 'br:classification-template-spec',
+    | 'br:classification-template-spec'
+    | 'br:advancement-policy-spec',
   spec: unknown,
 ): ContentHash {
   return toContentHash(
