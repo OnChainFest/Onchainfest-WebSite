@@ -653,6 +653,16 @@ function ScoringPanel({
               <span className="muted">None — next-stage slots can’t be resolved</span>
             )}
           </dd>
+          {pinned.schedulingProfile ? (
+            <>
+              <dt>Scheduling profile</dt>
+              <dd>
+                {pinned.schedulingProfile.name}{' '}
+                <span className="mono muted">v{pinned.schedulingProfile.version}</span>
+                <div className="muted small">{basisLabel(pinned.schedulingProfile)}</div>
+              </dd>
+            </>
+          ) : null}
         </dl>
       ) : (
         <p className="muted small">
@@ -663,6 +673,11 @@ function ScoringPanel({
         <form action={pinScoringAction} className="tb-form">
           {hidden}
           <input type="hidden" name="key" value={`oc-scoring-${randomUUID()}`} />
+          <input
+            type="hidden"
+            name="schedulingProfileVersionId"
+            value={pinned?.schedulingProfile?.versionId ?? ''}
+          />
           <label>
             Ruleset
             <select

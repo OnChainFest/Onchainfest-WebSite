@@ -62,6 +62,10 @@ export const DomainEventType = {
   AdvancementOverridden: 'AdvancementOverridden',
   AdvancementOverrideRevoked: 'AdvancementOverrideRevoked',
   DynamicContestsMaterialized: 'DynamicContestsMaterialized',
+  // ONCF-05E-B SchedulingProfile catalog (ADR-0069, ADR-0072)
+  SchedulingProfileVersionCreated: 'SchedulingProfileVersionCreated',
+  SchedulingProfileVersionPublished: 'SchedulingProfileVersionPublished',
+  SchedulingProfileVersionRetired: 'SchedulingProfileVersionRetired',
   // ONCF-05E-A resources and availability (ADR-0067, ADR-0068)
   ResourceCreated: 'ResourceCreated',
   ResourceRevised: 'ResourceRevised',
@@ -188,6 +192,7 @@ export const AggregateType = {
   RULESET_VERSION: 'RULESET_VERSION',
   CLASSIFICATION_TEMPLATE_VERSION: 'CLASSIFICATION_TEMPLATE_VERSION',
   ADVANCEMENT_POLICY_VERSION: 'ADVANCEMENT_POLICY_VERSION',
+  SCHEDULING_PROFILE_VERSION: 'SCHEDULING_PROFILE_VERSION',
   RESOURCE: 'RESOURCE',
   COMPETITION: 'COMPETITION',
   EVENT: 'EVENT',

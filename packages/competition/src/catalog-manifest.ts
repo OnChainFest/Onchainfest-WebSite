@@ -9,6 +9,7 @@ import type {
 } from './catalog';
 import type { DisciplineCapabilitiesSpec } from './capabilities';
 import { RULESET_TEMPLATES, type RuleBasis, type RulesetSpec } from './ruleset';
+import { SCHEDULING_PROFILE_TEMPLATES, type SchedulingProfileSpec } from './scheduling';
 
 /**
  * The canonical OnChainFest sport catalog (ONCF-03A; eight sports since ONCF-05B). Catalog rows
@@ -50,6 +51,15 @@ export interface CatalogManifest {
     readonly name: string;
     readonly versions: readonly {
       readonly spec: AdvancementPolicySpec;
+      readonly basis: RuleBasis;
+    }[];
+  }[];
+  /** ONCF-05E-B: SchedulingProfile versions (how a contest is operationally scheduled). */
+  readonly schedulingProfiles?: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly versions: readonly {
+      readonly spec: SchedulingProfileSpec;
       readonly basis: RuleBasis;
     }[];
   }[];
@@ -735,6 +745,11 @@ export const CANONICAL_CATALOG: CatalogManifest = {
     versions: [{ spec: t.spec, basis: t.basis }],
   })),
   advancementPolicies: ADVANCEMENT_POLICY_TEMPLATES.map((t) => ({
+    code: t.code,
+    name: t.name,
+    versions: [{ spec: t.spec, basis: t.basis }],
+  })),
+  schedulingProfiles: SCHEDULING_PROFILE_TEMPLATES.map((t) => ({
     code: t.code,
     name: t.name,
     versions: [{ spec: t.spec, basis: t.basis }],

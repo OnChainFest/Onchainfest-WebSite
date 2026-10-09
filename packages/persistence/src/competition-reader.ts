@@ -3,6 +3,8 @@ import {
   engineRequirements,
   capabilityIssues,
   formatEngine,
+  schedulingProfileCompatibility,
+  type SchedulingProfileSpec,
   PUBLIC_COMPETITION_SCHEMA,
   PUBLIC_EVENT_SCHEMA,
   type DisciplineVersionSpec,
@@ -20,6 +22,42 @@ import { slugLookupKey } from '@br/identity';
 import { sql } from 'kysely';
 import type { Db } from './db';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
+
+type SchedulingProfileRow = {
+  id: string;
+  code: string;
+  name: string;
+  version: number;
+  spec_version: number;
+  spec_hash: string;
+  spec: SchedulingProfileSpec;
+  basis: Record<string, unknown>;
+};
+
+/** PUBLISHED profile versions only: a DRAFT or RETIRED row is never offered or served. */
+async function publishedSchedulingProfiles(
+  ctx: TxContext,
+  versionId?: string,
+): Promise<SchedulingProfileRow[]> {
+  const { rows } = await sql<SchedulingProfileRow>`
+    SELECT v.id, p.code, p.name, v.version, v.spec_version, v.spec_hash, v.spec, v.basis
+    FROM sports.scheduling_profile_version v JOIN sports.scheduling_profile p ON p.id = v.profile_id
+    JOIN sports.v_scheduling_profile_version_current c ON c.scheduling_profile_version_id = v.id
+    WHERE c.status = 'PUBLISHED' AND (${versionId ?? null}::uuid IS NULL OR v.id = ${versionId ?? null}::uuid)
+    ORDER BY p.code, v.version`.execute(ctx.trx);
+  return rows;
+}
+
+const schedulingProfileView = (r: SchedulingProfileRow) => ({
+  versionId: r.id,
+  code: r.code,
+  name: r.name,
+  version: r.version,
+  specVersion: r.spec_version,
+  specHash: r.spec_hash,
+  spec: r.spec,
+  basis: r.basis,
+});
 
 const NOT_AVAILABLE: NotAvailable = { status: 'NOT_AVAILABLE', reason: 'SOURCE_NOT_IMPLEMENTED' };
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
@@ -192,6 +230,8 @@ export class CompetitionReader {
         FROM sports.advancement_policy_version v JOIN sports.advancement_policy p ON p.id = v.policy_id
         JOIN sports.v_advancement_policy_version_current c ON c.advancement_policy_version_id = v.id
         WHERE c.status = 'PUBLISHED' ORDER BY p.code, v.version`.execute(ctx.trx);
+      // ONCF-05E-B: published SchedulingProfile versions (catalog templates; ADR-0072 §2).
+      const profiles = await publishedSchedulingProfiles(ctx);
       const scoringVersion = (r: (typeof rulesets)[number]) => ({
         versionId: r.id,
         code: r.code,
@@ -206,6 +246,7 @@ export class CompetitionReader {
         rulesetVersions: rulesets.map(scoringVersion),
         classificationTemplateVersions: templates.map(scoringVersion),
         advancementPolicyVersions: policies.map(scoringVersion),
+        schedulingProfileVersions: profiles.map(schedulingProfileView),
         disciplineVersions: disciplines.map((d) => ({
           disciplineVersionId: d.id,
           sport: { code: d.sport_code, name: d.sport_name },
@@ -223,6 +264,15 @@ export class CompetitionReader {
           compatibleRulesetVersionIds: rulesets
             .filter((r) => providedCapabilities(d.spec).rulesetFamilies.includes(r.family as never))
             .map((r) => r.id),
+          // ONCF-05E-B: profiles whose every resource type the discipline declares (v1: none). The
+          // format's contest types are always covered by a valid profile's default requirement.
+          compatibleSchedulingProfileVersionIds: profiles
+            .filter(
+              (p) =>
+                schedulingProfileCompatibility(p.spec, providedCapabilities(d.spec), []).length ===
+                0,
+            )
+            .map((p) => p.id),
           compatibleFormatVersionIds: formatVersions
             .filter(
               (f) =>
@@ -233,6 +283,14 @@ export class CompetitionReader {
         })),
         formatVersions,
       };
+    });
+  }
+
+  /** ONCF-05E-B: one PUBLISHED SchedulingProfile version (undefined when unknown or not published). */
+  schedulingProfileVersion(versionId: string) {
+    return this.tx(async (ctx) => {
+      const rows = await publishedSchedulingProfiles(ctx, versionId);
+      return rows[0] === undefined ? undefined : schedulingProfileView(rows[0]);
     });
   }
 
