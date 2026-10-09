@@ -133,6 +133,21 @@ export function registerCompetitionV1(
 
   route('GET', '/v1/catalog', 'PUBLIC', {}, async () => deps.reader.catalog());
 
+  // ONCF-05E-B: one PUBLISHED SchedulingProfile version (catalog data; DRAFT / RETIRED → 404).
+  route(
+    'GET',
+    '/v1/catalog/scheduling-profiles/:versionId',
+    'PUBLIC',
+    { params: idParams('versionId') },
+    async (request) => {
+      const r = await deps.reader.schedulingProfileVersion(
+        params<{ versionId: string }>(request).versionId,
+      );
+      if (r === undefined) throw notFound('scheduling profile version');
+      return r;
+    },
+  );
+
   // ONCF-02: an organization's public (non-DRAFT) competitions, for its page and dashboard.
   route(
     'GET',
@@ -817,6 +832,7 @@ export function registerCompetitionV1(
   // Organizer surface only: rulesets and templates are pinned before the field locks; score sheets
   // are validated (never written — submission is the ResultLedger's, in 05D); classifications are
   // computed on read from current results and are proposals (ADR-0047), never published here.
+  // ONCF-05E-B: the SchedulingProfile version is pinned (by id, PUBLISHED only) with these axes.
   const scoring = deps.scoring;
   if (scoring !== undefined) {
     route(
@@ -831,6 +847,7 @@ export function registerCompetitionV1(
             rulesetVersionId: uuid,
             classificationTemplateVersionId: { type: ['string', 'null'], format: 'uuid' },
             advancementPolicyVersionId: { type: ['string', 'null'], format: 'uuid' },
+            schedulingProfileVersionId: { type: ['string', 'null'], format: 'uuid' },
             stageOverrides: {
               type: 'object',
               maxProperties: 16,
@@ -850,6 +867,7 @@ export function registerCompetitionV1(
           rulesetVersionId: string;
           classificationTemplateVersionId?: string | null;
           advancementPolicyVersionId?: string | null;
+          schedulingProfileVersionId?: string | null;
           stageOverrides?: Record<
             string,
             { rulesetVersionId?: string; classificationTemplateVersionId?: string }

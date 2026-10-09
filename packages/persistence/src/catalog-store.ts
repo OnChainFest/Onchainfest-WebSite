@@ -18,6 +18,9 @@ import {
   validateAdvancementPolicy,
   validateRulesetSpec,
   type AdvancementPolicySpec,
+  canonicalSchedulingProfileSpec,
+  validateSchedulingProfileSpec,
+  type SchedulingProfileSpec,
 } from '@br/competition';
 import { validateClassificationPolicyV2, type ClassificationPolicyV2Spec } from '@br/rankings';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
@@ -36,7 +39,11 @@ function formatVersionSpecHash(engine: AnyFormatEngine): string {
   return catalogSpecHash('br:format-version-spec', formatVersionSpec(engine));
 }
 
-export type ScoringKind = 'ruleset' | 'classification-template' | 'advancement-policy';
+export type ScoringKind =
+  'ruleset' | 'classification-template' | 'advancement-policy' | 'scheduling-profile';
+
+type ScoringSpec =
+  RulesetSpec | ClassificationPolicyV2Spec | AdvancementPolicySpec | SchedulingProfileSpec;
 
 const SCORING = {
   ruleset: {
@@ -50,6 +57,7 @@ const SCORING = {
     view: 'sports.v_ruleset_version_current',
     specSchema: 'br:ruleset-version-spec',
     aggregate: 'RULESET_VERSION',
+    discriminatorCol: 'family',
     created: 'RulesetVersionCreated',
     published: 'RulesetVersionPublished',
     retired: 'RulesetVersionRetired',
@@ -65,6 +73,7 @@ const SCORING = {
     view: 'sports.v_classification_template_version_current',
     specSchema: 'br:classification-template-spec',
     aggregate: 'CLASSIFICATION_TEMPLATE_VERSION',
+    discriminatorCol: 'family',
     created: 'ClassificationTemplateVersionCreated',
     published: 'ClassificationTemplateVersionPublished',
     retired: 'ClassificationTemplateVersionRetired',
@@ -80,9 +89,28 @@ const SCORING = {
     view: 'sports.v_advancement_policy_version_current',
     specSchema: 'br:advancement-policy-spec',
     aggregate: 'ADVANCEMENT_POLICY_VERSION',
+    discriminatorCol: 'family',
     created: 'AdvancementPolicyVersionCreated',
     published: 'AdvancementPolicyVersionPublished',
     retired: 'AdvancementPolicyVersionRetired',
+  },
+  // ONCF-05E-B (ADR-0072): the version row records the spec's shape (`specVersion`) instead of a
+  // family; the spec is stored and hashed in its canonical form.
+  'scheduling-profile': {
+    label: 'SchedulingProfile',
+    code: FORMAT_CODE,
+    parent: 'sports.scheduling_profile',
+    version: 'sports.scheduling_profile_version',
+    parentCol: 'profile_id',
+    status: 'sports.scheduling_profile_version_status_change',
+    statusCol: 'scheduling_profile_version_id',
+    view: 'sports.v_scheduling_profile_version_current',
+    specSchema: 'br:scheduling-profile-spec',
+    aggregate: 'SCHEDULING_PROFILE_VERSION',
+    discriminatorCol: 'spec_version',
+    created: 'SchedulingProfileVersionCreated',
+    published: 'SchedulingProfileVersionPublished',
+    retired: 'SchedulingProfileVersionRetired',
   },
 } as const;
 
@@ -91,7 +119,28 @@ function scoringSpecIssues(kind: ScoringKind, spec: unknown) {
     ? validateRulesetSpec(spec as RulesetSpec)
     : kind === 'classification-template'
       ? validateClassificationPolicyV2(spec as ClassificationPolicyV2Spec)
-      : validateAdvancementPolicy(spec);
+      : kind === 'advancement-policy'
+        ? validateAdvancementPolicy(spec)
+        : validateSchedulingProfileSpec(spec);
+}
+
+/** The form a VALID spec is stored and hashed in (SchedulingProfile: content-ordered requirements). */
+function canonicalScoringSpec(kind: ScoringKind, spec: ScoringSpec): ScoringSpec {
+  return kind === 'scheduling-profile'
+    ? canonicalSchedulingProfileSpec(spec as SchedulingProfileSpec)
+    : spec;
+}
+
+/** The version row's discriminator column value: the family, or the spec's shape version. */
+function scoringDiscriminator(kind: ScoringKind, spec: ScoringSpec): string | number {
+  return kind === 'scheduling-profile'
+    ? (spec as SchedulingProfileSpec).specVersion
+    : (spec as Exclude<ScoringSpec, SchedulingProfileSpec>).family;
+}
+
+/** The hash a version carries: of its canonical spec, under the kind's schema id. */
+export function scoringSpecHash(kind: ScoringKind, spec: ScoringSpec): string {
+  return catalogSpecHash(SCORING[kind].specSchema, canonicalScoringSpec(kind, spec));
 }
 
 export type CatalogProvisionAction =
@@ -110,7 +159,9 @@ export interface CatalogProvisionReport {
       | 'classification-template'
       | 'classification-template-version'
       | 'advancement-policy'
-      | 'advancement-policy-version';
+      | 'advancement-policy-version'
+      | 'scheduling-profile'
+      | 'scheduling-profile-version';
     readonly code: string;
     readonly action: CatalogProvisionAction;
     readonly id?: string;
@@ -589,7 +640,7 @@ export class CatalogStore {
     operatorAccountId: string;
     kind: ScoringKind;
     parentId: string;
-    spec: RulesetSpec | ClassificationPolicyV2Spec | AdvancementPolicySpec;
+    spec: ScoringSpec;
     basis: RuleBasis;
     idempotencyKey: string;
   }): Promise<{ id: string; version: number; specHash: string; created: boolean }> {
@@ -610,8 +661,9 @@ export class CatalogStore {
           issues: issues.slice(0, 20),
         }),
       );
-    const specHash = catalogSpecHash(k.specSchema, input.spec);
-    const family = input.spec.family;
+    const spec = canonicalScoringSpec(input.kind, input.spec);
+    const specHash = catalogSpecHash(k.specSchema, spec);
+    const discriminator = scoringDiscriminator(input.kind, spec);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{ id: string; version: number; specHash: string }>(
         ctx,
@@ -633,10 +685,14 @@ export class CatalogStore {
         throw new DomainError(DomainErrorCode.NOT_FOUND, `${input.kind} not found`);
       const version = (rows[0]?.n ?? 0) + 1;
       const id = newId();
-      await sql`INSERT INTO ${sql.raw(k.version)} (id, ${sql.ref(k.parentCol)}, version, family, spec, spec_hash, basis, created_by_account_id, recorded_at)
-        VALUES (${id}, ${input.parentId}, ${version}, ${family}, ${JSON.stringify(input.spec)}::jsonb, ${specHash},
-                ${JSON.stringify(input.basis)}::jsonb, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
-        ctx.trx,
+      await this.unique(
+        () =>
+          sql`INSERT INTO ${sql.raw(k.version)} (id, ${sql.ref(k.parentCol)}, version, ${sql.ref(k.discriminatorCol)}, spec, spec_hash, basis, created_by_account_id, recorded_at)
+          VALUES (${id}, ${input.parentId}, ${version}, ${discriminator}, ${JSON.stringify(spec)}::jsonb, ${specHash},
+                  ${JSON.stringify(input.basis)}::jsonb, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
+            ctx.trx,
+          ),
+        `${input.kind} version with this content`,
       );
       await sql`INSERT INTO ${sql.raw(k.status)} (id, ${sql.ref(k.statusCol)}, status, actor_account_id, recorded_at)
         VALUES (${newId()}, ${id}, 'DRAFT', ${input.operatorAccountId}, ${ctx.txTime})`.execute(
@@ -678,6 +734,24 @@ export class CatalogStore {
         throw new DomainError(DomainErrorCode.NOT_FOUND, `${input.kind} version not found`);
       if (!canTransition(CatalogVersionLifecycle, from, input.status))
         throw transitionError(`${input.kind} version`, from, input.status);
+      if (input.status === 'PUBLISHED' && input.kind === 'scheduling-profile') {
+        // Publication re-validates the stored spec and its hash (ADR-0072 §6: ambiguity is refused
+        // at publication and pin time, never resolved by order).
+        const { rows: stored } = await sql<{ spec: SchedulingProfileSpec; spec_hash: string }>`
+          SELECT spec, spec_hash FROM ${sql.raw(k.version)} WHERE id = ${input.versionId}`.execute(
+          ctx.trx,
+        );
+        const v = stored[0];
+        if (
+          v === undefined ||
+          validateSchedulingProfileSpec(v.spec).length > 0 ||
+          scoringSpecHash(input.kind, v.spec) !== v.spec_hash
+        )
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            'the scheduling profile version is invalid or its hash does not match; it cannot be published',
+          );
+      }
       await sql`INSERT INTO ${sql.raw(k.status)} (id, ${sql.ref(k.statusCol)}, status, actor_account_id, recorded_at)
         VALUES (${newId()}, ${input.versionId}, ${input.status}, ${input.operatorAccountId}, ${ctx.txTime})`.execute(
         ctx.trx,
@@ -759,7 +833,7 @@ export class CatalogStore {
       code: string;
       name: string;
       versions: readonly {
-        spec: RulesetSpec | ClassificationPolicyV2Spec | AdvancementPolicySpec;
+        spec: ScoringSpec;
         basis: RuleBasis;
       }[];
     }[] = [
@@ -771,6 +845,10 @@ export class CatalogStore {
       ...(input.manifest.advancementPolicies ?? []).map((a) => ({
         kind: 'advancement-policy' as const,
         ...a,
+      })),
+      ...(input.manifest.schedulingProfiles ?? []).map((p) => ({
+        kind: 'scheduling-profile' as const,
+        ...p,
       })),
     ];
     for (const x of scoring) {
@@ -794,7 +872,8 @@ export class CatalogStore {
         | 'format_template'
         | 'ruleset'
         | 'classification_template'
-        | 'advancement_policy',
+        | 'advancement_policy'
+        | 'scheduling_profile',
       code: string,
     ) =>
       this.tx(async (ctx) => {
@@ -998,7 +1077,6 @@ export class CatalogStore {
       }
     }
     for (const x of scoring) {
-      const k = SCORING[x.kind];
       const parentId = await ensure(
         x.kind,
         x.code,
@@ -1007,7 +1085,9 @@ export class CatalogStore {
             ? 'ruleset'
             : x.kind === 'classification-template'
               ? 'classification_template'
-              : 'advancement_policy',
+              : x.kind === 'advancement-policy'
+                ? 'advancement_policy'
+                : 'scheduling_profile',
           x.code,
         ),
         async () =>
@@ -1021,7 +1101,7 @@ export class CatalogStore {
             })
           ).id,
       );
-      const history = x.versions.map((v) => catalogSpecHash(k.specSchema, v.spec));
+      const history = x.versions.map((v) => scoringSpecHash(x.kind, v.spec));
       for (const [i, v] of x.versions.entries()) {
         const specHash = history[i] as string;
         await ensureVersion(

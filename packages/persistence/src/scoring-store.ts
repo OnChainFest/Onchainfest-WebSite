@@ -6,8 +6,12 @@ import {
   engineRequirements,
   formatEngine,
   providedCapabilities,
+  producedContestTypes,
   readContestContent,
+  schedulingProfileCompatibility,
+  schedulingProfileSpecHash,
   scoreContest,
+  type SchedulingProfileSpec,
   type DisciplineVersionSpec,
   type RuleBasis,
   type RulesetSpec,
@@ -66,6 +70,7 @@ interface Pinned {
   readonly rulesetVersionId: string;
   readonly classificationTemplateVersionId: string | null;
   readonly advancementPolicyVersionId: string | null;
+  readonly schedulingProfileVersionId: string | null;
   readonly stageOverrides: Readonly<
     Record<string, { rulesetVersionId?: string; classificationTemplateVersionId?: string }>
   >;
@@ -113,13 +118,53 @@ export async function advancementPolicyVersion(
   return rows[0];
 }
 
+/** ONCF-05E-B: a SchedulingProfile version row (its shape version instead of a family). */
+interface ProfileRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly version: number;
+  readonly spec_version: number;
+  readonly spec: SchedulingProfileSpec;
+  readonly spec_hash: string;
+  readonly basis: RuleBasis;
+  readonly status: string;
+}
+
+export async function schedulingProfileVersion(
+  ctx: TxContext,
+  id: string,
+): Promise<ProfileRow | undefined> {
+  const { rows } = await sql<ProfileRow>`
+    SELECT v.id, p.code, p.name, v.version, v.spec_version, v.spec, v.spec_hash, v.basis, c.status
+    FROM sports.scheduling_profile_version v JOIN sports.scheduling_profile p ON p.id = v.profile_id
+    JOIN sports.v_scheduling_profile_version_current c ON c.scheduling_profile_version_id = v.id
+    WHERE v.id = ${id}`.execute(ctx.trx);
+  return rows[0];
+}
+
+/** A pinned profile as served: a reference to the catalog version, never a copy owned by the event. */
+const profileView = (v: ProfileRow) => ({
+  versionId: v.id,
+  code: v.code,
+  name: v.name,
+  version: v.version,
+  specVersion: v.spec_version,
+  specHash: v.spec_hash,
+  spec: v.spec,
+  basis: v.basis,
+  status: v.status,
+});
+
 export async function currentPin(ctx: TxContext, eventId: string): Promise<Pinned | undefined> {
   const { rows } = await sql<{
     ruleset_version_id: string;
     classification_template_version_id: string | null;
     advancement_policy_version_id: string | null;
+    scheduling_profile_version_id: string | null;
     stage_overrides: Pinned['stageOverrides'];
-  }>`SELECT ruleset_version_id, classification_template_version_id, advancement_policy_version_id, stage_overrides
+  }>`SELECT ruleset_version_id, classification_template_version_id, advancement_policy_version_id,
+            scheduling_profile_version_id, stage_overrides
      FROM competition.v_event_scoring_current WHERE event_id = ${eventId}`.execute(ctx.trx);
   const r = rows[0];
   return r === undefined
@@ -128,6 +173,7 @@ export async function currentPin(ctx: TxContext, eventId: string): Promise<Pinne
         rulesetVersionId: r.ruleset_version_id,
         classificationTemplateVersionId: r.classification_template_version_id,
         advancementPolicyVersionId: r.advancement_policy_version_id,
+        schedulingProfileVersionId: r.scheduling_profile_version_id,
         stageOverrides: r.stage_overrides,
       };
 }
@@ -183,6 +229,11 @@ export class ScoringStore {
     classificationTemplateVersionId?: string | null;
     /** ONCF-05D: how classified entrants move to dependent slots (required for advancement). */
     advancementPolicyVersionId?: string | null;
+    /**
+     * ONCF-05E-B (ADR-0072 §3): the PUBLISHED SchedulingProfile version, by id (never copied). A new
+     * pin replaces the previous one (append-only); like every axis it is frozen at field lock.
+     */
+    schedulingProfileVersionId?: string | null;
     stageOverrides?: Readonly<
       Record<string, { rulesetVersionId?: string; classificationTemplateVersionId?: string }>
     >;
@@ -209,6 +260,7 @@ export class ScoringStore {
           rulesetVersionId: input.rulesetVersionId,
           classificationTemplateVersionId: input.classificationTemplateVersionId ?? null,
           advancementPolicyVersionId: input.advancementPolicyVersionId ?? null,
+          schedulingProfileVersionId: input.schedulingProfileVersionId ?? null,
           overrides,
         },
       });
@@ -322,14 +374,43 @@ export class ScoringStore {
             );
         }
       }
+      if (
+        input.schedulingProfileVersionId !== undefined &&
+        input.schedulingProfileVersionId !== null
+      ) {
+        const p = await schedulingProfileVersion(ctx, input.schedulingProfileVersionId);
+        if (p === undefined || p.status !== 'PUBLISHED')
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            'scheduling profile version not found or not published',
+          );
+        // Pin-time compatibility (ADR-0069 §4, ADR-0072 §6) from data only: the discipline declares
+        // every required resource type and the format's contest types are covered. The stored spec
+        // is re-validated and its hash re-derived (fail closed).
+        const gaps =
+          schedulingProfileSpecHash(p.spec) === p.spec_hash
+            ? schedulingProfileCompatibility(
+                p.spec,
+                provided,
+                engine === undefined ? [] : producedContestTypes(engine, provided.contestTypes),
+              )
+            : [{ capability: 'spec' as const, message: 'stored spec does not match its hash' }];
+        if (gaps.length > 0)
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            `the scheduling profile is not compatible with this category: ${gaps.map((g) => g.message).join('; ')}`,
+            { reason: 'CAPABILITY_MISMATCH', issues: gaps },
+          );
+      }
       for (const o of Object.values(overrides)) {
         const r = o.rulesetVersionId === undefined ? base : await checkRuleset(o.rulesetVersionId);
         if (o.classificationTemplateVersionId !== undefined)
           await checkTemplate(o.classificationTemplateVersionId, r);
       }
-      await sql`INSERT INTO competition.event_scoring (id, event_id, ruleset_version_id, classification_template_version_id, advancement_policy_version_id, stage_overrides, pinned_by_account_id, recorded_at)
+      await sql`INSERT INTO competition.event_scoring (id, event_id, ruleset_version_id, classification_template_version_id, advancement_policy_version_id,
+                                                       scheduling_profile_version_id, stage_overrides, pinned_by_account_id, recorded_at)
         VALUES (${newId()}, ${e.id}, ${input.rulesetVersionId}, ${input.classificationTemplateVersionId ?? null},
-                ${input.advancementPolicyVersionId ?? null},
+                ${input.advancementPolicyVersionId ?? null}, ${input.schedulingProfileVersionId ?? null},
                 ${JSON.stringify(overrides)}::jsonb, ${input.actorAccountId}, ${ctx.txTime})`.execute(
         ctx.trx,
       );
@@ -341,6 +422,7 @@ export class ScoringStore {
           rulesetVersionId: input.rulesetVersionId,
           classificationTemplateVersionId: input.classificationTemplateVersionId ?? null,
           advancementPolicyVersionId: input.advancementPolicyVersionId ?? null,
+          schedulingProfileVersionId: input.schedulingProfileVersionId ?? null,
         },
       });
       await recordAudit(ctx, {
@@ -350,6 +432,10 @@ export class ScoringStore {
         targetId: e.id,
         details: {
           rulesetVersionId: input.rulesetVersionId,
+          ...(input.schedulingProfileVersionId === undefined ||
+          input.schedulingProfileVersionId === null
+            ? {}
+            : { schedulingProfileVersionId: input.schedulingProfileVersionId }),
           overrides: Object.keys(overrides).length,
         },
       });
@@ -384,6 +470,10 @@ export class ScoringStore {
         pin.advancementPolicyVersionId === null
           ? undefined
           : await advancementPolicyVersion(ctx, pin.advancementPolicyVersionId);
+      const profile =
+        pin.schedulingProfileVersionId === null
+          ? undefined
+          : await schedulingProfileVersion(ctx, pin.schedulingProfileVersionId);
       return {
         eventId: e.id,
         pinned: true as const,
@@ -391,6 +481,7 @@ export class ScoringStore {
         ruleset: ruleset === undefined ? null : view(ruleset),
         classificationTemplate: template === undefined ? null : view(template),
         advancementPolicy: policy === undefined ? null : view(policy),
+        schedulingProfile: profile === undefined ? null : profileView(profile),
         stageOverrides: pin.stageOverrides,
       };
     });

@@ -16,6 +16,14 @@ export interface EventScoring {
   classificationTemplate?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
   /** ONCF-05D. */
   advancementPolicy?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
+  /** ONCF-05E-B: the pinned SchedulingProfile version (selection arrives with the scheduling UI). */
+  schedulingProfile?: {
+    versionId: string;
+    code: string;
+    name: string;
+    version: number;
+    basis: CatalogScoringVersion['basis'];
+  } | null;
 }
 
 export interface StageClassification {

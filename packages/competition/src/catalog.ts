@@ -571,7 +571,8 @@ export function catalogSpecHash(
     | 'br:format-version-spec'
     | 'br:ruleset-version-spec'
     | 'br:classification-template-spec'
-    | 'br:advancement-policy-spec',
+    | 'br:advancement-policy-spec'
+    | 'br:scheduling-profile-spec',
   spec: unknown,
 ): ContentHash {
   return toContentHash(

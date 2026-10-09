@@ -131,6 +131,11 @@ export async function pinScoringAction(form: FormData): Promise<never> {
   const rulesetVersionId = field(form, 'rulesetVersionId');
   const templateVersionId = field(form, 'classificationTemplateVersionId');
   const policyVersionId = field(form, 'advancementPolicyVersionId');
+  // ONCF-05E-B: the form re-sends the whole pin, so the pinned SchedulingProfile is carried over
+  // unchanged (it is not chosen here; omitting it would silently unpin it).
+  const profileVersionId = field(form, 'schedulingProfileVersionId');
+  if (profileVersionId !== '' && !UUID_RE.test(profileVersionId))
+    to(slug, back, { error: 'scoring_invalid' });
   if (policyVersionId !== '' && !UUID_RE.test(policyVersionId))
     to(slug, back, { error: 'scoring_invalid' });
   if (!UUID_RE.test(rulesetVersionId)) to(slug, back, { error: 'missing_fields' });
@@ -142,6 +147,7 @@ export async function pinScoringAction(form: FormData): Promise<never> {
       rulesetVersionId,
       ...(templateVersionId === '' ? {} : { classificationTemplateVersionId: templateVersionId }),
       ...(policyVersionId === '' ? {} : { advancementPolicyVersionId: policyVersionId }),
+      ...(profileVersionId === '' ? {} : { schedulingProfileVersionId: profileVersionId }),
     },
   });
   if (r.kind !== 'ok') {
