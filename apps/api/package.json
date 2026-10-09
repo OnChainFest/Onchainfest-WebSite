@@ -1,0 +1,31 @@
+{
+  "name": "@br/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API (BRT-06): health/readiness and /v1 identity, passport, organization, sport catalog, competition, evidence and attestation endpoints",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev-token": "tsx src/dev-token.ts"
+  },
+  "dependencies": {
+    "@br/achievements": "workspace:*",
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/evidence": "workspace:*",
+    "@br/identity": "workspace:*",
+    "@br/persistence": "workspace:*",
+    "@br/records": "workspace:*",
+    "@br/schemas": "workspace:*",
+    "@br/verification": "workspace:*",
+    "fastify": "5.12.5",
+    "kysely": "0.29.6"
+  },
+  "devDependencies": {
+    "@br/rankings": "workspace:*",
+    "@br/testkit": "workspace:*"
+  }
+}

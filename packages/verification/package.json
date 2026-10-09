@@ -1,0 +1,25 @@
+{
+  "name": "@br/verification",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-07 Verification Engine / Sports Oracle (pure; no database, network, filesystem, clock, randomness or environment): declarative policies, deterministic VerificationSnapshot, V0–V4 criterion evaluation with explanation traces, participation/independence/conflict facts, public-safe explanation. Never a score or confidence.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/authority": "workspace:*",
+    "@br/canonical": "workspace:*",
+    "@br/competition": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/evidence": "workspace:*",
+    "@br/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@br/testkit": "workspace:*"
+  }
+}

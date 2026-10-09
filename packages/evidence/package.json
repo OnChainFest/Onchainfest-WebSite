@@ -1,0 +1,18 @@
+{
+  "name": "@br/evidence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BRT-06 Evidence & Attestation domain: evidence descriptors, content-addressed encrypted blob storage ports, signed statements, JWS proof verification, key admissibility, access policy and the deterministic Evidence Bundle (no database; never verification)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@br/canonical": "workspace:*",
+    "@br/domain": "workspace:*",
+    "@br/schemas": "workspace:*"
+  }
+}

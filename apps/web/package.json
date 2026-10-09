@@ -1,0 +1,21 @@
+{
+  "name": "@br/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal public web (BRT-04–06): athlete passport, organization, competition and signed-claim pages. No sign-in UI yet.",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0"
+  }
+}

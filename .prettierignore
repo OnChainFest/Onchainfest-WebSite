@@ -1,0 +1,17 @@
+node_modules
+pnpm-lock.yaml
+.next
+dist
+coverage
+docs
+packages/canonical/test-vectors/*.vectors.json
+packages/evidence/test-vectors/
+packages/verification/test-vectors/
+packages/achievements/test-vectors/
+packages/records/test-vectors/
+packages/rankings/test-vectors/
+
+# ONCF-00R: the public static website is deployed verbatim by Vercel; never reformat it.
+/index.html
+/contact.html
+/vercel.json
