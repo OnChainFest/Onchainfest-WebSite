@@ -1,0 +1,22 @@
+# Local development database only. Not a production deployment.
+name: bragging-rights
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    environment:
+      POSTGRES_USER: br_admin
+      POSTGRES_PASSWORD: br_admin_dev_only
+      POSTGRES_DB: bragging_rights
+    ports:
+      - '55432:5432'
+    volumes:
+      - br-pgdata:/var/lib/postgresql
+      - ./db/docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U br_admin -d bragging_rights']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  br-pgdata:

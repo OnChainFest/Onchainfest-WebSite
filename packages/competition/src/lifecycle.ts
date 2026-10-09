@@ -1,0 +1,202 @@
+/**
+ * Operational lifecycles (BRT-05). Every status here is OPERATIONAL: none of them states that a
+ * sporting result is final, verified, recorded or prize-bearing. In particular:
+ *  - Competition COMPLETED ⇏ every Result FINAL/VERIFIED;
+ *  - Event IN_PROGRESS / COMPLETED ⇏ official results;
+ *  - Contest COMPLETED means the activity ended operationally — nothing about its Result.
+ * Status histories are append-only; a transition not listed here is rejected.
+ */
+export interface Lifecycle<S extends string> {
+  readonly name: string;
+  readonly states: readonly S[];
+  /** Statuses a new aggregate may start in. */
+  readonly initial: readonly S[];
+  readonly transitions: Readonly<Record<S, readonly S[]>>;
+}
+
+export function canTransition<S extends string>(lc: Lifecycle<S>, from: S, to: S): boolean {
+  return lc.transitions[from]?.includes(to) ?? false;
+}
+
+export function isTerminal<S extends string>(lc: Lifecycle<S>, s: S): boolean {
+  return (lc.transitions[s]?.length ?? 0) === 0;
+}
+
+const lifecycle = <S extends string>(
+  name: string,
+  initial: readonly S[],
+  transitions: Record<S, readonly S[]>,
+): Lifecycle<S> => ({
+  name,
+  states: Object.keys(transitions) as S[],
+  initial,
+  transitions,
+});
+
+export type CompetitionStatus = 'DRAFT' | 'PUBLISHED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+export const CompetitionLifecycle = lifecycle<CompetitionStatus>('competition', ['DRAFT'], {
+  DRAFT: ['PUBLISHED', 'CANCELLED'],
+  PUBLISHED: ['ACTIVE', 'CANCELLED'],
+  ACTIVE: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+});
+
+export type EventStatus =
+  | 'DRAFT'
+  | 'REGISTRATION_OPEN'
+  | 'REGISTRATION_CLOSED'
+  | 'FIELD_LOCKED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED';
+export const EventLifecycle = lifecycle<EventStatus>('event', ['DRAFT'], {
+  DRAFT: ['REGISTRATION_OPEN', 'CANCELLED'],
+  REGISTRATION_OPEN: ['REGISTRATION_CLOSED', 'CANCELLED'],
+  // Re-opening is allowed before the field is locked.
+  REGISTRATION_CLOSED: ['REGISTRATION_OPEN', 'FIELD_LOCKED', 'CANCELLED'],
+  // FIELD_LOCKED: the participant field is frozen; no path back to registration.
+  FIELD_LOCKED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+});
+
+/**
+ * Edit windows (ONCF-03A). The single statement of what the competition store enforces, so the
+ * organizer read model can report it without restating the rules:
+ *  - a competition profile is editable until the competition is terminal;
+ *  - events can be added while the competition is DRAFT, PUBLISHED or ACTIVE;
+ *  - event settings are editable until the field is locked; capacity and registration mode only
+ *    while the event is DRAFT. Discipline, format and entrant kind never change after creation.
+ */
+export function competitionProfileEditable(status: CompetitionStatus): boolean {
+  return !isTerminal(CompetitionLifecycle, status);
+}
+
+export function competitionAcceptsEvents(status: CompetitionStatus): boolean {
+  return status === 'DRAFT' || status === 'PUBLISHED' || status === 'ACTIVE';
+}
+
+export function eventSettingsEditable(status: EventStatus): boolean {
+  return status === 'DRAFT' || status === 'REGISTRATION_OPEN' || status === 'REGISTRATION_CLOSED';
+}
+
+export function eventCapacityEditable(status: EventStatus): boolean {
+  return status === 'DRAFT';
+}
+
+export type RegistrationStatus =
+  'REQUESTED' | 'WAITLISTED' | 'CONFIRMED' | 'DECLINED' | 'WITHDRAWN' | 'CANCELLED';
+export const RegistrationLifecycle = lifecycle<RegistrationStatus>('registration', ['REQUESTED'], {
+  REQUESTED: ['CONFIRMED', 'WAITLISTED', 'DECLINED', 'WITHDRAWN'],
+  WAITLISTED: ['CONFIRMED', 'DECLINED', 'WITHDRAWN'],
+  CONFIRMED: ['WITHDRAWN', 'CANCELLED'],
+  DECLINED: [],
+  WITHDRAWN: [],
+  CANCELLED: [],
+});
+
+/** Registration statuses that hold (or compete for) a place in the field. */
+export const ACTIVE_REGISTRATION_STATUSES: readonly RegistrationStatus[] = [
+  'REQUESTED',
+  'WAITLISTED',
+  'CONFIRMED',
+];
+
+/** Organizer decisions on a registration and the status each one records. */
+export const REGISTRATION_DECISIONS = {
+  CONFIRM: 'CONFIRMED',
+  WAITLIST: 'WAITLISTED',
+  DECLINE: 'DECLINED',
+  CANCEL: 'CANCELLED',
+} as const satisfies Record<string, RegistrationStatus>;
+export type RegistrationDecision = keyof typeof REGISTRATION_DECISIONS;
+
+/**
+ * Registration windows (ONCF-04). The single statement of what the competition store enforces, so
+ * the organizer and athlete read models can report available actions without restating the rules:
+ *  - organizer decisions are taken while registration is open or closed, never after the lock;
+ *  - a registration can be withdrawn until the field is locked (then it is a Participant matter).
+ */
+export function registrationDecisionsOpen(eventStatus: EventStatus): boolean {
+  return eventStatus === 'REGISTRATION_OPEN' || eventStatus === 'REGISTRATION_CLOSED';
+}
+
+export function registrationWithdrawable(eventStatus: EventStatus): boolean {
+  return eventStatus === 'DRAFT' || registrationDecisionsOpen(eventStatus);
+}
+
+/** Decisions the lifecycle allows from `status` while the event is in `eventStatus`. */
+export function availableRegistrationDecisions(
+  status: RegistrationStatus,
+  eventStatus: EventStatus,
+): RegistrationDecision[] {
+  if (!registrationDecisionsOpen(eventStatus)) return [];
+  return (Object.keys(REGISTRATION_DECISIONS) as RegistrationDecision[]).filter((d) =>
+    canTransition(RegistrationLifecycle, status, REGISTRATION_DECISIONS[d]),
+  );
+}
+
+/** Whether a withdrawal (entrant or organizer) is possible now. */
+export function registrationCanWithdraw(
+  status: RegistrationStatus,
+  eventStatus: EventStatus,
+): boolean {
+  return (
+    registrationWithdrawable(eventStatus) &&
+    canTransition(RegistrationLifecycle, status, 'WITHDRAWN')
+  );
+}
+
+export type ContestStatus =
+  'PLANNED' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'VOID';
+export const ContestLifecycle = lifecycle<ContestStatus>('contest', ['PLANNED'], {
+  PLANNED: ['SCHEDULED', 'CANCELLED'],
+  // Re-scheduling keeps SCHEDULED (a schedule update, not a transition).
+  SCHEDULED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['COMPLETED', 'VOID'],
+  // VOID: operational annulment of a played contest; decides no result.
+  COMPLETED: ['VOID'],
+  CANCELLED: [],
+  VOID: [],
+});
+
+export type ParticipantStatus = 'ACTIVE' | 'WITHDRAWN' | 'DISQUALIFIED';
+export const ParticipantLifecycle = lifecycle<ParticipantStatus>('participant', ['ACTIVE'], {
+  ACTIVE: ['WITHDRAWN', 'DISQUALIFIED'],
+  WITHDRAWN: [],
+  // Operational exclusion with a mandatory reason/reference — NOT a verified sporting sanction.
+  DISQUALIFIED: [],
+});
+
+export type TeamMembershipStatus = 'PROPOSED' | 'ACTIVE' | 'DECLINED' | 'ENDED';
+export const TeamMembershipLifecycle = lifecycle<TeamMembershipStatus>(
+  'team-membership',
+  ['PROPOSED', 'ACTIVE'],
+  {
+    PROPOSED: ['ACTIVE', 'DECLINED'],
+    ACTIVE: ['ENDED'],
+    DECLINED: [],
+    ENDED: [],
+  },
+);
+
+export type StaffStatus = 'ACTIVE' | 'ENDED';
+export const StaffLifecycle = lifecycle<StaffStatus>('competition-staff', ['ACTIVE'], {
+  ACTIVE: ['ENDED'],
+  ENDED: [],
+});
+
+export type CatalogVersionStatus = 'DRAFT' | 'PUBLISHED' | 'RETIRED';
+/** Catalog versions: content is immutable from creation; PUBLISHED versions may be pinned. */
+export const CatalogVersionLifecycle = lifecycle<CatalogVersionStatus>(
+  'catalog-version',
+  ['DRAFT'],
+  {
+    DRAFT: ['PUBLISHED', 'RETIRED'],
+    // Retiring a published version stops new events from pinning it; pinned events are unaffected.
+    PUBLISHED: ['RETIRED'],
+    RETIRED: [],
+  },
+);

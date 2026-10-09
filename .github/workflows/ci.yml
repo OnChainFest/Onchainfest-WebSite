@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: foundation (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: br_admin
+          POSTGRES_PASSWORD: br_admin_dev_only
+          POSTGRES_DB: bragging_rights
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U br_admin -d bragging_rights"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate per-run development secrets (no repository-known keys)
+        run: |
+          VAULT_KEY=$(openssl rand -hex 32); AUTH_SECRET=$(openssl rand -hex 32); EVIDENCE_KEY=$(openssl rand -hex 32)
+          echo "::add-mask::$VAULT_KEY"; echo "::add-mask::$AUTH_SECRET"; echo "::add-mask::$EVIDENCE_KEY"
+          echo "BR_VAULT_DEV_KEY=$VAULT_KEY" >> "$GITHUB_ENV"
+          echo "BR_DEV_AUTH_SECRET=$AUTH_SECRET" >> "$GITHUB_ENV"
+          # BRT-06: per-run encrypted evidence store in a temp directory (never committed keys).
+          echo "BR_EVIDENCE_DEV_KEY=$EVIDENCE_KEY" >> "$GITHUB_ENV"
+          echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint (incl. key-material, result-ledger composition and no-manual-verification guards)
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit + property tests (incl. golden vectors, format engines, lifecycles, BRT-06 crypto/vectors, storage encryption, bundle determinism, BRT-07 V0–V4 engine / policy / snapshot determinism / reference fixtures)
+        run: pnpm test
+      - name: Golden vectors — BR-JSON v1 + BRT-06 + BRT-07, reproduce + independent reference checkers
+        run: pnpm vectors:check
+      - name: Bootstrap roles and databases
+        run: pnpm db:bootstrap
+      - name: Migrate from a clean database
+        run: pnpm db:migrate
+      - name: Integration tests (PostgreSQL; incl. privacy, capacity concurrency, hierarchy, roles, evidence/attestation, verification runs / freshness / participation / authority / concurrency / fixture non-persistence)
+        run: pnpm test:integration
+      - name: Acceptance walkthrough (BRT-03 foundation)
+        run: pnpm demo:foundation
+      - name: Acceptance walkthrough (BRT-04 identity, passport, organizations)
+        run: pnpm demo:identity
+      - name: Identity seed is idempotent (fictional data, run twice)
+        run: pnpm db:seed:identity && pnpm db:seed:identity
+      - name: Acceptance walkthrough (BRT-05 sport catalog, competition & event engine)
+        run: pnpm demo:competition
+      - name: Competition seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:competition > seed-competition-1.json
+          pnpm -s db:seed:competition > seed-competition-2.json
+          cmp seed-competition-1.json seed-competition-2.json
+      - name: Acceptance walkthrough (BRT-06 evidence & attestation)
+        run: pnpm demo:evidence
+      - name: Evidence seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:evidence > seed-evidence-1.json
+          pnpm -s db:seed:evidence > seed-evidence-2.json
+          cmp seed-evidence-1.json seed-evidence-2.json
+      - name: Acceptance walkthrough (BRT-07 verification engine / sports oracle)
+        run: pnpm demo:verification
+      - name: Verification seed is idempotent (fictional data, run twice, identical output)
+        run: |
+          pnpm -s db:seed:verification > seed-verification-1.json
+          pnpm -s db:seed:verification > seed-verification-2.json
+          cmp seed-verification-1.json seed-verification-2.json
+      - name: Worker smoke (one outbox polling round, incl. verification events)
+        run: pnpm --filter @br/worker exec tsx src/main.ts --once
+      - name: Web build
+        run: pnpm --filter @br/web build

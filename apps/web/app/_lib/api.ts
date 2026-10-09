@@ -1,0 +1,124 @@
+/** Minimal public-API client for server components (PUBLIC endpoints only; no credentials). */
+export const API_BASE = process.env.BR_API_URL ?? 'http://127.0.0.1:4000';
+
+export type Provenance =
+  | 'SELF_DECLARED'
+  | 'ACCOUNT_VERIFIED'
+  | 'ORGANIZATION_CONFIRMED'
+  | 'PROOF_OF_CONTROL'
+  | 'TEST_PROOF'
+  | 'AUTHORITY_VERIFIED'
+  | 'SYSTEM_DERIVED';
+
+export interface Attributed<T> {
+  value: T;
+  provenance: Provenance;
+}
+
+export interface Section<T> {
+  status: 'AVAILABLE' | 'NOT_AVAILABLE';
+  reason?: string;
+  items: T[];
+}
+
+import type { PassportAchievement } from './achievement';
+import type { PassportRecordItem } from './record';
+
+export interface AthletePassport {
+  schema: string;
+  athlete: {
+    id: string;
+    slug: string;
+    displayName: Attributed<string>;
+    bio?: Attributed<string>;
+    homeCountry?: Attributed<string>;
+    preferredSports: Attributed<string[]>;
+  };
+  affiliations: Section<{
+    organizationSlug: string;
+    organizationName: Attributed<string>;
+    organizationType: string;
+    role: Attributed<string>;
+    since: string;
+  }>;
+  externalIdentities: Section<{
+    namespace: string;
+    value: string;
+    status: string;
+    provenance: Provenance;
+  }>;
+  wallets: Section<{
+    network: string;
+    address: string;
+    proofStatus: string;
+    provenance: Provenance;
+  }>;
+  verifiedAchievements: Section<PassportAchievement>;
+  records: Section<PassportRecordItem>;
+  competitionHistory: Section<never>;
+  careerStats: Section<never>;
+  trophies: Section<never>;
+}
+
+export interface PublicOrganization {
+  organization: {
+    organizationId: string;
+    slug: string;
+    orgType: string;
+    status: string;
+    profile: {
+      displayName: string;
+      description: string | null;
+      website: string | null;
+      country: string | null;
+      region: string | null;
+      publicContact: string | null;
+      /** ONCF-02 branding (may be absent on older API builds). */
+      logoUrl?: string | null;
+      accentColor?: string | null;
+      sports?: string[];
+      provenance: Provenance;
+    };
+    authority: { status: 'NOT_AVAILABLE'; reason: string };
+  };
+  affiliations: Section<{
+    athleteSlug: string;
+    displayName: string;
+    role: string;
+    since: string;
+    provenance: Provenance;
+  }>;
+  canonicalSlug: string;
+  redirected: boolean;
+}
+
+export interface PublicCompetitionCard {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  locationLabel: string | null;
+}
+
+export type Fetched<T> = { kind: 'ok'; data: T } | { kind: 'not_found' } | { kind: 'unavailable' };
+
+/**
+ * `badRequestIsNotFound`: for paged reads whose only caller-supplied input is an opaque cursor, a 400
+ * (`invalid cursor`) means "no such page" — shown as not found, never as the first page or an outage.
+ */
+export async function getPublic<T>(
+  path: string,
+  opts: { badRequestIsNotFound?: boolean } = {},
+): Promise<Fetched<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+    if (res.status === 404 || (res.status === 400 && opts.badRequestIsNotFound === true))
+      return { kind: 'not_found' };
+    if (!res.ok) return { kind: 'unavailable' };
+    return { kind: 'ok', data: (await res.json()) as T };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+}

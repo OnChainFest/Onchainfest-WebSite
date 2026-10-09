@@ -1,0 +1,1243 @@
+{
+  "profile": "br-json/1",
+  "description": "BR-JSON v1 golden vectors (ADR-0014; BRT-02-SIGNATURES-AND-HASHING §2.2a, §3.2). Protocol surface: changing an expectation requires a new profile version.",
+  "hashConstruction": "contentHash = 'sha256:' + hex(SHA-256('BR' || 0x01 || domainTag || 0x00 || schemaId '@' version || 0x00 || 'br-json/1' || 0x00 || UTF8(JCS(normalized))))",
+  "equalHashGroups": [
+    [
+      "uuid-minimal",
+      "absent-member",
+      "empty-optional-array-pruned",
+      "default-false-pruned"
+    ],
+    [
+      "order-a",
+      "order-b"
+    ],
+    [
+      "unicode-composed",
+      "unicode-decomposed"
+    ],
+    [
+      "set-array-1",
+      "set-array-2"
+    ],
+    [
+      "decimal-1",
+      "decimal-1.0",
+      "decimal-1.00"
+    ],
+    [
+      "decimal-negative-zero",
+      "decimal-negative-zero-fraction"
+    ],
+    [
+      "timestamp-offset",
+      "timestamp-zero-submillis"
+    ]
+  ],
+  "distinctHashGroups": [
+    [
+      "ordered-array-1",
+      "ordered-array-2"
+    ],
+    [
+      "uuid-minimal",
+      "domain-tag-a",
+      "domain-tag-b",
+      "schema-version-2"
+    ],
+    [
+      "default-false-pruned",
+      "default-true-kept"
+    ]
+  ],
+  "schemas": [
+    {
+      "$id": "br:vector-sample",
+      "x-br-version": 1,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-br-type": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "note": {
+          "type": "string",
+          "x-br-type": "text"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "ratio": {
+          "type": "string",
+          "x-br-type": "decimal"
+        },
+        "mark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "metricId",
+            "value",
+            "unit",
+            "precision"
+          ],
+          "properties": {
+            "metricId": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string",
+              "x-br-type": "mark-value",
+              "x-br-precisionField": "precision"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            }
+          }
+        },
+        "at": {
+          "type": "string",
+          "x-br-type": "timestamp"
+        },
+        "day": {
+          "type": "string",
+          "x-br-type": "date"
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 300
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-br-set": {
+            "sortBy": []
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "x-br-set": {
+            "sortBy": []
+          }
+        },
+        "entries": {
+          "type": "array",
+          "x-br-set": {
+            "sortBy": [
+              "/participantId"
+            ],
+            "keyUnique": true
+          },
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "participantId",
+              "points"
+            ],
+            "properties": {
+              "participantId": {
+                "type": "string",
+                "x-br-type": "uuid"
+              },
+              "points": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "flag": {
+          "type": "boolean",
+          "default": false
+        },
+        "ref": {
+          "type": "string",
+          "x-br-type": "hash"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "LOW",
+            "HIGH"
+          ]
+        }
+      }
+    },
+    {
+      "$id": "br:vector-sample",
+      "x-br-version": 2,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-br-type": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "note": {
+          "type": "string",
+          "x-br-type": "text"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "ratio": {
+          "type": "string",
+          "x-br-type": "decimal"
+        },
+        "mark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "metricId",
+            "value",
+            "unit",
+            "precision"
+          ],
+          "properties": {
+            "metricId": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string",
+              "x-br-type": "mark-value",
+              "x-br-precisionField": "precision"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            }
+          }
+        },
+        "at": {
+          "type": "string",
+          "x-br-type": "timestamp"
+        },
+        "day": {
+          "type": "string",
+          "x-br-type": "date"
+        },
+        "games": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 300
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-br-set": {
+            "sortBy": []
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "x-br-set": {
+            "sortBy": []
+          }
+        },
+        "entries": {
+          "type": "array",
+          "x-br-set": {
+            "sortBy": [
+              "/participantId"
+            ],
+            "keyUnique": true
+          },
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "participantId",
+              "points"
+            ],
+            "properties": {
+              "participantId": {
+                "type": "string",
+                "x-br-type": "uuid"
+              },
+              "points": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "flag": {
+          "type": "boolean",
+          "default": false
+        },
+        "ref": {
+          "type": "string",
+          "x-br-type": "hash"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "LOW",
+            "HIGH"
+          ]
+        }
+      }
+    }
+  ],
+  "vectors": [
+    {
+      "id": "uuid-minimal",
+      "description": "Minimal object; uppercase UUID is lowercased (rule 9)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190F4C2-3B7A-7C21-9D4E-5F6A7B8C9D01\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:1e2228cbccc6b6eda790716c610563de5c9e49ca9794fc744441933ae6a55f9e"
+    },
+    {
+      "id": "order-a",
+      "description": "Members supplied in one insertion order",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"Ana\",\"count\":3,\"level\":\"HIGH\"}",
+      "expect": "accept",
+      "normalized": {
+        "count": 3,
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "level": "HIGH",
+        "name": "Ana"
+      },
+      "canonical": "{\"count\":3,\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"level\":\"HIGH\",\"name\":\"Ana\"}",
+      "sha256": "sha256:315aa7c96687fed126fa3d6a189fbbfc08883a50e588aeb90ff62ddedb7ee102"
+    },
+    {
+      "id": "order-b",
+      "description": "Same members, different insertion order — identical canonical bytes (rule 1)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"level\":\"HIGH\",\"count\":3,\"name\":\"Ana\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "accept",
+      "normalized": {
+        "count": 3,
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "level": "HIGH",
+        "name": "Ana"
+      },
+      "canonical": "{\"count\":3,\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"level\":\"HIGH\",\"name\":\"Ana\"}",
+      "sha256": "sha256:315aa7c96687fed126fa3d6a189fbbfc08883a50e588aeb90ff62ddedb7ee102"
+    },
+    {
+      "id": "unicode-composed",
+      "description": "Precomposed é (U+00E9)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"Jos\\u00e9\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "name": "José"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"José\"}",
+      "sha256": "sha256:d0f91fe2d218dfb86189e096c6df22c53c6e4f73f4af3176864e86ea4dc0f9c2"
+    },
+    {
+      "id": "unicode-decomposed",
+      "description": "e + combining acute (U+0065 U+0301) normalizes to NFC — same hash as unicode-composed (rule 10)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"Jose\\u0301\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "name": "José"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"José\"}",
+      "sha256": "sha256:d0f91fe2d218dfb86189e096c6df22c53c6e4f73f4af3176864e86ea4dc0f9c2"
+    },
+    {
+      "id": "ordered-array-1",
+      "description": "Ordered array: game order is semantic and preserved (rule 3)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"games\":[300,0,150]}",
+      "expect": "accept",
+      "normalized": {
+        "games": [
+          300,
+          0,
+          150
+        ],
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"games\":[300,0,150],\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:d8a17c4f409b3bdc039eb89ffc105ba070345bc16648a55cd9e774ff7b1612f8"
+    },
+    {
+      "id": "ordered-array-2",
+      "description": "Same values, different order — a DIFFERENT hash from ordered-array-1",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"games\":[0,150,300]}",
+      "expect": "accept",
+      "normalized": {
+        "games": [
+          0,
+          150,
+          300
+        ],
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"games\":[0,150,300],\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:c0ad6b62f2014463801a57b4e40b8d8b6c9914ce6010d08d7eb4cd317845231b"
+    },
+    {
+      "id": "set-array-1",
+      "description": "Set array sorted by element bytes (rule 4)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[\"b\",\"a\",\"c\"]}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "tags": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[\"a\",\"b\",\"c\"]}",
+      "sha256": "sha256:5606676cb2614b3b8af3374e62d0a405119f7198133a090f7cd35a126e9fe543"
+    },
+    {
+      "id": "set-array-2",
+      "description": "Same set, different input order — same hash as set-array-1",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[\"c\",\"b\",\"a\"]}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "tags": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[\"a\",\"b\",\"c\"]}",
+      "sha256": "sha256:5606676cb2614b3b8af3374e62d0a405119f7198133a090f7cd35a126e9fe543"
+    },
+    {
+      "id": "set-objects-by-key",
+      "description": "Set of objects sorted by /participantId",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"entries\":[{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d03\",\"points\":1},{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d02\",\"points\":2}]}",
+      "expect": "accept",
+      "normalized": {
+        "entries": [
+          {
+            "participantId": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d02",
+            "points": 2
+          },
+          {
+            "participantId": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d03",
+            "points": 1
+          }
+        ],
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"entries\":[{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d02\",\"points\":2},{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d03\",\"points\":1}],\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:74e39773e69cd45a48eca14e303fdd1f80420003fee6f738301c67e6392bcdf4"
+    },
+    {
+      "id": "decimal-1",
+      "description": "Decimal 1",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "1"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1\"}",
+      "sha256": "sha256:0df7ee23ea5357da5d3873dba210037b8430d8210d219ed2eab2bb98f090ebcd"
+    },
+    {
+      "id": "decimal-1.0",
+      "description": "Decimal 1.0 → 1 (trailing zeros removed, rule 6)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1.0\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "1"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1\"}",
+      "sha256": "sha256:0df7ee23ea5357da5d3873dba210037b8430d8210d219ed2eab2bb98f090ebcd"
+    },
+    {
+      "id": "decimal-1.00",
+      "description": "Decimal 1.00 → 1",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1.00\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "1"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1\"}",
+      "sha256": "sha256:0df7ee23ea5357da5d3873dba210037b8430d8210d219ed2eab2bb98f090ebcd"
+    },
+    {
+      "id": "decimal-negative",
+      "description": "Negative decimal",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"-2.50\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "-2.5"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"-2.5\"}",
+      "sha256": "sha256:c8f4a3e4417c1319f450a1f0bf4db4653f701f19674d276ba6818d1e47e6f4e3"
+    },
+    {
+      "id": "decimal-negative-zero",
+      "description": "Negative zero → 0",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"-0\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "0"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"0\"}",
+      "sha256": "sha256:d24cb49a180987fd486dc89e7e3fcb1a4bbd6d4fd1cab6c234a1442b8ac234fc"
+    },
+    {
+      "id": "decimal-negative-zero-fraction",
+      "description": "-0.000 → 0",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"-0.000\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "0"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"0\"}",
+      "sha256": "sha256:d24cb49a180987fd486dc89e7e3fcb1a4bbd6d4fd1cab6c234a1442b8ac234fc"
+    },
+    {
+      "id": "decimal-plus-leading-zero",
+      "description": "'+' and leading zeros normalized",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"+01.50\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ratio": "1.5"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1.5\"}",
+      "sha256": "sha256:989d32d29031f5dc9d2df3a37b6efdf94e9a8e6618ba3e7f16b5ad3e32e56fea"
+    },
+    {
+      "id": "mark-precision-0",
+      "description": "Mark with precision 0",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"bowling.series.pins\",\"value\":\"612\",\"unit\":\"pins\",\"precision\":0}}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "mark": {
+          "metricId": "bowling.series.pins",
+          "precision": 0,
+          "unit": "pins",
+          "value": "612"
+        }
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"bowling.series.pins\",\"precision\":0,\"unit\":\"pins\",\"value\":\"612\"}}",
+      "sha256": "sha256:13645f7920b57a4f0409fc2fc05588ed0a584ec71364eb1ea6cdfcdaa37e2e3d"
+    },
+    {
+      "id": "mark-precision-2",
+      "description": "Mark keeps exactly `precision` fraction digits (rule 7)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"athletics.time\",\"value\":\"10.20\",\"unit\":\"s\",\"precision\":2}}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "mark": {
+          "metricId": "athletics.time",
+          "precision": 2,
+          "unit": "s",
+          "value": "10.20"
+        }
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"athletics.time\",\"precision\":2,\"unit\":\"s\",\"value\":\"10.20\"}}",
+      "sha256": "sha256:a155793143231ccf29904564afdace3cfe14e58d1e22b046fec76491f2788ffa"
+    },
+    {
+      "id": "mark-negative-zero",
+      "description": "Mark negative zero → 0.00",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"x.delta\",\"value\":\"-0.00\",\"unit\":\"m\",\"precision\":2}}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "mark": {
+          "metricId": "x.delta",
+          "precision": 2,
+          "unit": "m",
+          "value": "0.00"
+        }
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"x.delta\",\"precision\":2,\"unit\":\"m\",\"value\":\"0.00\"}}",
+      "sha256": "sha256:f1df96db80a2a02fac523c48b38efa3221ffdc5ea31d113d7f65b3ed7838f57e"
+    },
+    {
+      "id": "timestamp-offset",
+      "description": "Offset −06:00 converted to UTC, padded to milliseconds (rule 8)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-05-14T12:03:07.12-06:00\"}",
+      "expect": "accept",
+      "normalized": {
+        "at": "2026-05-14T18:03:07.120Z",
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"at\":\"2026-05-14T18:03:07.120Z\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:13693cfd62234b328e4508d8910ee83e5d0d75fc7064c2c74749979103262dc0"
+    },
+    {
+      "id": "timestamp-zero-submillis",
+      "description": "Sub-millisecond digits that are all zero are accepted",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-05-14T18:03:07.120000Z\"}",
+      "expect": "accept",
+      "normalized": {
+        "at": "2026-05-14T18:03:07.120Z",
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"at\":\"2026-05-14T18:03:07.120Z\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:13693cfd62234b328e4508d8910ee83e5d0d75fc7064c2c74749979103262dc0"
+    },
+    {
+      "id": "timestamp-no-fraction",
+      "description": "No fraction → .000",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-05-14T18:03:07Z\"}",
+      "expect": "accept",
+      "normalized": {
+        "at": "2026-05-14T18:03:07.000Z",
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"at\":\"2026-05-14T18:03:07.000Z\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:b47786ab5d09ba87420fec108df0999ce548fdfc9c05d7edcc5023b41b792bce"
+    },
+    {
+      "id": "timestamp-date-rollover",
+      "description": "Offset crossing midnight changes the UTC date",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-01-01T00:30:00.000+01:00\"}",
+      "expect": "accept",
+      "normalized": {
+        "at": "2025-12-31T23:30:00.000Z",
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"at\":\"2025-12-31T23:30:00.000Z\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:90262668b8dc1d08758f0d933d95dfb3488ff3b05ea8ade64ae38207efa031d5"
+    },
+    {
+      "id": "date",
+      "description": "Date YYYY-MM-DD",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"day\":\"2024-02-29\"}",
+      "expect": "accept",
+      "normalized": {
+        "day": "2024-02-29",
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"day\":\"2024-02-29\",\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:d10a1ba8ea4e2161071576d011db67204369130323c6a5765386f397666aedba"
+    },
+    {
+      "id": "default-false-pruned",
+      "description": "Optional boolean equal to its schema default is removed (rule 2)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"flag\":false}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:1e2228cbccc6b6eda790716c610563de5c9e49ca9794fc744441933ae6a55f9e"
+    },
+    {
+      "id": "default-true-kept",
+      "description": "Non-default boolean kept",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"flag\":true}",
+      "expect": "accept",
+      "normalized": {
+        "flag": true,
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"flag\":true,\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:81a868739f421c186a53d69f180e9072461b8a2a0538ff05d0acaae4d7aac5ec"
+    },
+    {
+      "id": "absent-member",
+      "description": "Absent optional member — same hash as uuid-minimal (absent ≡ not provided)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:1e2228cbccc6b6eda790716c610563de5c9e49ca9794fc744441933ae6a55f9e"
+    },
+    {
+      "id": "empty-optional-array-pruned",
+      "description": "Empty optional array (no minItems) is removed — same hash as uuid-minimal",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[]}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:1e2228cbccc6b6eda790716c610563de5c9e49ca9794fc744441933ae6a55f9e"
+    },
+    {
+      "id": "integer-spellings",
+      "description": "Integer tokens 1.0, -0, 1e2 decided exactly (rule 5)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"games\":[1.0,-0,1e2]}",
+      "expect": "accept",
+      "normalized": {
+        "games": [
+          1,
+          0,
+          100
+        ],
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"games\":[1,0,100],\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:26359320188beb5c6f882b26c175afdd0c92a7ea2af5e5b4dc4ea05677f4f191"
+    },
+    {
+      "id": "free-text-controls",
+      "description": "TAB and LF allowed in designated free-text fields; JCS escapes them",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"note\":\"line1\\n\\tline2\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "note": "line1\n\tline2"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"note\":\"line1\\n\\tline2\"}",
+      "sha256": "sha256:61c8e7a67e83fa3ed8643a3ae434f06017ede5337ef7b1e00594107be6952645"
+    },
+    {
+      "id": "hash-ref-uppercase",
+      "description": "Uppercase hex in a content-hash reference is lowercased",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ref\":\"sha256:ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "ref": "sha256:abababababababababababababababababababababababababababababababab"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ref\":\"sha256:abababababababababababababababababababababababababababababababab\"}",
+      "sha256": "sha256:c611b3f9ce350ee32c01c7020e5bcc8cb717d50b8f2a4226810a3b5304d21121"
+    },
+    {
+      "id": "jcs-escaping",
+      "description": "JCS string escaping: quote, backslash, non-ASCII kept literally",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"a\\\"b\\\\c \\u00f1 \\ud83c\\udfc6\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01",
+        "name": "a\"b\\c ñ 🏆"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"a\\\"b\\\\c ñ 🏆\"}",
+      "sha256": "sha256:1b8af031bc3394ea987e24b8ffd529a6c1bf0d1c27a10d6e134622af484b99db"
+    },
+    {
+      "id": "domain-tag-a",
+      "description": "Same content as uuid-minimal hashed under domain tag vector-a",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-a",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:0a54d508625f7df94997c6e73b963af1e5db81e63f6059c6c81536c3e31ffeae"
+    },
+    {
+      "id": "domain-tag-b",
+      "description": "Same content under domain tag vector-b — hash differs from domain-tag-a",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-b",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:5a2de9055ae1ddce83c669c4a4a47268c65235fc64fe1ad723449ddbf79bf884"
+    },
+    {
+      "id": "schema-version-2",
+      "description": "Same content as uuid-minimal under schema version 2 — hash differs",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 2
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "accept",
+      "normalized": {
+        "id": "0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01"
+      },
+      "canonical": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "sha256": "sha256:cb3cb08cf8d96e3a34be489bf3eef72de0d978a4a7f2942e3018a405639a65b4"
+    },
+    {
+      "id": "reject-null",
+      "description": "null is forbidden (rule 2)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":null}",
+      "expect": "reject",
+      "error": "BRJ_NULL"
+    },
+    {
+      "id": "reject-unknown-field",
+      "description": "Closed schema (rule 11)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"extra\":1}",
+      "expect": "reject",
+      "error": "BRJ_UNKNOWN_FIELD"
+    },
+    {
+      "id": "reject-duplicate-key",
+      "description": "Duplicate member name in JSON text (rule 1)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"a\",\"name\":\"b\"}",
+      "expect": "reject",
+      "error": "BRJ_DUPLICATE_KEY"
+    },
+    {
+      "id": "reject-required-missing",
+      "description": "Required member absent",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"name\":\"a\"}",
+      "expect": "reject",
+      "error": "BRJ_REQUIRED_MISSING"
+    },
+    {
+      "id": "reject-set-duplicate",
+      "description": "Exact duplicate set element (rule 4)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"tags\":[\"a\",\"a\"]}",
+      "expect": "reject",
+      "error": "BRJ_SET_DUPLICATE"
+    },
+    {
+      "id": "reject-set-duplicate-key",
+      "description": "Two set elements with the same key (keyUnique)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"entries\":[{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d02\",\"points\":1},{\"participantId\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d02\",\"points\":2}]}",
+      "expect": "reject",
+      "error": "BRJ_SET_DUPLICATE_KEY"
+    },
+    {
+      "id": "reject-empty-required-set",
+      "description": "Empty array where minItems ≥ 1 is rejected before pruning",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"labels\":[]}",
+      "expect": "reject",
+      "error": "BRJ_SCHEMA_CONSTRAINT"
+    },
+    {
+      "id": "reject-decimal-exponent",
+      "description": "Exponent notation (rule 6)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\"1e3\"}",
+      "expect": "reject",
+      "error": "BRJ_DECIMAL_EXPONENT"
+    },
+    {
+      "id": "reject-decimal-bare-dot",
+      "description": "Bare leading dot",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":\".5\"}",
+      "expect": "reject",
+      "error": "BRJ_DECIMAL_SYNTAX"
+    },
+    {
+      "id": "reject-decimal-as-number",
+      "description": "Decimal fields must be strings",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"ratio\":1}",
+      "expect": "reject",
+      "error": "BRJ_TYPE"
+    },
+    {
+      "id": "reject-mark-precision",
+      "description": "Mark value with fewer digits than declared precision (rule 7)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"mark\":{\"metricId\":\"athletics.time\",\"value\":\"10.2\",\"unit\":\"s\",\"precision\":2}}",
+      "expect": "reject",
+      "error": "BRJ_MARK_PRECISION"
+    },
+    {
+      "id": "reject-timestamp-precision",
+      "description": "Non-zero sub-millisecond digits (rule 8)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-05-14T18:03:07.1234Z\"}",
+      "expect": "reject",
+      "error": "BRJ_TIMESTAMP_PRECISION"
+    },
+    {
+      "id": "reject-timestamp-leap-second",
+      "description": "Leap second",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2016-12-31T23:59:60Z\"}",
+      "expect": "reject",
+      "error": "BRJ_TIMESTAMP_LEAP_SECOND"
+    },
+    {
+      "id": "reject-timestamp-no-offset",
+      "description": "Timestamp without offset",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"at\":\"2026-05-14T18:03:07\"}",
+      "expect": "reject",
+      "error": "BRJ_TIMESTAMP_SYNTAX"
+    },
+    {
+      "id": "reject-uuid-braces",
+      "description": "Braced UUID",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"{0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01}\"}",
+      "expect": "reject",
+      "error": "BRJ_UUID_SYNTAX"
+    },
+    {
+      "id": "reject-uuid-urn",
+      "description": "urn:uuid: prefix",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"urn:uuid:0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\"}",
+      "expect": "reject",
+      "error": "BRJ_UUID_SYNTAX"
+    },
+    {
+      "id": "reject-non-integer",
+      "description": "Non-integral number",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"count\":1.5}",
+      "expect": "reject",
+      "error": "BRJ_NON_INTEGER_NUMBER"
+    },
+    {
+      "id": "reject-integer-range",
+      "description": "Integer beyond 2^53−1",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"count\":9007199254740992}",
+      "expect": "reject",
+      "error": "BRJ_INTEGER_RANGE"
+    },
+    {
+      "id": "reject-lone-surrogate",
+      "description": "Lone surrogate (rule 10)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"\\ud800\"}",
+      "expect": "reject",
+      "error": "BRJ_LONE_SURROGATE"
+    },
+    {
+      "id": "reject-control-character",
+      "description": "C0 control outside free text",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"name\":\"a\\u0001b\"}",
+      "expect": "reject",
+      "error": "BRJ_CONTROL_CHARACTER"
+    },
+    {
+      "id": "reject-enum",
+      "description": "Value not in enum",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"level\":\"low\"}",
+      "expect": "reject",
+      "error": "BRJ_ENUM"
+    },
+    {
+      "id": "reject-schema-constraint",
+      "description": "Standard JSON Schema constraint (maximum 300)",
+      "schema": {
+        "id": "br:vector-sample",
+        "version": 1
+      },
+      "domainTag": "vector-sample",
+      "input": "{\"id\":\"0190f4c2-3b7a-7c21-9d4e-5f6a7b8c9d01\",\"games\":[301]}",
+      "expect": "reject",
+      "error": "BRJ_SCHEMA_CONSTRAINT"
+    }
+  ]
+}
