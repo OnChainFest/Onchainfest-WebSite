@@ -271,19 +271,28 @@ describe('ONCF-05E-B over the API', () => {
       .filter((r) => /schedul/i.test(r.url))
       .map((r) => `${r.method} ${r.url}`)
       .sort();
-    // Pre-existing BRT-05 schedule routes (05E-C changes them) plus this phase's catalog read.
+    // Pre-existing BRT-05 schedule routes, this phase's catalog read, and (since ONCF-05E-C) the
+    // schedule-version surface. Still no conflict-engine, proposal or generation route (05E-D/E).
     expect(routes).toEqual(
       [
         'GET /v1/catalog/scheduling-profiles/:versionId',
         'GET /v1/competitions/:slug/events/:eventSlug/schedule',
         'POST /v1/contests/:contestId/schedule',
+        'GET /v1/competitions/:competitionId/schedule/versions',
+        'POST /v1/competitions/:competitionId/schedule/drafts',
+        'GET /v1/schedule-versions/:versionId',
+        'PUT /v1/schedule-versions/:versionId/assignments/:contestId',
+        'POST /v1/schedule-versions/:versionId/assignments/:contestId/remove',
+        'POST /v1/schedule-versions/:versionId/assignments/:contestId/lock',
+        'POST /v1/schedule-versions/:versionId/assignments/:contestId/unlock',
+        'POST /v1/schedule-versions/:versionId/validate',
+        'POST /v1/schedule-versions/:versionId/publish',
+        'POST /v1/schedule-versions/:versionId/discard',
       ].sort(),
     );
     expect(
       app.v1Routes.filter((r) =>
-        /conflict|optimi|generate-schedule|schedule-proposal|resource-assign|assignment/i.test(
-          r.url,
-        ),
+        /conflict|optimi|generate-schedule|schedule-proposal|resource-assign/i.test(r.url),
       ),
     ).toEqual([]);
   });
