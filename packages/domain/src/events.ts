@@ -73,6 +73,11 @@ export const DomainEventType = {
   ResourceReactivated: 'ResourceReactivated',
   AvailabilityAdded: 'AvailabilityAdded',
   AvailabilityRevoked: 'AvailabilityRevoked',
+  // ONCF-05E-C schedule versions (ADR-0070, ADR-0073): ids, keys, hashes and statuses only
+  ScheduleDraftOpened: 'ScheduleDraftOpened',
+  ScheduleAssignmentChanged: 'ScheduleAssignmentChanged',
+  ScheduleVersionPublished: 'ScheduleVersionPublished',
+  ScheduleDraftDiscarded: 'ScheduleDraftDiscarded',
   EventScoringPinned: 'EventScoringPinned',
   // BRT-05 competition operations (operational facts only — never results/verification)
   CompetitionCreated: 'CompetitionCreated',
@@ -194,6 +199,7 @@ export const AggregateType = {
   ADVANCEMENT_POLICY_VERSION: 'ADVANCEMENT_POLICY_VERSION',
   SCHEDULING_PROFILE_VERSION: 'SCHEDULING_PROFILE_VERSION',
   RESOURCE: 'RESOURCE',
+  SCHEDULE_VERSION: 'SCHEDULE_VERSION',
   COMPETITION: 'COMPETITION',
   EVENT: 'EVENT',
   REGISTRATION: 'REGISTRATION',

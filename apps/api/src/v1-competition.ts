@@ -8,6 +8,7 @@ import type {
   AdvancementStore,
   ContestResultService,
   ResourceStore,
+  ScheduleStore,
   ScoringStore,
   StructureStore,
   TeamStore,
@@ -44,6 +45,8 @@ export interface CompetitionV1Deps {
   readonly results?: ContestResultService;
   /** ONCF-05E-A competition resources and availability. */
   readonly resources?: ResourceStore;
+  /** ONCF-05E-C schedule versions, assignments and publication. */
+  readonly schedule?: ScheduleStore;
 }
 
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
@@ -1245,6 +1248,7 @@ export function registerCompetitionV1(
       label: { type: 'string', minLength: 1, maxLength: 80 },
       attributes: { type: 'object', maxProperties: 16 },
       capacity: { type: 'integer' },
+      occupancyMode: { enum: ['EXCLUSIVE', 'SHARED'] },
       exclusivityKeys: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 40 } },
       venueOrganizationId: { type: ['string', 'null'], format: 'uuid' },
       locationLabel: { type: ['string', 'null'], maxLength: 120 },
@@ -1455,6 +1459,200 @@ export function registerCompetitionV1(
           end: q.end,
         });
       },
+    );
+  }
+
+  // ───────────────────────────── schedule versions (ONCF-05E-C; COMP_STAFF) ─────────────────────────────
+
+  // Reads need COMP_VIEW_PRIVATE; every change, validation and publication COMP_MANAGE_SCHEDULE,
+  // decided in the store. Drafts are private; the public schedule is the PUBLISHED projection only.
+  // Publication is this explicit, human command — nothing publishes automatically. No conflict
+  // engine, proposal or optimization route exists here (05E-D/E).
+  const schedule = deps.schedule;
+  if (schedule !== undefined) {
+    const versionContestParams = {
+      type: 'object',
+      required: ['versionId', 'contestId'],
+      properties: { versionId: uuid, contestId: uuid },
+      additionalProperties: false,
+    } as const;
+    const scheduleReason = { type: ['string', 'null'], minLength: 1, maxLength: 500 } as const;
+    route(
+      'GET',
+      '/v1/competitions/:competitionId/schedule/versions',
+      'COMP_STAFF',
+      { params: idParams('competitionId') },
+      async (request) =>
+        schedule.listVersions({
+          actorAccountId: requireAuth(request).accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+        }),
+    );
+    route(
+      'POST',
+      '/v1/competitions/:competitionId/schedule/drafts',
+      'COMP_STAFF',
+      { params: idParams('competitionId'), headers: idempotencyHeaders },
+      async (request, reply) => {
+        const r = await schedule.openDraft({
+          actorAccountId: requireAuth(request).accountId,
+          competitionId: params<{ competitionId: string }>(request).competitionId,
+          idempotencyKey: key(request),
+        });
+        reply.code(r.created ? 201 : 200);
+        return r;
+      },
+    );
+    route(
+      'GET',
+      '/v1/schedule-versions/:versionId',
+      'COMP_STAFF',
+      { params: idParams('versionId') },
+      async (request) =>
+        schedule.getVersion({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+        }),
+    );
+    route(
+      'PUT',
+      '/v1/schedule-versions/:versionId/assignments/:contestId',
+      'COMP_STAFF',
+      {
+        params: versionContestParams,
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            resourceId: { type: ['string', 'null'], format: 'uuid' },
+            startsAt: instant,
+            expectedEnd: nullableInstant,
+            changeoverSeconds: { type: 'integer' },
+            zone: { type: 'string', minLength: 1, maxLength: 64 },
+            venueOrganizationId: { type: ['string', 'null'], format: 'uuid' },
+            locationLabel: nullableString(120),
+            courtLabel: nullableString(40),
+            reason: scheduleReason,
+          },
+          ['startsAt'],
+        ),
+      },
+      async (request) => {
+        const p = params<{ versionId: string; contestId: string }>(request);
+        return schedule.setAssignment({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: p.versionId,
+          contestId: p.contestId,
+          assignment: defined(body<{ startsAt: string }>(request)),
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/assignments/:contestId/remove',
+      'COMP_STAFF',
+      {
+        params: versionContestParams,
+        headers: idempotencyHeaders,
+        body: obj({ reason: { type: 'string', minLength: 1, maxLength: 500 } }, ['reason']),
+      },
+      async (request) => {
+        const p = params<{ versionId: string; contestId: string }>(request);
+        return schedule.removeAssignment({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: p.versionId,
+          contestId: p.contestId,
+          reason: body<{ reason: string }>(request).reason,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    for (const [path, locked] of [
+      ['lock', true],
+      ['unlock', false],
+    ] as const)
+      route(
+        'POST',
+        `/v1/schedule-versions/:versionId/assignments/:contestId/${path}`,
+        'COMP_STAFF',
+        {
+          params: versionContestParams,
+          headers: idempotencyHeaders,
+          body: obj({ reason: scheduleReason }, locked ? [] : ['reason']),
+        },
+        async (request) => {
+          const p = params<{ versionId: string; contestId: string }>(request);
+          return schedule.setLock({
+            actorAccountId: requireAuth(request).accountId,
+            versionId: p.versionId,
+            contestId: p.contestId,
+            locked,
+            reason: body<{ reason?: string | null }>(request).reason ?? null,
+            idempotencyKey: key(request),
+          });
+        },
+      );
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/validate',
+      'COMP_STAFF',
+      { params: idParams('versionId') },
+      async (request) =>
+        schedule.validate({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+        }),
+    );
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/publish',
+      'COMP_STAFF',
+      {
+        params: idParams('versionId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            baseVersionId: { type: ['string', 'null'], format: 'uuid' },
+            reportHash: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+            acknowledgedConflictKeys: {
+              type: 'array',
+              maxItems: 1000,
+              items: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+            },
+          },
+          ['baseVersionId', 'reportHash', 'acknowledgedConflictKeys'],
+        ),
+      },
+      async (request) => {
+        const b = body<{
+          baseVersionId: string | null;
+          reportHash: string;
+          acknowledgedConflictKeys: string[];
+        }>(request);
+        return schedule.publish({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+          ...b,
+          idempotencyKey: key(request),
+        });
+      },
+    );
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/discard',
+      'COMP_STAFF',
+      {
+        params: idParams('versionId'),
+        headers: idempotencyHeaders,
+        body: obj({ reason: { type: 'string', minLength: 1, maxLength: 500 } }, ['reason']),
+      },
+      async (request) =>
+        schedule.discard({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+          reason: body<{ reason: string }>(request).reason,
+          idempotencyKey: key(request),
+        }),
     );
   }
 
@@ -1732,6 +1930,9 @@ export function registerCompetitionV1(
           venueOrganizationId: { type: ['string', 'null'], format: 'uuid' },
           locationLabel: nullableString(120),
           courtLabel: nullableString(40),
+          // ONCF-05E-C: the route edits the open schedule draft; a move needs a reason.
+          resourceId: { type: ['string', 'null'], format: 'uuid' },
+          reason: { type: ['string', 'null'], minLength: 1, maxLength: 500 },
         },
         ['scheduledStart'],
       ),
@@ -1744,6 +1945,8 @@ export function registerCompetitionV1(
         venueOrganizationId?: string | null;
         locationLabel?: string | null;
         courtLabel?: string | null;
+        resourceId?: string | null;
+        reason?: string | null;
       }>(request);
       return deps.structure.scheduleContest(
         defined({

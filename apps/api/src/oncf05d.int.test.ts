@@ -547,7 +547,13 @@ describe('ONCF-05D over the API', () => {
       ].sort(),
     );
     expect(
-      app.v1Routes.filter((r) => /slot|assignment/i.test(r.url) && r.method !== 'GET'),
+      // ONCF-05E-C schedule assignments (where / when) are not slot or advancement assignments.
+      app.v1Routes.filter(
+        (r) =>
+          /slot|assignment/i.test(r.url) &&
+          !r.url.startsWith('/v1/schedule-versions/') &&
+          r.method !== 'GET',
+      ),
     ).toEqual([]);
     expect(
       app.v1Routes.filter(

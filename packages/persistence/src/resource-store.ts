@@ -2,10 +2,14 @@ import {
   effectiveAvailability,
   isResourceAvailable,
   occupancyOf,
+  OCCUPANCY_MODES,
+  RESOURCE_TYPE_DEFAULT_OCCUPANCY_MODE,
   validateAvailabilityFact,
   validateResource,
   type AvailabilityFact,
   type AvailabilityLayer,
+  type OccupancyMode,
+  type ResourceType,
 } from '@br/competition';
 import { DomainError, DomainErrorCode, newId, type Uuid } from '@br/domain';
 import { sql } from 'kysely';
@@ -37,6 +41,8 @@ export interface ResourceInput {
   readonly label: string;
   readonly attributes?: Readonly<Record<string, unknown>>;
   readonly capacity?: number;
+  /** Declared simultaneous occupancy (ADR-0073 B2). Omitted: the type default on create, the current value on revise. */
+  readonly occupancyMode?: OccupancyMode;
   readonly exclusivityKeys?: readonly string[];
   readonly venueOrganizationId?: string | null;
   readonly locationLabel?: string | null;
@@ -70,6 +76,8 @@ interface CurrentRow {
   timezone: string | null;
   status: 'ACTIVE' | 'RETIRED';
   recorded_at: Date;
+  occupancy_mode: OccupancyMode;
+  revision_id: string;
 }
 
 interface FactRow {
@@ -96,6 +104,10 @@ const view = (r: CurrentRow) => ({
   label: r.label,
   attributes: r.attributes,
   capacity: r.capacity,
+  // The scheduling semantic (ADR-0073 B2): declared, stored, never derived from capacity.
+  occupancyMode: r.occupancy_mode,
+  // Legacy 05E-A label kept for compatibility: descriptive only, derived from capacity. Conflict and
+  // proposal engines must never read it.
   occupancy: occupancyOf(r),
   exclusivityKeys: r.exclusivity_keys,
   venueOrganizationId: r.venue_organization_id,
@@ -207,7 +219,12 @@ export class ResourceStore {
     typeCode: string,
     input: ResourceInput,
     except?: string,
+    currentMode?: OccupancyMode,
   ) {
+    if (input.occupancyMode !== undefined && !OCCUPANCY_MODES.includes(input.occupancyMode))
+      throw issuesError('the resource is not valid', [
+        { path: '/occupancyMode', message: `one of ${OCCUPANCY_MODES.join(', ')}` },
+      ]);
     const spec = {
       typeCode,
       label: input.label,
@@ -245,8 +262,13 @@ export class ResourceStore {
         'another active resource of this competition has that label',
         { reason: 'DUPLICATE_LABEL' },
       );
+    const occupancyMode =
+      input.occupancyMode ??
+      currentMode ??
+      RESOURCE_TYPE_DEFAULT_OCCUPANCY_MODE[typeCode as ResourceType];
     return {
       ...spec,
+      occupancyMode,
       location,
       venue: input.venueOrganizationId ?? null,
       timezone: input.timezone ?? null,
@@ -263,12 +285,11 @@ export class ResourceStore {
     actor: string,
   ) {
     await sql`INSERT INTO competition.resource_revision
-        (id, resource_id, revision, label, attributes, capacity, exclusivity_keys, venue_organization_id, location_label,
-         timezone, status, reason, actor_account_id, recorded_at)
+        (id, resource_id, revision, label, attributes, capacity, occupancy_mode, exclusivity_keys, venue_organization_id,
+         location_label, timezone, status, reason, actor_account_id, recorded_at)
       VALUES (${newId()}, ${resourceId}, ${revision}, ${f.label}, ${JSON.stringify(f.attributes)}::jsonb, ${f.capacity},
-              ${f.exclusivityKeys}::text[], ${f.venue}, ${f.location}, ${f.timezone}, ${status}, ${reason}, ${actor}, ${ctx.txTime})`.execute(
-      ctx.trx,
-    );
+              ${f.occupancyMode}, ${f.exclusivityKeys}::text[], ${f.venue}, ${f.location}, ${f.timezone}, ${status}, ${reason},
+              ${actor}, ${ctx.txTime})`.execute(ctx.trx);
   }
 
   // ───────────────────────────── resources ─────────────────────────────
@@ -316,6 +337,7 @@ export class ResourceStore {
           competitionId: input.competitionId,
           typeCode: input.typeCode,
           capacity: f.capacity,
+          occupancyMode: f.occupancyMode,
         },
       });
       await idem.record({ resourceId });
@@ -348,6 +370,7 @@ export class ResourceStore {
         now.type_code,
         input.resource,
         now.resource_id,
+        now.occupancy_mode,
       );
       await this.insertRevision(
         ctx,
@@ -358,11 +381,12 @@ export class ResourceStore {
         null,
         input.actorAccountId,
       );
-      const changed = (['label', 'capacity'] as const).filter((k) => f[k] !== now[k]);
+      const changed: string[] = (['label', 'capacity'] as const).filter((k) => f[k] !== now[k]);
+      if (f.occupancyMode !== now.occupancy_mode) changed.push('occupancyMode');
       if (JSON.stringify(f.attributes) !== JSON.stringify(now.attributes))
-        changed.push('attributes' as never);
+        changed.push('attributes');
       if (f.exclusivityKeys.join() !== [...now.exclusivity_keys].sort().join())
-        changed.push('exclusivityKeys' as never);
+        changed.push('exclusivityKeys');
       await emitEvent(ctx, {
         eventType: 'ResourceRevised',
         aggregateType: 'RESOURCE',
@@ -423,10 +447,10 @@ export class ResourceStore {
           );
       }
       await sql`INSERT INTO competition.resource_revision
-          (id, resource_id, revision, label, attributes, capacity, exclusivity_keys, venue_organization_id, location_label,
-           timezone, status, reason, actor_account_id, recorded_at)
-        SELECT ${newId()}, resource_id, revision + 1, label, attributes, capacity, exclusivity_keys, venue_organization_id,
-               location_label, timezone, ${input.status}, ${reason}, ${input.actorAccountId}, ${ctx.txTime}
+          (id, resource_id, revision, label, attributes, capacity, occupancy_mode, exclusivity_keys, venue_organization_id,
+           location_label, timezone, status, reason, actor_account_id, recorded_at)
+        SELECT ${newId()}, resource_id, revision + 1, label, attributes, capacity, occupancy_mode, exclusivity_keys,
+               venue_organization_id, location_label, timezone, ${input.status}, ${reason}, ${input.actorAccountId}, ${ctx.txTime}
         FROM competition.resource_revision WHERE resource_id = ${now.resource_id} ORDER BY seq DESC LIMIT 1`.execute(
         ctx.trx,
       );
@@ -469,12 +493,13 @@ export class ResourceStore {
         revision: number;
         label: string;
         capacity: number;
+        occupancy_mode: string;
         status: string;
         reason: string | null;
         actor_account_id: string;
         recorded_at: Date;
       }>`
-        SELECT revision, label, capacity, status, reason, actor_account_id, recorded_at FROM competition.resource_revision
+        SELECT revision, label, capacity, occupancy_mode, status, reason, actor_account_id, recorded_at FROM competition.resource_revision
         WHERE resource_id = ${r.resource_id} ORDER BY seq DESC`.execute(ctx.trx);
       return {
         ...view(r),
@@ -482,6 +507,7 @@ export class ResourceStore {
           revision: x.revision,
           label: x.label,
           capacity: x.capacity,
+          occupancyMode: x.occupancy_mode,
           status: x.status,
           reason: x.reason,
           actorAccountId: x.actor_account_id,
