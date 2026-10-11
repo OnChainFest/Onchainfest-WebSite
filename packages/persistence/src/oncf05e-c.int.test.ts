@@ -1,6 +1,8 @@
 import {
   BOWLING_SINGLES_V2,
   CANONICAL_CATALOG,
+  CONFLICT_ENGINE,
+  ENGINE_COVERAGE,
   GOLF_INDIVIDUAL_V2,
   RESOURCE_TYPE_DEFAULT_OCCUPANCY_MODE,
   RULESET_TEMPLATES,
@@ -232,6 +234,18 @@ const resource = async (
     })
   ).resourceId;
 
+/** Competition-wide hours declared every day, all day (no undeclared time, ADR-0073 B5). */
+const openAllWeek = async (ev: Pick<Ev, 'competitionId' | 'actor'>) => {
+  for (const weekday of [1, 2, 3, 4, 5, 6, 7])
+    await resources.addAvailability({
+      actorAccountId: ev.actor,
+      competitionId: ev.competitionId,
+      resourceId: null,
+      fact: { kind: 'WEEKLY', weekday, start: '00:00', end: '24:00' },
+      idempotencyKey: k(),
+    });
+};
+
 const rejects = (p: Promise<unknown>, code: DomainErrorCode, reason?: string) =>
   expect(p).rejects.toMatchObject({
     code,
@@ -321,6 +335,8 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
     });
     court1 = await resource(ev, 'TENNIS_COURT', 'Court 1');
     court2 = await resource(ev, 'TENNIS_COURT', 'Court 2');
+    // Declared court hours (ONCF-05E-D judges undeclared time as AVAILABILITY_UNDECLARED).
+    await openAllWeek(ev);
   }, 240_000);
 
   it('opens one private draft with a deterministic version number', async () => {
@@ -351,7 +367,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       assignment: { resourceId: court1, startsAt: s1 },
       idempotencyKey: k(),
     });
-    // Same court, same time: 05E-C records it; whether it conflicts is 05E-D's decision.
+    // Same court, same time: 05E-C records it; 05E-D judges it (RESOURCE_OVERLAP, below).
     await schedule.setAssignment({
       actorAccountId: ev.actor,
       versionId: v1,
@@ -479,12 +495,12 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
 
   it('publication authority: COMP_MANAGE_SCHEDULE held by a human; strangers and registration managers are refused', async () => {
     const r = await schedule.validate({ actorAccountId: ev.actor, versionId: v1 });
-    expect(r.report.coverage).toEqual([
-      'INCOMPLETE_ASSIGNMENT',
-      'OUTSIDE_EVENT_WINDOW',
-      'RESOURCE_TYPE_MISMATCH',
+    // The 05E-D engine is the validator in force: the two semifinals share court 1 at 15:00.
+    expect(r.report.validator).toEqual(CONFLICT_ENGINE);
+    expect([...r.report.coverage].sort()).toEqual([...ENGINE_COVERAGE].sort());
+    expect(r.conflicts.map((c) => [c.code, c.severity, c.contestIds])).toEqual([
+      ['RESOURCE_OVERLAP', 'HARD', [ev.contests[0]!.id, ev.contests[1]!.id].sort()],
     ]);
-    expect(r.conflicts).toEqual([]);
     const body = (actorAccountId: string) => ({
       actorAccountId,
       versionId: v1,

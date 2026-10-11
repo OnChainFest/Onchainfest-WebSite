@@ -194,3 +194,82 @@ export function isResourceAvailable(
   const avail = effectiveAvailability(input, i.start, i.end);
   return { available: covers(avail, i), gaps: subtract([i], avail) };
 }
+
+/**
+ * The time a layer DECLARES (ADR-0074 D8): all time when the layer has at least one WEEKLY fact
+ * (its weekly rules then govern every date — a date without a window is closed, not unrestricted);
+ * otherwise exactly the local days, in the layer's zone, of the dates carrying a DATE_OPEN fact.
+ */
+function layerDeclared(layer: AvailabilityLayer, from: number, to: number): Interval[] {
+  if (layer.facts.some((f) => f.kind === 'WEEKLY')) return [{ start: from, end: to }];
+  const days: Interval[] = [];
+  for (const date of new Set(
+    layer.facts.flatMap((f) => (f.kind === 'DATE_OPEN' ? [f.date] : [])),
+  )) {
+    const start = resolveRecurring(localMs(date, '00:00') as number, layer.zone);
+    const end = resolveRecurring(localMs(addDays(date, 1), '00:00') as number, layer.zone);
+    if (end > start) days.push({ start, end });
+  }
+  return intersect(union(days), [{ start: from, end: to }]);
+}
+
+/** A resource's effective and declared time over a horizon, expanded once (ADR-0074 § 21). */
+export interface AvailabilityExpansion {
+  readonly effective: readonly Interval[];
+  readonly declared: readonly Interval[];
+}
+
+export function expandAvailability(
+  input: AvailabilityInput,
+  from: number,
+  to: number,
+): AvailabilityExpansion {
+  return {
+    effective: effectiveAvailability(input, from, to),
+    declared: union([
+      ...layerDeclared(input.resource, from, to),
+      ...layerDeclared(input.competition, from, to),
+    ]),
+  };
+}
+
+/** The intervals of a sorted, disjoint list that meet `i`, clipped to it (binary search). */
+function clip(list: readonly Interval[], i: Interval): Interval[] {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((list[mid] as Interval).end <= i.start) lo = mid + 1;
+    else hi = mid;
+  }
+  const out: Interval[] = [];
+  for (let k = lo; k < list.length && (list[k] as Interval).start < i.end; k++) {
+    const x = list[k] as Interval;
+    out.push({ start: Math.max(x.start, i.start), end: Math.min(x.end, i.end) });
+  }
+  return out;
+}
+
+/**
+ * DECLARED-OPEN / DECLARED-CLOSED / UNRESTRICTED classification of one interval inside an
+ * expansion that covers it (ADR-0073 B5, ADR-0074 D8), without changing 05E-A's meaning:
+ *   closed     = i − effective availability (declared closures, outside weekly windows, RETIRED);
+ *   undeclared = (i ∩ effective availability) − the union of both layers' declared time.
+ * "Nobody declared anything" is never treated as open: it is reported as `undeclared`.
+ */
+export function classifyExpanded(
+  x: AvailabilityExpansion,
+  i: Interval,
+): { closed: Interval[]; undeclared: Interval[] } {
+  if (i.end <= i.start) return { closed: [], undeclared: [] };
+  const avail = clip(x.effective, i);
+  return { closed: subtract([i], avail), undeclared: subtract(avail, clip(x.declared, i)) };
+}
+
+/** `classifyExpanded` over an expansion of exactly `i`. */
+export function classifyAvailability(
+  input: AvailabilityInput,
+  i: Interval,
+): { closed: Interval[]; undeclared: Interval[] } {
+  return classifyExpanded(expandAvailability(input, i.start, i.end), i);
+}

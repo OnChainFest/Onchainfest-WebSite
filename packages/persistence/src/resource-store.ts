@@ -80,7 +80,7 @@ interface CurrentRow {
   revision_id: string;
 }
 
-interface FactRow {
+export interface AvailabilityFactRow {
   id: string;
   resource_id: string | null;
   kind: AvailabilityFact['kind'];
@@ -117,7 +117,8 @@ const view = (r: CurrentRow) => ({
   updatedAt: r.recorded_at.toISOString(),
 });
 
-function toFact(r: FactRow): AvailabilityFact {
+/** A current availability row as the pure 05E-A fact (shared with the 05E-D loader). */
+export function availabilityFactOfRow(r: AvailabilityFactRow): AvailabilityFact {
   switch (r.kind) {
     case 'WEEKLY':
       return {
@@ -147,7 +148,7 @@ function toFact(r: FactRow): AvailabilityFact {
   }
 }
 
-const factView = (r: FactRow) => ({
+const factView = (r: AvailabilityFactRow) => ({
   availabilityId: r.id,
   scope: r.resource_id === null ? ('COMPETITION' as const) : ('RESOURCE' as const),
   resourceId: r.resource_id,
@@ -716,7 +717,7 @@ export class ResourceStore {
     const rows = await this.facts(ctx, r.competition_id, r.resource_id);
     const layer = (scope: string | null, zone: string): AvailabilityLayer => ({
       zone,
-      facts: rows.filter((x) => x.resource_id === scope).map(toFact),
+      facts: rows.filter((x) => x.resource_id === scope).map(availabilityFactOfRow),
     });
     return {
       r,
@@ -732,8 +733,8 @@ export class ResourceStore {
     ctx: TxContext,
     competitionId: string,
     resourceId?: string,
-  ): Promise<FactRow[]> {
-    const { rows } = await sql<FactRow>`
+  ): Promise<AvailabilityFactRow[]> {
+    const { rows } = await sql<AvailabilityFactRow>`
       SELECT id, resource_id, kind, weekday, to_char(local_date, 'YYYY-MM-DD') AS local_date, local_start, local_end,
              to_char(valid_from, 'YYYY-MM-DD') AS valid_from, to_char(valid_to, 'YYYY-MM-DD') AS valid_to,
              starts_at, ends_at, reason, recorded_at

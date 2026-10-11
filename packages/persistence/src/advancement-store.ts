@@ -1388,6 +1388,49 @@ export class AdvancementStore {
     });
   }
 
+  // ───────────────────────────── 05E-D read model ─────────────────────────────
+
+  /**
+   * The current state of every target of an event, keyed by `targetKey` (ONCF-05E-D, ADR-0074 D2):
+   * computed on read exactly as `state` does, staleness included, so the conflict engine can tell
+   * RESOLVED, VACANT, OVERRIDDEN, STALE and UNRESOLVED apart. A committed fact outside every
+   * computable unit (no pinned policy) keeps its recorded meaning. Read-only; no authorization —
+   * the caller (ScheduleStore) has already authorized the competition.
+   */
+  async targetStates(
+    eventId: string,
+  ): Promise<
+    Map<string, { state: TargetState; participantId: string | null; factId: string | null }>
+  > {
+    const { s, units } = await this.compute(eventId);
+    const out = new Map<
+      string,
+      { state: TargetState; participantId: string | null; factId: string | null }
+    >();
+    for (const u of units)
+      for (const t of u.targets)
+        out.set(t.key, {
+          state: t.state,
+          participantId: t.current?.participantId ?? null,
+          factId: t.current?.id ?? null,
+        });
+    for (const [key, f] of s.facts)
+      if (!out.has(key))
+        out.set(key, {
+          state:
+            f.decisionKind === 'OVERRIDE'
+              ? 'OVERRIDDEN'
+              : f.participantId === null
+                ? f.decisionKind === 'OVERRIDE_REVOKED'
+                  ? 'UNRESOLVED'
+                  : 'VACANT'
+                : 'RESOLVED',
+          participantId: f.participantId,
+          factId: f.id,
+        });
+    return out;
+  }
+
   // ───────────────────────────── start guard ─────────────────────────────
 
   /**

@@ -1,19 +1,23 @@
 import {
-  baselineScheduleReport,
-  canonicalScheduleReport,
   conflictKey,
   defaultExpectedEnd,
   deriveUnitKeys,
+  evaluateSchedule,
   ianaZoneIssue,
   isWholeSecond,
   reportVerdict,
   resolveRequirement,
-  scheduleDigest,
   scheduleReportHash,
-  type BaselineAssignment,
-  type BaselineEvent,
+  targetKey,
+  type ContestStatus,
   type ContestType,
+  type EvaluationAssignment,
+  type EvaluationContest,
+  type EvaluationEntrant,
+  type EvaluationEvent,
+  type EvaluationPlace,
   type OccupancyMode,
+  type PlaceState,
   type RoundType,
   type SchedulingProfileSpec,
   type StagePrimitive,
@@ -32,8 +36,11 @@ import {
 } from './competition-support';
 import { refreshEventReadModels } from './competition-projection';
 import type { Db } from './db';
+import { AdvancementStore, type TargetState } from './advancement-store';
 import { identityIdempotency, lockKeys, recordAudit } from './identity-support';
 import { emitEvent } from './outbox';
+import { availabilityFactOfRow, type AvailabilityFactRow } from './resource-store';
+import { ScoringStore } from './scoring-store';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 /**
@@ -44,9 +51,10 @@ import { inTransaction, ModuleRole, type TxContext } from './tx';
  * report, and `contest_schedule` as the projection of the PUBLISHED version.
  *
  * This store never judges feasibility: overlap, capacity, start spacing, concurrency, participants,
- * rest, dependency lead, availability and daily limits are the 05E-D engine's. It refuses only
- * structurally invalid writes, and publication runs the validator in force (the 05E-C baseline,
- * whose report declares exactly what it covers). Nothing here branches on sport identity.
+ * rest, dependency lead, availability and daily limits are the 05E-D engine's (`evaluateSchedule`,
+ * ADR-0074). It refuses only structurally invalid writes. `validate` and `publish` share ONE private
+ * path (`report`) that loads every input server-side and runs the engine — the only validator in
+ * force; there is no fallback and no caller-selectable validator. Nothing here branches on sport.
  */
 
 const CLOSED_COMPETITION = ['COMPLETED', 'CANCELLED'];
@@ -169,11 +177,19 @@ function stale(reason: string, message: string): DomainError {
   return new DomainError(DomainErrorCode.CONCURRENCY_CONFLICT, message, { reason });
 }
 
+/** 05D target states per event (eventId → targetKey → state), computed on read (ADR-0074 D2). */
+type TargetStates = ReadonlyMap<
+  string,
+  ReadonlyMap<string, { state: TargetState; participantId: string | null; factId: string | null }>
+>;
+
 export class ScheduleStore {
   private readonly db: Db;
+  private readonly advancement: AdvancementStore;
 
   constructor(db: Db) {
     this.db = db;
+    this.advancement = new AdvancementStore(db, new ScoringStore(db));
   }
 
   private tx<T>(fn: (ctx: TxContext) => Promise<T>): Promise<T> {
@@ -320,28 +336,44 @@ export class ScheduleStore {
     return p === undefined ? null : { versionId: p.id, specHash: p.spec_hash, spec: p.spec };
   }
 
-  /** Unit keys of every contest of an event (ADR-0073 B9), from plan, 05D and profile data. */
-  private async unitKeys(
+  /**
+   * Plan facts of every contest of a competition (or of one event): the same rows feed the unit key
+   * recorded at write time and the 05E-D engine, so both derive units identically (ADR-0073 B9).
+   */
+  private async contestRows(
     ctx: TxContext,
-    eventId: string,
-    spec: SchedulingProfileSpec | undefined,
-  ): Promise<Map<string, string>> {
+    scope: { readonly competitionId: string } | { readonly eventId: string },
+  ) {
+    const competitionId = 'competitionId' in scope ? scope.competitionId : null;
+    const eventId = 'eventId' in scope ? scope.eventId : null;
     const { rows } = await sql<{
       contest_id: string;
+      event_id: string;
       round_id: string;
       round_sequence: number;
+      dynamic_transition_key: string | null;
       stage_id: string | null;
+      stage_sequence: number;
       grouped: boolean;
       dynamic: boolean;
+      contest_type: ContestType;
+      round_type: RoundType;
+      stage_primitive: StagePrimitive | null;
+      sequence: number;
       partition_key: string | null;
+      status: ContestStatus;
       participant_id: string | null;
       field_ordinal: number | null;
     }>`
-      SELECT c.id AS contest_id, c.round_id, r.sequence AS round_sequence, r.stage_id,
+      SELECT c.id AS contest_id, c.event_id, c.round_id, r.sequence AS round_sequence, r.dynamic_transition_key,
+             r.stage_id, coalesce(st.sequence, 0) AS stage_sequence,
              coalesce(st.partition_method = 'GROUPED_ENTRANTS', false) AS grouped,
-             r.dynamic_transition_key IS NOT NULL AS dynamic, c.partition_key,
-             one.participant_id, one.field_ordinal
+             r.dynamic_transition_key IS NOT NULL AS dynamic, c.contest_type, r.round_type,
+             st.primitive AS stage_primitive, c.sequence, c.partition_key,
+             coalesce(cc.status, 'PLANNED') AS status, one.participant_id, one.field_ordinal
       FROM competition.contest c
+      JOIN competition.event e ON e.id = c.event_id
+      LEFT JOIN competition.v_contest_current cc ON cc.contest_id = c.id
       JOIN competition.round r ON r.id = c.round_id
       LEFT JOIN competition.stage st ON st.id = r.stage_id
       LEFT JOIN LATERAL (
@@ -352,8 +384,23 @@ export class ScheduleStore {
         WHERE ct.contest_id = c.id
           AND (SELECT count(*) FROM competition.contestant x WHERE x.contest_id = c.id) = 1
       ) one ON true
-      WHERE c.event_id = ${eventId}`.execute(ctx.trx);
-    const facts: UnitContestFacts[] = rows.map((r) => ({
+      WHERE (${competitionId}::uuid IS NULL OR e.competition_id = ${competitionId}::uuid)
+        AND (${eventId}::uuid IS NULL OR c.event_id = ${eventId}::uuid)`.execute(ctx.trx);
+    return rows;
+  }
+
+  private static unitFacts(r: {
+    contest_id: string;
+    round_id: string;
+    round_sequence: number;
+    stage_id: string | null;
+    grouped: boolean;
+    dynamic: boolean;
+    partition_key: string | null;
+    participant_id: string | null;
+    field_ordinal: number | null;
+  }): UnitContestFacts {
+    return {
       contestId: r.contest_id,
       roundId: r.round_id,
       roundSequence: r.round_sequence,
@@ -363,8 +410,17 @@ export class ScheduleStore {
       partitionKey: r.partition_key,
       participantId: r.participant_id,
       fieldOrdinal: r.field_ordinal,
-    }));
-    return deriveUnitKeys(facts, spec?.regrouping);
+    };
+  }
+
+  /** Unit keys of every contest of an event (ADR-0073 B9), from plan, 05D and profile data. */
+  private async unitKeys(
+    ctx: TxContext,
+    eventId: string,
+    spec: SchedulingProfileSpec | undefined,
+  ): Promise<Map<string, string>> {
+    const rows = await this.contestRows(ctx, { eventId });
+    return deriveUnitKeys(rows.map(ScheduleStore.unitFacts), spec?.regrouping);
   }
 
   /** Whether any place of the contest is still unresolved (a provisional assignment). */
@@ -447,12 +503,52 @@ export class ScheduleStore {
   // ───────────────────────────── the conflict report (validator in force) ─────────────────────────────
 
   /**
-   * The canonical report over exactly the version's current content. In 05E-C the validator in force
-   * is the baseline (structural checks only, declared as coverage); 05E-D replaces it behind the
-   * same contract.
+   * 05D target states of every event of the version's competition, computed on read by 05D itself
+   * (staleness included). They are computed under 05D's own module roles, so they are read just
+   * before the command transaction (the same pattern as 05D's start guard) after the same
+   * authorization; their digest is hashed into the report, so a later change makes it stale.
    */
-  private async report(ctx: TxContext, v: VersionRow) {
+  private async targetStates(actor: string, versionId: string): Promise<TargetStates> {
+    const events = await this.tx(async (ctx) => {
+      const v = await this.version(ctx, versionId);
+      await this.competition(ctx, actor, v.competition_id, 'COMP_MANAGE_SCHEDULE');
+      const { rows } = await sql<{ id: string }>`
+        SELECT id FROM competition.event WHERE competition_id = ${v.competition_id} ORDER BY id`.execute(
+        ctx.trx,
+      );
+      return rows.map((r) => r.id);
+    });
+    const out = new Map<string, Awaited<ReturnType<AdvancementStore['targetStates']>>>();
+    for (const id of events) out.set(id, await this.advancement.targetStates(id));
+    return out;
+  }
+
+  /**
+   * The canonical report over exactly the version's current content: every input loaded here,
+   * server-side, and judged by the 05E-D engine (ADR-0074 D1, D2). The one path for `validate` and
+   * `publish`.
+   */
+  private async report(ctx: TxContext, v: VersionRow, states: TargetStates) {
+    const competitionId = v.competition_id;
+    const { rows: tz } = await sql<{ timezone: string }>`
+      SELECT timezone FROM competition.competition_profile WHERE competition_id = ${competitionId}`.execute(
+      ctx.trx,
+    );
+    // The same default the resource store applies to availability layers.
+    const competitionZone = tz[0]?.timezone ?? 'UTC';
     const facts = await this.content(ctx, v.version_id);
+    const base = v.base_version_id === null ? [] : await this.content(ctx, v.base_version_id);
+    const assignment = (a: AssignmentRow): EvaluationAssignment => ({
+      id: a.id,
+      contestId: a.contest_id,
+      resourceId: a.resource_id,
+      startMs: a.starts_at.getTime(),
+      expectedEndMs: a.expected_end?.getTime() ?? null,
+      changeoverSeconds: a.changeover_seconds,
+      recordedUnitKey: a.unit_key,
+    });
+
+    // Events, windows and pinned profiles.
     const { rows: evs } = await sql<{
       event_id: string;
       timezone: string;
@@ -464,117 +560,284 @@ export class ScheduleStore {
       FROM competition.event e
       JOIN competition.event_profile p ON p.event_id = e.id
       LEFT JOIN competition.competition_profile cp ON cp.competition_id = e.competition_id
-      WHERE e.competition_id = ${v.competition_id} ORDER BY e.id`.execute(ctx.trx);
-    const events = new Map<string, BaselineEvent>();
-    const eventInputs = [];
-    for (const e of evs) {
-      const profile = await this.profile(ctx, e.event_id);
-      events.set(e.event_id, {
-        profile: profile === null ? null : { versionId: profile.versionId, spec: profile.spec },
+      WHERE e.competition_id = ${competitionId} ORDER BY e.id`.execute(ctx.trx);
+    const events: EvaluationEvent[] = [];
+    for (const e of evs)
+      events.push({
+        id: e.event_id,
+        timezone: e.timezone,
         windowStartMs: e.starts_at?.getTime() ?? null,
         windowEndMs: e.ends_at?.getTime() ?? null,
+        profile: await this.profile(ctx, e.event_id),
       });
-      eventInputs.push({
-        eventId: e.event_id,
-        profileVersionId: profile?.versionId ?? null,
-        specHash: profile?.specHash ?? null,
-        timezone: e.timezone,
-        windowStart: e.starts_at === null ? null : Math.floor(e.starts_at.getTime() / 1000),
-        windowEnd: e.ends_at === null ? null : Math.floor(e.ends_at.getTime() / 1000),
+
+    // The plan graph: rounds, transitions, contests, places, feeders.
+    const contestRows = await this.contestRows(ctx, { competitionId });
+    const { rows: rounds } = await sql<{
+      id: string;
+      event_id: string;
+      plan_key: string;
+      sequence: number;
+      stage_id: string | null;
+      group_key: string | null;
+    }>`
+      SELECT r.id, r.event_id, r.plan_key, r.sequence, r.stage_id, r.group_key FROM competition.round r
+      JOIN competition.event e ON e.id = r.event_id WHERE e.competition_id = ${competitionId}`.execute(
+      ctx.trx,
+    );
+    const { rows: transitions } = await sql<{
+      id: string;
+      event_id: string;
+      plan_key: string;
+      from_stage_id: string;
+      after_round_plan_key: string | null;
+    }>`
+      SELECT t.id, t.event_id, t.plan_key, t.from_stage_id, t.after_round_plan_key
+      FROM competition.stage_transition t JOIN competition.event e ON e.id = t.event_id
+      WHERE e.competition_id = ${competitionId}`.execute(ctx.trx);
+    const roundsOf = new Map<string, typeof rounds>();
+    for (const r of rounds) roundsOf.set(r.event_id, [...(roundsOf.get(r.event_id) ?? []), r]);
+    const contestsOfRound = new Map<string, string[]>();
+    for (const c of contestRows)
+      contestsOfRound.set(c.round_id, [...(contestsOfRound.get(c.round_id) ?? []), c.contest_id]);
+    const contestsWhere = (eventId: string, keep: (r: (typeof rounds)[number]) => boolean) =>
+      (roundsOf.get(eventId) ?? []).filter(keep).flatMap((r) => contestsOfRound.get(r.id) ?? []);
+    /** The contests a transition's field is decided from (its from-stage, up to its after-round). */
+    const transitionFeeders = (t: (typeof transitions)[number]) => {
+      const after = (roundsOf.get(t.event_id) ?? []).find(
+        (r) => r.plan_key === t.after_round_plan_key,
+      );
+      return contestsWhere(
+        t.event_id,
+        (r) =>
+          r.stage_id === t.from_stage_id && (after === undefined || r.sequence <= after.sequence),
+      );
+    };
+    const transitionById = new Map(transitions.map((t) => [t.id, t]));
+    const transitionByKey = new Map(transitions.map((t) => [`${t.event_id}|${t.plan_key}`, t]));
+    const contestById = new Map(contestRows.map((c) => [c.contest_id, c]));
+
+    const state = (eventId: string, key: string) =>
+      states.get(eventId)?.get(key) ?? {
+        state: 'UNRESOLVED' as const,
+        participantId: null,
+        factId: null,
+      };
+    const places: EvaluationPlace[] = [];
+    const { rows: contestants } = await sql<{
+      contest_id: string;
+      slot: number;
+      source_kind: string;
+      participant_id: string | null;
+      source_contest_id: string | null;
+      source_stage_id: string | null;
+      source_group_key: string | null;
+      source_ordinal: number | null;
+      source_transition_id: string | null;
+    }>`
+      SELECT ct.contest_id, ct.slot, ct.source_kind, ct.participant_id, ct.source_contest_id, ct.source_stage_id,
+             ct.source_group_key, ct.source_ordinal, ct.source_transition_id
+      FROM competition.contestant ct JOIN competition.contest c ON c.id = ct.contest_id
+      JOIN competition.event e ON e.id = c.event_id WHERE e.competition_id = ${competitionId}`.execute(
+      ctx.trx,
+    );
+    for (const ct of contestants) {
+      const c = contestById.get(ct.contest_id);
+      if (c === undefined) throw new Error('contestant without contest');
+      if (ct.source_kind === 'PARTICIPANT') {
+        places.push({
+          contestId: ct.contest_id,
+          place: ct.slot,
+          sourceKind: ct.source_kind,
+          state: 'FIXED',
+          occupantId: ct.participant_id,
+          factId: null,
+          feeders: [],
+        });
+        continue;
+      }
+      let feeders: string[];
+      let key: string;
+      if (ct.source_kind === 'QUALIFIER') {
+        const t = transitionById.get(ct.source_transition_id ?? '');
+        if (t === undefined) throw new Error('qualifier without transition');
+        feeders = transitionFeeders(t);
+        key = targetKey({
+          kind: 'FIELD',
+          transitionKey: t.plan_key,
+          ordinal: ct.source_ordinal as number,
+        });
+      } else {
+        key = targetKey({ kind: 'SLOT', contestId: ct.contest_id, slot: ct.slot });
+        feeders =
+          ct.source_kind === 'WINNER_OF_CONTEST' || ct.source_kind === 'LOSER_OF_CONTEST'
+            ? [ct.source_contest_id as string]
+            : ct.source_stage_id !== null
+              ? contestsWhere(
+                  c.event_id,
+                  (r) =>
+                    r.stage_id === ct.source_stage_id &&
+                    (ct.source_group_key === null || r.group_key === ct.source_group_key),
+                )
+              : // A v1 rank row names no stage: every earlier round of the event, conservatively.
+                contestsWhere(c.event_id, (r) => r.sequence < c.round_sequence);
+      }
+      const s = state(c.event_id, key);
+      places.push({
+        contestId: ct.contest_id,
+        place: ct.slot,
+        sourceKind: ct.source_kind,
+        state: s.state as PlaceState,
+        occupantId: s.participantId,
+        factId: s.factId,
+        feeders,
       });
     }
-    const live = facts.filter((a) => !a.removed);
-    const { rows: shape } = await sql<{
+    const { rows: entries } = await sql<{
       contest_id: string;
-      event_id: string;
-      contest_type: ContestType;
-      round_type: RoundType;
-      stage_primitive: StagePrimitive | null;
-      type_code: string | null;
-      occupancy_mode: OccupancyMode | null;
+      participant_id: string;
+      start_order: number;
     }>`
-      SELECT c.id AS contest_id, c.event_id, c.contest_type, r.round_type, st.primitive AS stage_primitive,
-             rc.type_code, rc.occupancy_mode
-      FROM competition.v_schedule_assignment_current a
-      JOIN competition.contest c ON c.id = a.contest_id
-      JOIN competition.round r ON r.id = c.round_id
-      LEFT JOIN competition.stage st ON st.id = r.stage_id
-      LEFT JOIN competition.v_resource_current rc ON rc.resource_id = a.resource_id
-      WHERE a.version_id = ${v.version_id}`.execute(ctx.trx);
-    const byContest = new Map(shape.map((s) => [s.contest_id, s]));
-    const assignments: BaselineAssignment[] = live.map((a) => {
-      const s = byContest.get(a.contest_id);
-      if (s === undefined) throw new Error('assignment without contest');
+      SELECT ce.contest_id, ce.participant_id, ce.start_order FROM competition.contest_entry ce
+      JOIN competition.contest c ON c.id = ce.contest_id JOIN competition.event e ON e.id = c.event_id
+      WHERE e.competition_id = ${competitionId}`.execute(ctx.trx);
+    for (const ce of entries)
+      places.push({
+        contestId: ce.contest_id,
+        place: ce.start_order,
+        sourceKind: 'FIELD_ENTRY',
+        state: 'FIXED',
+        occupantId: ce.participant_id,
+        factId: null,
+        feeders: [],
+      });
+    // A dynamic-round contest without slots or entries reads its round's whole field (05D).
+    const placed = new Set(places.map((p) => p.contestId));
+    const contests: EvaluationContest[] = contestRows.map((c) => {
+      const t =
+        c.dynamic_transition_key === null
+          ? undefined
+          : transitionByKey.get(`${c.event_id}|${c.dynamic_transition_key}`);
+      const fromTransition = t === undefined ? [] : transitionFeeders(t);
+      if (t !== undefined && !placed.has(c.contest_id))
+        for (const [key, s] of [...(states.get(c.event_id) ?? new Map()).entries()].sort())
+          if (key.startsWith(`field:${t.plan_key}:`))
+            places.push({
+              contestId: c.contest_id,
+              place: Number(key.split(':')[2]),
+              sourceKind: 'QUALIFIER',
+              state: s.state as PlaceState,
+              occupantId: s.participantId,
+              factId: s.factId,
+              feeders: fromTransition,
+            });
       return {
-        assignmentId: a.id,
-        contestId: a.contest_id,
-        eventId: s.event_id,
-        unitKey: a.unit_key,
-        resourceId: a.resource_id,
-        resourceType: s.type_code,
-        occupancyMode: s.occupancy_mode,
-        startMs: a.starts_at.getTime(),
-        expectedEndMs: a.expected_end?.getTime() ?? null,
-        changeoverSeconds: a.changeover_seconds,
-        contest: {
-          contestType: s.contest_type,
-          roundType: s.round_type,
-          ...(s.stage_primitive === null ? {} : { stagePrimitive: s.stage_primitive }),
-        },
+        id: c.contest_id,
+        eventId: c.event_id,
+        roundId: c.round_id,
+        roundSequence: c.round_sequence,
+        stageId: c.stage_id,
+        stageSequence: c.stage_sequence,
+        grouped: c.grouped,
+        dynamic: c.dynamic,
+        contestType: c.contest_type,
+        roundType: c.round_type,
+        stagePrimitive: c.stage_primitive,
+        sequence: c.sequence,
+        partitionKey: c.partition_key,
+        status: c.status,
+        unitParticipantId: c.participant_id,
+        unitFieldOrdinal: c.field_ordinal,
+        feeders: fromTransition,
       };
     });
-    const { rows: revisions } = await sql<{ revision_id: string }>`
-      SELECT revision_id FROM competition.v_resource_current WHERE competition_id = ${v.competition_id}`.execute(
-      ctx.trx,
-    );
-    const { rows: avail } = await sql<{ id: string }>`
-      SELECT id FROM competition.v_resource_availability_current WHERE competition_id = ${v.competition_id}`.execute(
-      ctx.trx,
-    );
-    const { rows: occ } = await sql<{
-      contest_id: string;
-      place: number;
-      participant_id: string | null;
+    // A contest's plan edges: its own feeders plus every feeder of its places.
+    const placeFeeders = new Map<string, Set<string>>();
+    for (const p of places)
+      for (const f of p.feeders)
+        placeFeeders.set(p.contestId, (placeFeeders.get(p.contestId) ?? new Set()).add(f));
+    const withEdges = contests.map((c) => ({
+      ...c,
+      feeders: [...new Set([...c.feeders, ...(placeFeeders.get(c.id) ?? [])])].sort(),
+    }));
+
+    // Entrants: the athlete, or the team's frozen roster (ADR-0057).
+    const { rows: participants } = await sql<{
+      id: string;
+      participant_kind: 'INDIVIDUAL' | 'TEAM';
+      athlete_id: string | null;
+      roster: string[] | null;
     }>`
-      SELECT o.contest_id, o.place, o.participant_id FROM competition.v_contest_occupant o
-      JOIN competition.contest c ON c.id = o.contest_id JOIN competition.event e ON e.id = c.event_id
-      WHERE e.competition_id = ${v.competition_id} ORDER BY o.contest_id, o.place`.execute(ctx.trx);
-    const { rows: statuses } = await sql<{ contest_id: string; status: string }>`
-      SELECT cc.contest_id, cc.status FROM competition.v_contest_current cc
-      JOIN competition.contest c ON c.id = cc.contest_id JOIN competition.event e ON e.id = c.event_id
-      WHERE e.competition_id = ${v.competition_id}`.execute(ctx.trx);
-    const report = canonicalScheduleReport(
-      baselineScheduleReport({
-        competitionId: v.competition_id,
-        scheduleVersionId: v.version_id,
-        assignments,
-        events,
-        inputs: {
-          events: eventInputs,
-          resourceRevisionIds: revisions.map((r) => r.revision_id),
-          availabilityFactIds: avail.map((r) => r.id),
-          occupancyDigest: scheduleDigest(
-            'br:schedule-occupancy',
-            occ.map((o) => [o.contest_id, o.place, o.participant_id ?? '']),
-          ),
-          contestStatuses: statuses.map((s) => ({ contestId: s.contest_id, status: s.status })),
-        },
-      }),
+      SELECT p.id, p.participant_kind, p.athlete_id,
+             (SELECT array_agg(m.athlete_id::text ORDER BY m.athlete_id) FROM competition.participant_roster_member m
+              WHERE m.participant_id = p.id) AS roster
+      FROM competition.participant p JOIN competition.event e ON e.id = p.event_id
+      WHERE e.competition_id = ${competitionId}`.execute(ctx.trx);
+    const entrants: EvaluationEntrant[] = participants.map((p) => ({
+      id: p.id,
+      kind: p.participant_kind,
+      personIds: p.participant_kind === 'INDIVIDUAL' ? [p.athlete_id as string] : (p.roster ?? []),
+    }));
+
+    // Resources (the revision in force) and availability.
+    const { rows: resources } = await sql<{
+      resource_id: string;
+      revision_id: string;
+      type_code: string;
+      occupancy_mode: OccupancyMode;
+      capacity: number;
+      exclusivity_keys: string[];
+      timezone: string | null;
+      status: 'ACTIVE' | 'RETIRED';
+    }>`
+      SELECT resource_id, revision_id, type_code, occupancy_mode, capacity, exclusivity_keys, timezone, status
+      FROM competition.v_resource_current WHERE competition_id = ${competitionId}`.execute(ctx.trx);
+    const { rows: availability } = await sql<AvailabilityFactRow>`
+      SELECT id, resource_id, kind, weekday, to_char(local_date, 'YYYY-MM-DD') AS local_date, local_start, local_end,
+             to_char(valid_from, 'YYYY-MM-DD') AS valid_from, to_char(valid_to, 'YYYY-MM-DD') AS valid_to,
+             starts_at, ends_at, reason, recorded_at
+      FROM competition.v_resource_availability_current WHERE competition_id = ${competitionId}`.execute(
+      ctx.trx,
     );
-    // The watermark covers every current fact, removals included: a removal is content.
-    const withWatermark = canonicalScheduleReport({
-      ...report,
-      assignmentIds: facts.map((a) => a.id),
+
+    const report = evaluateSchedule({
+      competitionId,
+      competitionTimezone: competitionZone,
+      scheduleVersionId: v.version_id,
+      // The watermark covers every current fact, removals included: a removal is content.
+      watermark: facts.map((a) => a.id),
+      assignments: facts.filter((a) => !a.removed).map(assignment),
+      baseAssignments: base.filter((a) => !a.removed).map(assignment),
+      contests: withEdges,
+      places,
+      entrants,
+      events,
+      resources: resources.map((r) => ({
+        id: r.resource_id,
+        revisionId: r.revision_id,
+        typeCode: r.type_code,
+        occupancyMode: r.occupancy_mode,
+        capacity: r.capacity,
+        exclusivityKeys: r.exclusivity_keys,
+        zone: r.timezone ?? competitionZone,
+        status: r.status,
+      })),
+      availability: availability.map((f) => ({
+        id: f.id,
+        resourceId: f.resource_id,
+        fact: availabilityFactOfRow(f),
+      })),
     });
-    return { report: withWatermark, reportHash: scheduleReportHash(withWatermark) };
+    return { report, reportHash: scheduleReportHash(report) };
   }
 
   /** The report the publish command would check, with its hash and acknowledgement keys. */
   async validate(input: { actorAccountId: string; versionId: string }) {
+    const states = await this.targetStates(input.actorAccountId, input.versionId);
     return this.tx(async (ctx) => {
       const v = await this.version(ctx, input.versionId);
       await this.competition(ctx, input.actorAccountId, v.competition_id, 'COMP_MANAGE_SCHEDULE');
-      const { report, reportHash } = await this.report(ctx, v);
+      const { report, reportHash } = await this.report(ctx, v, states);
       const verdict = reportVerdict(report);
       return {
         reportHash,
@@ -1042,6 +1305,7 @@ export class ScheduleStore {
     idempotencyKey: string;
   }) {
     const acknowledged = [...new Set(input.acknowledgedConflictKeys)].sort();
+    const states = await this.targetStates(input.actorAccountId, input.versionId);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{
         versionId: string;
@@ -1068,7 +1332,7 @@ export class ScheduleStore {
           'BASE_VERSION_STALE',
           'the published schedule changed since this draft was opened; open a new draft',
         );
-      const { report, reportHash } = await this.report(ctx, v);
+      const { report, reportHash } = await this.report(ctx, v, states);
       if (reportHash !== input.reportHash)
         throw stale('REPORT_STALE', 'the draft changed since it was validated; validate it again');
       const verdict = reportVerdict(report);
