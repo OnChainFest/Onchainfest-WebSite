@@ -487,6 +487,8 @@ describe('BRT-05 API: public competition pages', () => {
         { scheduledStart: '2027-06-10T09:00:00+02:00', courtLabel: 'Court 1' },
       ),
     );
+    // ONCF-05E-C: the route edits a private draft. A move needs a reason; a time outside the event
+    // window is recorded in the draft and blocks publication (HARD OUTSIDE_EVENT_WINDOW).
     expect(
       (
         await call(
@@ -496,7 +498,59 @@ describe('BRT-05 API: public competition pages', () => {
           { scheduledStart: '2027-07-10T09:00:00Z' },
         )
       ).status,
-    ).toBe(400); // outside window
+    ).toBe(400); // a move without a reason
+    const moved = await ok(
+      call(
+        'POST',
+        `/v1/contests/${semi.contestId}/schedule`,
+        { ...c.org, ...idem() },
+        { scheduledStart: '2027-07-10T09:00:00Z', reason: 'venue change' },
+      ),
+    );
+    const draftId = moved.versionId as string;
+    const outside = await ok(call('POST', `/v1/schedule-versions/${draftId}/validate`, c.org));
+    expect(outside.conflicts.map((x: Json) => x.code)).toContain('OUTSIDE_EVENT_WINDOW');
+    const refused = await call(
+      'POST',
+      `/v1/schedule-versions/${draftId}/publish`,
+      { ...c.org, ...idem() },
+      {
+        baseVersionId: null,
+        reportHash: outside.reportHash,
+        acknowledgedConflictKeys: outside.conflicts
+          .filter((x: Json) => x.severity === 'SOFT')
+          .map((x: Json) => x.conflictKey),
+      },
+    );
+    expect(refused.status).toBe(409); // outside window
+    expect(
+      (await ok(call('GET', `/v1/competitions/${c.compSlug}/events/${c.eventSlug}/schedule`)))
+        .items[0].scheduledStart,
+    ).toBeNull(); // the draft is private
+    await ok(
+      call(
+        'POST',
+        `/v1/contests/${semi.contestId}/schedule`,
+        { ...c.org, ...idem() },
+        { scheduledStart: '2027-06-10T09:00:00+02:00', courtLabel: 'Court 1', reason: 'back' },
+      ),
+    );
+    const report = await ok(call('POST', `/v1/schedule-versions/${draftId}/validate`, c.org));
+    await ok(
+      call(
+        'POST',
+        `/v1/schedule-versions/${draftId}/publish`,
+        { ...c.org, ...idem() },
+        {
+          baseVersionId: null,
+          reportHash: report.reportHash,
+          // The organizer acknowledges the SOFT warning: a time-only slot has no end.
+          acknowledgedConflictKeys: report.conflicts
+            .filter((x: Json) => x.severity === 'SOFT')
+            .map((x: Json) => x.conflictKey),
+        },
+      ),
+    );
     const schedule = await ok(
       call('GET', `/v1/competitions/${c.compSlug}/events/${c.eventSlug}/schedule`),
     );

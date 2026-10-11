@@ -22,6 +22,7 @@ import {
   type AttestationStore,
   type VerificationPolicyStore,
   PersonPrincipalService,
+  ScheduleStore,
   type StructureStore,
   inTransaction,
   ModuleRole,
@@ -481,6 +482,34 @@ export async function newAthlete(
  * a fictional referee SUBMIT_RESULT on the competition. Returns the ids; nothing is accepted,
  * made official or verified.
  */
+/**
+ * Test helper (ONCF-05E-C): publishes the competition's open schedule draft as `actorAccountId`,
+ * explicitly acknowledging the SOFT conflicts of the current report (e.g. time-only legacy
+ * assignments without an end). Returns the published version id.
+ */
+export async function publishSchedule(
+  db: Db,
+  actorAccountId: string,
+  competitionId: string,
+): Promise<string> {
+  const schedule = new ScheduleStore(db);
+  const { items } = await schedule.listVersions({ actorAccountId, competitionId });
+  const draft = items.find((v) => v.status === 'DRAFT');
+  if (draft === undefined) throw new Error('no open schedule draft');
+  const report = await schedule.validate({ actorAccountId, versionId: draft.versionId });
+  await schedule.publish({
+    actorAccountId,
+    versionId: draft.versionId,
+    baseVersionId: draft.baseVersionId,
+    reportHash: report.reportHash,
+    acknowledgedConflictKeys: report.conflicts
+      .filter((c) => c.severity === 'SOFT')
+      .map((c) => c.conflictKey),
+    idempotencyKey: `publish-${draft.versionId}`,
+  });
+  return draft.versionId;
+}
+
 export async function newContestResult(deps: {
   db: Db;
   identity: IdentityStore;
@@ -592,9 +621,12 @@ export async function newContestResult(deps: {
     await deps.structure.scheduleContest({
       actorAccountId: org.ownerAccountId,
       contestId: contest.contestId,
-      scheduledStart: new Date(Date.now() + 60_000),
+      // Schedule instants are whole seconds (ONCF-05E-C).
+      scheduledStart: new Date(Math.ceil((Date.now() + 60_000) / 1000) * 1000),
       idempotencyKey: k(),
     });
+    // The route edits a draft; the contest becomes SCHEDULED when the draft is published.
+    await publishSchedule(deps.db, org.ownerAccountId, competitionId);
     if (deps.timed.startAfter !== undefined)
       await awaitDbTimePast(deps.db, deps.timed.startAfter, 15_000);
     await deps.structure.startContest({

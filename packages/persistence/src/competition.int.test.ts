@@ -8,6 +8,7 @@ import {
   newOrganizer,
   newTestAccount,
   ownerDb,
+  publishSchedule,
   RUNNING_5K_SPEC,
   seedTestCatalog,
   uniqueSlug,
@@ -1117,6 +1118,8 @@ describe('participants, contests and lineups', () => {
       courtLabel: 'Court 1',
       idempotencyKey: k(),
     });
+    // ONCF-05E-C: the route edits the draft; the contest is SCHEDULED once the draft is published.
+    await publishSchedule(api, w.ownerAccountId, w.competitionId);
     await rejects(
       structure.scheduleContest({
         actorAccountId: w.ownerAccountId,
@@ -1150,6 +1153,7 @@ describe('participants, contests and lineups', () => {
       scheduledStart: '2027-03-02T15:00:00Z',
       idempotencyKey: k(),
     });
+    await publishSchedule(api, w.ownerAccountId, w.competitionId);
     await rejects(
       structure.startContest({ actorAccountId: w.ownerAccountId, contestId: final!.id }),
       DomainErrorCode.INVALID_TRANSITION,
@@ -1193,6 +1197,7 @@ describe('participants, contests and lineups', () => {
       scheduledStart: '2027-03-01T15:00:00Z',
       idempotencyKey: k(),
     });
+    await publishSchedule(api, w.ownerAccountId, w.competitionId);
     await comps.startEvent({ actorAccountId: w.ownerAccountId, eventId: ev.eventId });
     await rejects(
       structure.startContest({ actorAccountId: w.ownerAccountId, contestId: c[0]!.id }),

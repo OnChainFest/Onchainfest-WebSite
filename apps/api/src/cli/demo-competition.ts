@@ -439,6 +439,27 @@ try {
       },
     ),
   );
+  // ONCF-05E-C: the schedule route edits a private draft; publishing makes it public.
+  const versions = await ok(
+    call('GET', `/v1/competitions/${comp.competitionId}/schedule/versions`, orgH),
+  );
+  const draft = versions.items.find((v: Json) => v.status === 'DRAFT');
+  const report = await ok(call('POST', `/v1/schedule-versions/${draft.versionId}/validate`, orgH));
+  await ok(
+    call(
+      'POST',
+      `/v1/schedule-versions/${draft.versionId}/publish`,
+      { ...orgH, ...idem() },
+      {
+        baseVersionId: draft.baseVersionId,
+        reportHash: report.reportHash,
+        // The organizer explicitly acknowledges the SOFT warnings (a time-only slot has no end).
+        acknowledgedConflictKeys: report.conflicts
+          .filter((c: Json) => c.severity === 'SOFT')
+          .map((c: Json) => c.conflictKey),
+      },
+    ),
+  );
   show(
     'A semifinal is scheduled (UTC storage; IANA timezone for display)',
     (await ok(call('GET', `/v1/competitions/${compSlug}/events/${eventSlug}/schedule`))).items[0],

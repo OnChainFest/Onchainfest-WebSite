@@ -6,9 +6,9 @@ import { ianaZoneIssue } from './zoned';
  * type is the catalog `ResourceType` vocabulary (data), attributes are validated against a closed
  * per-type schema (data), and occupancy semantics are generic:
  *
- *   · capacity 1   → EXCLUSIVE: one contest at a time (court, lane pair, a pool booked for a session)
- *   · capacity N   → SHARED_CAPACITY: concurrent use while declared units ≤ N (road course, golf
- *                    course); what a unit means comes from the SchedulingProfile (05E-B), not code
+ *   · capacity     → an amount; what one unit consumes comes from the SchedulingProfile (05E-B)
+ *   · occupancyMode → declared simultaneous occupancy, EXCLUSIVE or SHARED (05E-C, ADR-0073 B2);
+ *                    capacity never decides it
  *   · exclusivity keys → physical overlap: two resources share space iff their key sets intersect.
  *     A full court {c1-a, c1-b} overlaps each half court {c1-a} / {c1-b}; the halves don't overlap
  *     each other. (ADR-0067's "exclusivity group" represented as a key set: a single key cannot
@@ -176,7 +176,39 @@ function describe(a: AttributeSpec): string {
   }
 }
 
-/** EXCLUSIVE (capacity 1) or SHARED_CAPACITY (capacity > 1). */
+/**
+ * Simultaneous occupancy, a declared physical fact of a resource revision (ONCF-05E-C, ADR-0073 B2):
+ * EXCLUSIVE = one scheduling unit at a time (plus changeover); SHARED = concurrent units while the
+ * summed consumption fits the capacity. Capacity is only an amount and never decides this.
+ */
+export const OccupancyMode = { EXCLUSIVE: 'EXCLUSIVE', SHARED: 'SHARED' } as const;
+export type OccupancyMode = (typeof OccupancyMode)[keyof typeof OccupancyMode];
+export const OCCUPANCY_MODES: readonly OccupancyMode[] = Object.values(OccupancyMode);
+
+/**
+ * Write-time default when a caller omits `occupancyMode` (catalog vocabulary data, like the attribute
+ * schemas; also the deterministic backfill of migration 0037). Engines never read this table: they
+ * read the mode stored on the resource revision.
+ */
+export const RESOURCE_TYPE_DEFAULT_OCCUPANCY_MODE: Readonly<Record<ResourceType, OccupancyMode>> = {
+  TENNIS_COURT: 'EXCLUSIVE',
+  PADEL_COURT: 'EXCLUSIVE',
+  BASKETBALL_COURT: 'EXCLUSIVE',
+  BASKETBALL_HALF_COURT: 'EXCLUSIVE',
+  BOWLING_LANE_PAIR: 'EXCLUSIVE',
+  POOL: 'EXCLUSIVE',
+  TRACK: 'EXCLUSIVE',
+  ROAD_COURSE: 'SHARED',
+  OPEN_WATER_COURSE: 'SHARED',
+  CYCLING_COURSE: 'SHARED',
+  GOLF_COURSE: 'SHARED',
+};
+
+/**
+ * Legacy, descriptive label (05E-A read API compatibility): EXCLUSIVE (capacity 1) or
+ * SHARED_CAPACITY (capacity > 1). NOT a scheduling semantic — conflict and proposal engines use the
+ * stored `occupancyMode` only (ADR-0073 I-B2.1).
+ */
 export function occupancyOf(r: { readonly capacity: number }): 'EXCLUSIVE' | 'SHARED_CAPACITY' {
   return r.capacity === 1 ? 'EXCLUSIVE' : 'SHARED_CAPACITY';
 }

@@ -46,7 +46,6 @@ import {
 import {
   competitionPermissions,
   currentStatus,
-  instantOrThrow,
   loadCompetition,
   loadEvent,
   optionalText,
@@ -57,6 +56,7 @@ import {
 import type { Db } from './db';
 import { identityIdempotency, lockKeys, recordAudit } from './identity-support';
 import { emitEvent } from './outbox';
+import { ScheduleStore } from './schedule-store';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 interface FieldParticipant {
@@ -1144,130 +1144,25 @@ export class StructureStore {
   }
 
   /**
-   * Schedules (or re-schedules) a contest: UTC instants, validated against the event window (or
-   * the competition window when the event has none). Venue organizations are optional; changes
-   * are audited. No authority effect is ever backdated through scheduling.
+   * BRT-05 `scheduleContest`, kept for compatibility (ONCF-05E-C, ADR-0070 §6): it no longer writes
+   * the public schedule. It records the assignment in the competition's open schedule DRAFT (opening
+   * one from the published version when none is open) through the one ScheduleStore implementation,
+   * and never publishes. Moving an existing assignment needs a reason. The contest becomes SCHEDULED
+   * only when a version containing it is published.
    */
-  async scheduleContest(input: {
+  scheduleContest(input: {
     actorAccountId: string;
     contestId: string;
     scheduledStart: Date | string;
     scheduledEnd?: Date | string | null;
+    resourceId?: string | null;
     venueOrganizationId?: string | null;
     locationLabel?: string | null;
     courtLabel?: string | null;
+    reason?: string | null;
     idempotencyKey: string;
-  }): Promise<{ contestId: string; status: ContestStatus; created: boolean }> {
-    const start = instantOrThrow(input.scheduledStart, 'scheduledStart');
-    const end =
-      input.scheduledEnd === undefined || input.scheduledEnd === null
-        ? null
-        : instantOrThrow(input.scheduledEnd, 'scheduledEnd');
-    if (end !== null && end <= start)
-      throw new DomainError(
-        DomainErrorCode.INVALID_INPUT,
-        'scheduledEnd must follow scheduledStart',
-      );
-    const location = optionalText(input.locationLabel, 120, 'locationLabel');
-    const court = optionalText(input.courtLabel, 40, 'courtLabel');
-    return this.tx(async (ctx) => {
-      const idem = await identityIdempotency<{ contestId: string; status: ContestStatus }>(ctx, {
-        command: 'ScheduleContest',
-        actorAccountId: input.actorAccountId,
-        idempotencyKey: input.idempotencyKey,
-        params: {
-          contestId: input.contestId,
-          start: start.toISOString(),
-          end: end?.toISOString(),
-          venue: input.venueOrganizationId,
-          location,
-          court,
-        },
-      });
-      if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
-      await lockKeys(ctx, `contest:${input.contestId}`);
-      const c = await this.loadContest(ctx, input.contestId);
-      const e = await loadEvent(ctx, c.eventId);
-      await requireCompPermission(
-        ctx,
-        input.actorAccountId,
-        await loadCompetition(ctx, e.competitionId),
-        'COMP_MANAGE_SCHEDULE',
-      );
-      if (!['FIELD_LOCKED', 'IN_PROGRESS'].includes(e.status))
-        throw new DomainError(
-          DomainErrorCode.INVALID_TRANSITION,
-          `cannot schedule contests of a ${e.status} event`,
-        );
-      if (c.status !== 'PLANNED' && c.status !== 'SCHEDULED')
-        throw transitionError('contest', c.status, 'SCHEDULED');
-      const { rows: cw } = await sql<{ starts_at: Date | null; ends_at: Date | null }>`
-        SELECT starts_at, ends_at FROM competition.competition_profile WHERE competition_id = ${e.competitionId}`.execute(
-        ctx.trx,
-      );
-      const windowStart = e.startsAt ?? cw[0]?.starts_at ?? null;
-      const windowEnd = e.endsAt ?? cw[0]?.ends_at ?? null;
-      if (
-        (windowStart !== null && start < windowStart) ||
-        (windowEnd !== null && (end ?? start) > windowEnd)
-      ) {
-        throw new DomainError(
-          DomainErrorCode.INVALID_INPUT,
-          'the contest must be scheduled within the event window',
-        );
-      }
-      if (input.venueOrganizationId !== null && input.venueOrganizationId !== undefined) {
-        const { rows } = await sql<{ status: string }>`
-          SELECT status FROM organizations.v_organization_current WHERE organization_id = ${input.venueOrganizationId}`.execute(
-          ctx.trx,
-        );
-        if (rows[0]?.status !== 'ACTIVE')
-          throw new DomainError(
-            DomainErrorCode.INVALID_INPUT,
-            'venue organization not found or not active',
-          );
-      }
-      const { rows: prev } = await sql<{
-        scheduled_start: Date;
-      }>`SELECT scheduled_start FROM competition.contest_schedule WHERE contest_id = ${input.contestId}`.execute(
-        ctx.trx,
-      );
-      await sql`INSERT INTO competition.contest_schedule (contest_id, scheduled_start, scheduled_end, venue_organization_id, location_label, court_label, updated_at, updated_by_account_id)
-        VALUES (${input.contestId}, ${start}, ${end}, ${input.venueOrganizationId ?? null}, ${location}, ${court}, ${ctx.txTime}, ${input.actorAccountId})
-        ON CONFLICT (contest_id) DO UPDATE SET scheduled_start = EXCLUDED.scheduled_start, scheduled_end = EXCLUDED.scheduled_end,
-          venue_organization_id = EXCLUDED.venue_organization_id, location_label = EXCLUDED.location_label, court_label = EXCLUDED.court_label,
-          updated_at = EXCLUDED.updated_at, updated_by_account_id = EXCLUDED.updated_by_account_id`.execute(
-        ctx.trx,
-      );
-      if (c.status === 'PLANNED') {
-        await sql`INSERT INTO competition.contest_status_change (id, contest_id, status, actor_account_id, recorded_at)
-          VALUES (${newId()}, ${input.contestId}, 'SCHEDULED', ${input.actorAccountId}, ${ctx.txTime})`.execute(
-          ctx.trx,
-        );
-      }
-      await refreshEventReadModels(ctx, e.id);
-      await emitEvent(ctx, {
-        eventType: 'ContestScheduled',
-        aggregateType: 'CONTEST',
-        aggregateId: input.contestId as Uuid,
-        payload: { eventId: e.id, scheduledStart: start.toISOString() },
-      });
-      await recordAudit(ctx, {
-        actorAccountId: input.actorAccountId,
-        action: prev[0] === undefined ? 'contest.scheduled' : 'contest.rescheduled',
-        targetType: 'CONTEST',
-        targetId: input.contestId,
-        details: {
-          scheduledStart: start.toISOString(),
-          ...(prev[0] === undefined
-            ? {}
-            : { previousStart: prev[0].scheduled_start.toISOString() }),
-        },
-      });
-      const response = { contestId: input.contestId, status: 'SCHEDULED' as const };
-      await idem.record(response);
-      return { ...response, created: true };
-    });
+  }) {
+    return new ScheduleStore(this.db).scheduleContest(input);
   }
 
   /** SCHEDULED → IN_PROGRESS. Every slot must hold an ACTIVE participant (no unresolved dependency). */
