@@ -28,6 +28,19 @@ async function emitBatch(n: number): Promise<string> {
   return aggregateId;
 }
 
+/**
+ * A fresh consumer that has caught up with the shared outbox (every event earlier test files left
+ * there), through the real consumeOutbox. The events a test emits next are then the only ones pending
+ * for it, so one batch reaches them whatever the size of the backlog.
+ */
+async function caughtUpConsumer(): Promise<string> {
+  const consumer = `test-consumer-${newId()}`;
+  let n: number;
+  do n = await consumeOutbox(worker, consumer, async () => undefined, 10_000);
+  while (n > 0);
+  return consumer;
+}
+
 /** A handler whose only effect is a DB row written in the consumer's transaction (a job). */
 const recordEffect =
   (consumer: string, aggregateId: string) => async (event: DomainEvent, ctx: TxContext) => {
@@ -48,8 +61,8 @@ async function effectCount(consumer: string): Promise<{ total: number; distinct:
 
 describe('outbox delivery semantics (ADR-0012, BRT-03R)', () => {
   it('concurrent consumers produce exactly-once COMMITTED DATABASE EFFECTS per consumer', async () => {
+    const consumer = await caughtUpConsumer();
     const aggregateId = await emitBatch(5);
-    const consumer = `test-consumer-${newId()}`;
     const handler = recordEffect(consumer, aggregateId);
     await Promise.all(
       Array.from({ length: 4 }, () => consumeOutbox(worker, consumer, handler, 10_000)),
@@ -59,8 +72,8 @@ describe('outbox delivery semantics (ADR-0012, BRT-03R)', () => {
   });
 
   it('delivery is at least once: a failing handler rolls back its receipt and effects, and the event is redelivered', async () => {
+    const consumer = await caughtUpConsumer();
     const aggregateId = await emitBatch(1);
-    const consumer = `test-consumer-${newId()}`;
     const deliveries: string[] = [];
     let fail = true;
     const handler = async (event: DomainEvent, ctx: TxContext) => {

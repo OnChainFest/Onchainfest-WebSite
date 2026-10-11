@@ -10,6 +10,7 @@ import {
 import { DomainErrorCode, newId } from '@br/domain';
 import {
   apiDb,
+  maintenanceDb,
   newAthlete,
   newOrganizer,
   newTestAccount,
@@ -20,6 +21,7 @@ import {
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CatalogStore } from './catalog-store';
+import { refreshEventReadModels } from './competition-projection';
 import { CompetitionReader } from './competition-reader';
 import { CompetitionStore } from './competition-store';
 import { StructureStore } from './competition-structure-store';
@@ -28,6 +30,7 @@ import { OrganizationStore } from './organization-store';
 import { ResourceStore } from './resource-store';
 import { ScheduleStore } from './schedule-store';
 import { ScoringStore } from './scoring-store';
+import { inTransaction, ModuleRole } from './tx';
 
 /**
  * ONCF-05E-C through the real stores: competition schedule versions (private DRAFT → validated
@@ -41,8 +44,9 @@ import { ScoringStore } from './scoring-store';
 const db = apiDb();
 const owner = ownerDb();
 const operator = operatorDb();
+const maintenance = maintenanceDb();
 afterAll(async () => {
-  await Promise.all([db, owner, operator].map((d) => d.destroy()));
+  await Promise.all([db, owner, operator, maintenance].map((d) => d.destroy()));
 });
 const identity = new IdentityStore(db);
 const orgs = new OrganizationStore(db);
@@ -236,6 +240,34 @@ const rejects = (p: Promise<unknown>, code: DomainErrorCode, reason?: string) =>
 
 const count = async (q: string) =>
   Number((await sql.raw<{ n: string }>(q).execute(owner)).rows[0]?.n);
+
+/** Recomputes an event's read models from canonical facts, exactly as the full rebuild does. */
+const rebuildEvent = (eventId: string) =>
+  inTransaction(maintenance, ModuleRole.rebuild, (ctx) => refreshEventReadModels(ctx, eventId));
+
+/**
+ * The public contest cards of an event as maintained incrementally, after proving that a rebuild
+ * from canonical facts reproduces them exactly (scheduling fields included).
+ */
+async function publicContests(eventId: string) {
+  const read = () =>
+    inTransaction(db, ModuleRole.publicRead, async (ctx) => {
+      const { rows } = await sql<{
+        contest_id: string;
+        scheduled_start: Date | null;
+        scheduled_end: Date | null;
+        court_label: string | null;
+        location_label: string | null;
+      }>`SELECT * FROM competition_read.contest_card WHERE event_id = ${eventId} ORDER BY contest_id`.execute(
+        ctx.trx,
+      );
+      return rows;
+    });
+  const incremental = await read();
+  await rebuildEvent(eventId);
+  expect(await read()).toEqual(incremental);
+  return incremental;
+}
 
 async function staff(
   ev: Pick<Ev, 'competitionId' | 'actor'>,
@@ -436,6 +468,13 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       owner,
     );
     expect(rows[0]?.status).toBe('PLANNED');
+    const cards = await publicContests(ev.eventId);
+    expect(cards).toHaveLength(ev.contests.length);
+    expect(
+      cards.every(
+        (c) => c.scheduled_start === null && c.scheduled_end === null && c.court_label === null,
+      ),
+    ).toBe(true);
   });
 
   it('publication authority: COMP_MANAGE_SCHEDULE held by a human; strangers and registration managers are refused', async () => {
@@ -535,6 +574,27 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
     expect(proj.find((p) => p.contest_id === ev.contests[1]!.id)).toMatchObject({
       resource_id: court2,
     });
+    // The public read model shows exactly the PUBLISHED projection, and a rebuild reproduces it.
+    const { rows: published } = await sql<{
+      contest_id: string;
+      scheduled_start: Date;
+      scheduled_end: Date | null;
+      court_label: string | null;
+      location_label: string | null;
+    }>`
+      SELECT contest_id, scheduled_start, scheduled_end, court_label, location_label FROM competition.contest_schedule
+      WHERE contest_id = ANY(${ev.contests.map((c) => c.id)}::uuid[]) ORDER BY contest_id`.execute(
+      owner,
+    );
+    expect(
+      (await publicContests(ev.eventId)).map((c) => ({
+        contest_id: c.contest_id,
+        scheduled_start: c.scheduled_start,
+        scheduled_end: c.scheduled_end,
+        court_label: c.court_label,
+        location_label: c.location_label,
+      })),
+    ).toEqual(published);
     const { rows: st } = await sql<{ status: string }>`
       SELECT DISTINCT status FROM competition.v_contest_current WHERE contest_id = ANY(${ev.contests.map((c) => c.id)}::uuid[])`.execute(
       owner,
@@ -1130,6 +1190,19 @@ describe('legacy contest_schedule rows become version 1, PUBLISHED, without inve
              (${b!.id}, '2027-11-01T17:00:00Z', '2027-11-01T18:30:00Z', NULL, now(), ${ev.actor})`.execute(
       owner,
     );
+    // BRT-05 refreshed the read models in the same transaction as each write; so does this fixture,
+    // or the canonical facts and the public read model would disagree (a state BRT-05 never produced).
+    await rebuildEvent(ev.eventId);
+    const legacyPublic = await publicContests(ev.eventId);
+    expect(legacyPublic.find((c) => c.contest_id === a!.id)).toMatchObject({
+      scheduled_start: new Date('2027-11-01T15:00:00.123Z'),
+      scheduled_end: null,
+      court_label: 'Court A',
+    });
+    expect(legacyPublic.find((c) => c.contest_id === b!.id)).toMatchObject({
+      scheduled_start: new Date('2027-11-01T17:00:00Z'),
+      scheduled_end: new Date('2027-11-01T18:30:00Z'),
+    });
     const { rows: n } = await sql<{
       n: number;
     }>`SELECT competition.migrate_legacy_contest_schedule() AS n`.execute(owner);
@@ -1160,6 +1233,8 @@ describe('legacy contest_schedule rows become version 1, PUBLISHED, without inve
       expectedEnd: '2027-11-01T18:30:00.000Z',
       unitKey: null,
     });
+    // Nothing currently public changes.
+    expect(await publicContests(ev.eventId)).toEqual(legacyPublic);
     // A second run migrates nothing new for this competition.
     await sql`SELECT competition.migrate_legacy_contest_schedule()`.execute(owner);
     expect(
@@ -1182,5 +1257,7 @@ describe('legacy contest_schedule rows become version 1, PUBLISHED, without inve
       ['CARRIED', null],
       ['CARRIED', null],
     ]);
+    // The draft stays private: the public schedule is still the migrated PUBLISHED one.
+    expect(await publicContests(ev.eventId)).toEqual(legacyPublic);
   }, 240_000);
 });
