@@ -147,7 +147,8 @@ Given a competition's open draft schedule, propose placements (start + resource)
 - **Granularity:** none. Candidates are the **breakpoint set** `T` (E10):
   - the horizon start;
   - availability interval starts from `expandAvailability`;
-  - anchors `{start, O.end, B.end}` of live and accepted assignments, plus `{0, every declared lead, rest minimum and start spacing}`.
+  - anchors `{start, O.end, B.end}` of live and accepted assignments, plus `{0, every declared lead, rest minimum and start spacing}`;
+  - when the unit's requirement declares `maxUnitsPerEntrantPerDay`: the local start of every calendar date intersecting the horizon, in the **event** zone (05E-A `zoned.ts`, recurring-rule DST resolution). These are derived boundaries, not a grid (ADR-0075 § 10 amendment).
 
   All values are integer seconds.
 - **Completeness argument:** every lower bound the judge enforces has one of these forms.
@@ -161,12 +162,14 @@ Given a competition's open draft schedule, propose placements (start + resource)
   | Dependency | `O.end + lead` |
   | Spacing | slot `+ spacing` |
   | Concurrency | slot instant |
-  | Availability / daily-limit dates | declared-open interval start |
+  | Availability | declared-open interval start |
+  | Daily limit | local start of each calendar date in the event zone |
   | Window | horizon start |
 
   Upper-bound constraints only remove instants. So the earliest acceptable instant, given the fixed content, belongs to `T`.
 - **Instants:** whole seconds. Legacy sub-second anchors round up. Arithmetic is in milliseconds on `interval.ts`.
-- **Timezone:** availability expansion uses each layer's zone (resource zone, else competition zone; 05E-A). Daily limits use the event zone (D's judgment). Placement zone = event zone. E has no other local-time logic, and never uses a server or browser zone.
+- **Timezone:** availability expansion uses each layer's zone (resource zone, else competition zone; 05E-A). Daily limits are judged by D in the event zone, and E adds the event zone's local-date starts as breakpoints (above). Placement zone = event zone. E has no other local-time logic, and never uses a server or browser zone.
+- **Why the daily-limit row was added:** with continuous availability (for example 00:00–24:00 every day), the merged interval has no start at local midnight. The earliest start a daily limit allows (local midnight of the next date) was then missing from `T`. The exhaustive property test (§ 31) and a dedicated regression test cover the case.
 
 ## 11. Resource domain
 
@@ -387,6 +390,30 @@ preview  →  inspect  →  commit (hash, idempotency key; recompute & compare; 
 - **Where naive fails:** the total cost is `O(U · K · N log N)`: units × candidates per unit × one competition-wide judgment. Beyond a few thousand assignments, each judgment costs hundreds of ms, and with ≥ 1 000 units the run reaches the budget.
 - **Commit cost:** recomputation doubles the preview's cost.
 - **Mitigation path (deferred, ADR required):** a 05E-D "prepared input / evaluate many" or delta API, proven by property tests to return the same report as `evaluateSchedule`; or proposal persistence to avoid recomputation at commit. Neither is introduced now (correctness first, ADR-0074 D1).
+
+**Measured proposal-engine cost (05E-E implementation, `proposeSchedule`, real canonical plans and templates, about 11 ms per judge call at these sizes):**
+
+| Case | Judge calls | Time | Status |
+|---|---|---|---|
+| 31-match knockout, 8 courts | 798 | ≈ 8.8 s | `SUCCESS` |
+| 28-match round robin, 4 courts | 598 | ≈ 6.3 s | `SUCCESS` |
+| 127-match knockout, 16 courts | 10 000 (run budget) | ≈ 143 s | `SEARCH_EXHAUSTED` |
+| 120-match round robin, 4 courts | 10 000 (run budget) | ≈ 81 s | `SEARCH_EXHAUSTED` |
+
+**Known v1 limitation (accepted).** v1 proposal search is correctness-first and bounded by judge-call budgets. A sufficiently large competition may return `SEARCH_EXHAUSTED` even when a feasible schedule exists.
+
+- **Why it happens:** a resource-scoped rejection excludes only the named resource at the current instant (ADR-0075 § 8). So each unit re-tries every busy resource at every intermediate breakpoint, and the call count grows roughly quadratically with the number of resources.
+- **Why the result stays honest:** budget exhaustion is reported as such and never as infeasibility.
+- **Future work** (each gets its own ADR when chosen; neither is part of v1):
+  - (a) judge-guided candidate skipping, using information the judge already returns (for example a conflict's `expected` earliest start), removing only candidates the judge rejects;
+  - (b) an incremental or prepared judge API.
+
+**`SEARCH_EXHAUSTED` is never `INFEASIBLE`:**
+
+| Status | Meaning |
+|---|---|
+| `INFEASIBLE` | The search completed within budget and established that no acceptable placement exists for at least one unit within the v1 greedy search space (given the preserved content and earlier placements) |
+| `SEARCH_EXHAUSTED` | The search was stopped because its permitted judge-call budget was exhausted. Nothing is concluded about the units it did not finish deciding |
 
 ## 30. Security
 
