@@ -231,9 +231,31 @@ HARD FEASIBILITY (+ B5)  →  EARLIEST FEASIBLE INTERVAL  →  DETERMINISTIC RES
     ∪ { starts of the resource's effective and declared intervals }          (expandAvailability)
     ∪ { x + c :  x ∈ {start, O.end, B.end} of every live or accepted assignment,
                  c ∈ {0} ∪ every lead, rest minimum and start spacing declared by any pinned requirement }
+    ∪ { local start of every calendar date intersecting the horizon, in the EVENT zone }
+                 — only when the unit's requirement declares maxUnitsPerEntrantPerDay       (zoned.ts)
   ```
 
-- **Why `T` is complete:** every lower bound the judge enforces is "an anchor plus a declared constant" or "a declared window opens"; upper bounds only remove instants. So the earliest feasible instant, given the fixed content, belongs to `T`, and **the greedy search returns exactly ADR-0071's earliest feasible interval within the horizon**.
+- **Why `T` is complete:** every lower bound the judge enforces is one of the sources below, and upper bounds only remove instants. So the earliest feasible instant, given the fixed content, belongs to `T`, and **the greedy search returns exactly ADR-0071's earliest feasible interval within the horizon**.
+
+  | Constraint / source | Candidate breakpoint | Reason |
+  |---|---|---|
+  | Horizon (window start, `from`) | Horizon start | Nothing earlier is allowed (D9) |
+  | Availability (B5, D8) | Start of each effective and declared interval | A closure or an undeclared stretch ends where a declared-open interval starts |
+  | Exclusive occupancy, key siblings (R1, R4) | `B.end` of each claim | The resource frees when the releasing claim's blocking interval ends |
+  | Shared capacity (R2) | `O.end` (= `B.end`) of each claim | Capacity frees when a claim ends |
+  | Participant / team overlap (D10) | `O.end` of each appearance | The person or team is free at the end of the other unit |
+  | Rest (B8, D10) | `O.end` + each declared rest minimum | The bound is the predecessor's end plus the later unit's rest |
+  | Dependency (B8, D11) | `O.end` + each declared dependency lead | The bound is the feeders' latest end plus the dependent's lead |
+  | Start spacing (B4, D7) | Slot `start` + each declared spacing | The bound is the previous slot plus the larger spacing |
+  | Concurrent starts (B4, D7) | Slot `start` | A unit may join an existing slot |
+  | **Daily-limit boundary (B6, D10)** | **Local start of each calendar date in the event timezone** | **The daily limit is evaluated by event-local calendar date** |
+
+- **Daily-limit amendment** (made during the 05E-E implementation, before any release):
+  - **Why it was needed.** The first version of this ADR mapped "daily-limit dates" to declared-open interval starts. That fails when availability crosses local midnight. For example, weekly windows of 00:00–24:00 on every day merge into one continuous interval, so no interval starts at local midnight.
+  - **The case that exposed it:** continuous availability, a HARD limit of 1 unit per entrant per day, the entrant already placed on day N, and a new unit for the same entrant. The earliest feasible start is local midnight of day N+1 in the event zone. That instant is neither an anchor plus a constant nor an availability start. The domain missed it, and the unit was reported `NO_FEASIBLE_CANDIDATE` although the judge accepted local midnight.
+  - **How the boundaries are generated.** They are the event zone's local-date starts within the horizon: 00:00 local, resolved with 05E-A's recurring-rule DST semantics (`resolveRecurring`, `localMs`, `addDays`, `localDateOf`). A skipped local midnight moves forward to the first instant of that date, exactly as availability expands local days. They are added only when the unit's requirement declares a daily limit, because only its own requirement's limit counts the unit (ADR-0073 B6).
+  - **What it is not.** It is **not a scheduling grid**: no fixed interval, no UTC midnight, no server or browser zone.
+  - **What it leaves unchanged.** ADR-0071 is unchanged; this amendment restores the completeness that ADR-0071's earliest feasible interval requires. Strategy version stays `1` (nothing had shipped).
 - **Sub-second anchors:** legacy sub-second anchors round up to the next whole second.
 - **Arithmetic:** integer milliseconds on `interval.ts` (D3).
 - **Local time:** all local-time logic is 05E-A's (`zoned.ts`, `expandAvailability`, layer zones). Daily limits are judged by D in the event zone. Nothing uses a server or browser zone.
