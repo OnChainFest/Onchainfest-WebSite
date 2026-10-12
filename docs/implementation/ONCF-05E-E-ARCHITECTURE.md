@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Readiness audit (ONCF-05E-E-0).** Architecture frozen by [ADR-0075](../adr/ADR-0075-scheduler-proposal-engine-v1-semantics.md) once approved. Implementation **not started** |
+| Status | **Readiness audit (ONCF-05E-E-0).** Architecture frozen by [ADR-0075](../adr/ADR-0075-scheduler-proposal-engine-v1-semantics.md) once approved. Pure engine implemented (PR #13); read-only preview integration in § 35 (ONCF-05E-E-2). Commit **not started** |
 | Baseline | `39c0583` on `main` (PR #11, ONCF-05E-D merged) |
 | Contract | [ONCF-05E architecture](./ONCF-05E-ARCHITECTURE.md) · ADR-0066–0074 (unchanged) · ADR-0075 (new) · [ONCF-05E-D architecture §24](./ONCF-05E-D-ARCHITECTURE.md) (handoff) |
 | Migration | None required (§ 24) |
@@ -568,3 +568,45 @@ Every row is expressed only by plan, 05D, profile, resource and availability dat
 4. Add two routes (`COMP_MANAGE_SCHEDULE`) and revise the two inventory tests deliberately.
 5. Add the § 31 matrix, the § 32 cross-sport suite and the golden fixtures (§ 33). Extend the sport-identity source guard.
 6. No migration, no package change, no change to 05E-A/B/C/D semantics. If implementation finds that any of these is required, stop and raise an ADR.
+
+## 35. Preview integration (ONCF-05E-E-2)
+
+The pure engine (PR #13) is connected to authoritative state through one read-only path. Commit, persistence of proposals, UI and any background execution are **not** part of this slice.
+
+```
+POST /v1/schedule-versions/:versionId/proposals/preview      (COMP_MANAGE_SCHEDULE · read-only)
+  → ScheduleStore.previewProposal
+      05D target states (read just before the transaction, as validate)
+      authorize (COMP_MANAGE_SCHEDULE; closed competitions refused as for validate)
+      SET TRANSACTION READ ONLY                       ← PostgreSQL refuses any write from here
+      evaluationInput(version)                        ← the SAME loader validate / publish use (§ 34.1)
+      + event lifecycle states, latest plan offsets, base PUBLISHED version id
+      → proposeSchedule(input)                        ← the only search; evaluateSchedule the only judge
+  ← { versionId, competitionId, proposal: <canonical body + proposalHash>, diagnostics }
+```
+
+| Concern | Decision |
+|---|---|
+| Route | Under `/v1/schedule-versions/:versionId/` as ADR-0075 § 24 defers it. The version is the open draft; another status is `INCOMPLETE_STATE`. More than one open draft (a schema invariant) fails closed (`AMBIGUOUS_DRAFT`) |
+| Shared loader | `ScheduleStore.report`'s input assembly is factored into `evaluationInput`, with no behaviour change: `validate` / `publish` reports and hashes are byte-identical |
+| Request | Closed JSON object body (`{}` at minimum, as for the other closed-body commands): optional `scope {eventIds?, roundIds?}` (UUIDs, unique) and optional `from` (ISO-8601 instant, whole seconds). Any other field is a 400. `from` never defaults to the clock. No idempotency key: nothing is written |
+| Scope | Validated against the loaded competition (its events, the rounds of its contests). A foreign or unknown id is `INVALID_INPUT` `FOREIGN_SCOPE`, with a fixed message that never echoes the id |
+| Response | `proposal` is the engine's canonical body with its `proposalHash` (no API-side hashing or serialization); `diagnostics` (judge calls, skips, rebuilds) are returned beside it and never hashed |
+| Read-only | Authorization first (a denial may audit, as everywhere), then `SET TRANSACTION READ ONLY`. No lock, audit, outbox or idempotency record. Proved by a byte-level snapshot of every scheduling, resource, availability, pin, projection, audit and outbox row of the competition before and after, and by a probe that attempts a write inside the transaction and is refused by PostgreSQL |
+
+**Error mapping** (existing HTTP conventions, `errorBody`):
+
+| Condition | Domain error | HTTP |
+|---|---|---|
+| Malformed body, unknown field, bad `from`, foreign scope, engine `INVALID_INPUT` | `INVALID_INPUT` | 400 |
+| No authentication | `UNAUTHENTICATED` | 401 |
+| No `COMP_MANAGE_SCHEDULE` on the version's competition | `FORBIDDEN` | 403 |
+| Unknown version | `NOT_FOUND` | 404 |
+| Version not the open draft (engine `INCOMPLETE_STATE`), closed competition, ambiguous draft | `INVALID_TRANSITION` (message names `INCOMPLETE_STATE`) | 409 |
+| `SUCCESS`, `NOTHING_TO_PLACE`, `INFEASIBLE`, `NO_CANDIDATES`, `SEARCH_EXHAUSTED` | — (a proposal) | 200 |
+
+**Interpretations recorded (no ADR change):**
+- `NO_PROFILE` and `EVENT_NOT_SCHEDULABLE` stay per-unit reasons (ADR-0075 § 13). They are not targets, so they never make a run `INFEASIBLE`; a run with only such units is `NOTHING_TO_PLACE` with the reasons listed.
+- A preview of a large competition runs inside one read-only transaction for as long as the engine needs (bounded by the logical budget, § 29). No wall-clock guard is added in this slice.
+
+**Tests:** `packages/persistence/src/oncf05e-e.int.test.ts` (statuses, refusals, authorization, scope, `from`, read-only proofs, determinism, one event per sport through the same loader with grouped / shared / exclusive resources, and a source guard on the preview path) and `apps/api/src/oncf05e-e.int.test.ts` (HTTP authorization, closed body, response shape, observable read-only, byte-identical repeats, route inventory). The 05E-B / 05E-C inventory tests list the preview route.

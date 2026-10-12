@@ -5,9 +5,11 @@ import {
   evaluateSchedule,
   ianaZoneIssue,
   isWholeSecond,
+  proposeSchedule,
   reportVerdict,
   resolveRequirement,
   scheduleReportHash,
+  ScheduleProposalError,
   targetKey,
   type ContestStatus,
   type ContestType,
@@ -19,6 +21,8 @@ import {
   type OccupancyMode,
   type PlaceState,
   type RoundType,
+  type ScheduleEvaluationInput,
+  type ScheduleProposal,
   type SchedulingProfileSpec,
   type StagePrimitive,
   type UnitContestFacts,
@@ -524,11 +528,15 @@ export class ScheduleStore {
   }
 
   /**
-   * The canonical report over exactly the version's current content: every input loaded here,
-   * server-side, and judged by the 05E-D engine (ADR-0074 D1, D2). The one path for `validate` and
-   * `publish`.
+   * The 05E-D engine's input for exactly the version's current content, every value loaded here,
+   * server-side (ADR-0074 D2). The one loader for `validate`, `publish` and the 05E-E proposal
+   * preview (ADR-0075 § 4), so a proposal is judged against exactly what publication would judge.
    */
-  private async report(ctx: TxContext, v: VersionRow, states: TargetStates) {
+  private async evaluationInput(
+    ctx: TxContext,
+    v: VersionRow,
+    states: TargetStates,
+  ): Promise<ScheduleEvaluationInput> {
     const competitionId = v.competition_id;
     const { rows: tz } = await sql<{ timezone: string }>`
       SELECT timezone FROM competition.competition_profile WHERE competition_id = ${competitionId}`.execute(
@@ -800,7 +808,7 @@ export class ScheduleStore {
       ctx.trx,
     );
 
-    const report = evaluateSchedule({
+    return {
       competitionId,
       competitionTimezone: competitionZone,
       scheduleVersionId: v.version_id,
@@ -827,7 +835,15 @@ export class ScheduleStore {
         resourceId: f.resource_id,
         fact: availabilityFactOfRow(f),
       })),
-    });
+    };
+  }
+
+  /**
+   * The canonical report over exactly the version's current content, judged by the 05E-D engine
+   * (ADR-0074 D1, D2). The one path for `validate` and `publish`.
+   */
+  private async report(ctx: TxContext, v: VersionRow, states: TargetStates) {
+    const report = evaluateSchedule(await this.evaluationInput(ctx, v, states));
     return { report, reportHash: scheduleReportHash(report) };
   }
 
@@ -844,6 +860,113 @@ export class ScheduleStore {
         report,
         hardConflicts: verdict.hard,
         conflicts: report.conflicts.map((c) => ({ conflictKey: conflictKey(c), ...c })),
+      };
+    });
+  }
+
+  // ───────────────────────────── proposal preview (05E-E; ADR-0075 § 16) ─────────────────────────────
+
+  /**
+   * ADR-0075 § 16 PREVIEW: the 05E-E proposal for the open draft. The pure engine
+   * (`proposeSchedule`) runs over exactly the input `validate` loads (same loader, same judge) plus
+   * the authoritative facts the judge does not read: lifecycle states, latest plan offsets and the
+   * base PUBLISHED version. Nothing here searches, judges or chooses.
+   *
+   * Strictly observational: after authorization the transaction is READ ONLY at the database level,
+   * nothing is locked, audited or emitted, and no proposal is stored (v1 is ephemeral, § 3). `scope`
+   * and `from` are the only request parameters (§ 4). The budget and strategy are the engine's (§ 12).
+   */
+  async previewProposal(input: {
+    actorAccountId: string;
+    versionId: string;
+    scope?: { readonly eventIds?: readonly string[]; readonly roundIds?: readonly string[] };
+    from?: Date | string;
+  }) {
+    const fromMs =
+      input.from === undefined ? undefined : instantOrThrow(input.from, 'from').getTime();
+    if (fromMs !== undefined && fromMs % 1000 !== 0)
+      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'from must be a whole-second instant');
+    const states = await this.targetStates(input.actorAccountId, input.versionId);
+    return this.tx(async (ctx) => {
+      const v = await this.version(ctx, input.versionId);
+      const c = await this.competition(
+        ctx,
+        input.actorAccountId,
+        v.competition_id,
+        'COMP_MANAGE_SCHEDULE',
+      );
+      // From here on PostgreSQL refuses any write of this transaction.
+      await sql`SET TRANSACTION READ ONLY`.execute(ctx.trx);
+      const { rows: drafts } = await sql<{ n: number }>`
+        SELECT count(*)::int AS n FROM competition.v_schedule_version_current
+        WHERE competition_id = ${v.competition_id} AND status = 'DRAFT'`.execute(ctx.trx);
+      // One open draft per competition is a schema invariant; never pick one arbitrarily.
+      if ((drafts[0]?.n ?? 0) > 1)
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'the competition has more than one open schedule draft',
+          { reason: 'AMBIGUOUS_DRAFT' },
+        );
+
+      const judge = await this.evaluationInput(ctx, v, states);
+      // Scope names only this competition's events and rounds (ADR-0075 § 13). Fixed message: the
+      // request's ids are never echoed, and a foreign id reads the same whether it exists or not.
+      const events = new Set(judge.events.map((e) => e.id));
+      const rounds = new Set(judge.contests.map((x) => x.roundId));
+      if (
+        (input.scope?.eventIds ?? []).some((id) => !events.has(id)) ||
+        (input.scope?.roundIds ?? []).some((id) => !rounds.has(id))
+      )
+        throw new DomainError(
+          DomainErrorCode.INVALID_INPUT,
+          'the scope names an event or round outside this competition',
+          { reason: 'FOREIGN_SCOPE' },
+        );
+
+      const { rows: eventStatuses } = await sql<{ event_id: string; status: string }>`
+        SELECT s.event_id, s.status FROM competition.v_event_current s
+        JOIN competition.event e ON e.id = s.event_id
+        WHERE e.competition_id = ${v.competition_id}`.execute(ctx.trx);
+      // The same latest plan offset 05E-C's write default uses for the expected end.
+      const { rows: offsets } = await sql<{ contest_id: string; seconds: number }>`
+        SELECT c.id AS contest_id, coalesce(max(ce.start_offset_seconds), 0)::int AS seconds
+        FROM competition.contest c JOIN competition.event e ON e.id = c.event_id
+        LEFT JOIN competition.contest_entry ce ON ce.contest_id = c.id
+        WHERE e.competition_id = ${v.competition_id} GROUP BY c.id`.execute(ctx.trx);
+
+      let proposal: ScheduleProposal;
+      try {
+        proposal = proposeSchedule({
+          judge,
+          draftStatus: v.status,
+          competitionStatus: c.status,
+          basePublishedVersionId: v.base_version_id,
+          eventStatuses: eventStatuses
+            .filter((e) => events.has(e.event_id))
+            .map((e) => ({ eventId: e.event_id, status: e.status })),
+          latestOffsets: offsets.map((o) => ({ contestId: o.contest_id, seconds: o.seconds })),
+          ...(input.scope === undefined ? {} : { scope: input.scope }),
+          ...(fromMs === undefined ? {} : { fromMs }),
+        });
+      } catch (e) {
+        // ADR-0075 § 13 refusals: no proposal. INCOMPLETE_STATE is a state conflict, never a status.
+        if (e instanceof ScheduleProposalError)
+          throw new DomainError(
+            e.code === 'INVALID_INPUT'
+              ? DomainErrorCode.INVALID_INPUT
+              : DomainErrorCode.INVALID_TRANSITION,
+            `proposal refused (${e.code}): ${e.message}`,
+            { reason: e.code },
+          );
+        throw e;
+      }
+      // The canonical proposal (hashed) and the execution metadata (never hashed), kept apart.
+      const { diagnostics, ...body } = proposal;
+      return {
+        versionId: v.version_id,
+        competitionId: v.competition_id,
+        proposal: body,
+        diagnostics,
       };
     });
   }

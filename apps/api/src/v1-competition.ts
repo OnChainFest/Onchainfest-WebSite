@@ -1466,8 +1466,9 @@ export function registerCompetitionV1(
 
   // Reads need COMP_VIEW_PRIVATE; every change, validation and publication COMP_MANAGE_SCHEDULE,
   // decided in the store. Drafts are private; the public schedule is the PUBLISHED projection only.
-  // Publication is this explicit, human command — nothing publishes automatically. No conflict
-  // engine, proposal or optimization route exists here (05E-D/E).
+  // Publication is this explicit, human command — nothing publishes automatically. The conflict
+  // engine runs only inside validate / publish (05E-D). The one 05E-E route is the read-only
+  // proposal preview: no commit, generation or optimization route exists here.
   const schedule = deps.schedule;
   if (schedule !== undefined) {
     const versionContestParams = {
@@ -1602,6 +1603,36 @@ export function registerCompetitionV1(
           actorAccountId: requireAuth(request).accountId,
           versionId: params<{ versionId: string }>(request).versionId,
         }),
+    );
+    // ONCF-05E-E proposal PREVIEW (ADR-0075 § 16): COMP_MANAGE_SCHEDULE, read-only, no audit and no
+    // idempotency key (nothing is written). The body carries only the request parameters of § 4:
+    // any other field (resources, availability, profiles, placements, budget...) is refused by the
+    // closed schema. Every authoritative value is loaded server-side. `from` is optional and never
+    // defaults to the clock.
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/proposals/preview',
+      'COMP_STAFF',
+      {
+        params: idParams('versionId'),
+        body: obj({
+          scope: obj({
+            eventIds: { type: 'array', maxItems: 100, uniqueItems: true, items: uuid },
+            roundIds: { type: 'array', maxItems: 1000, uniqueItems: true, items: uuid },
+          }),
+          from: instant,
+        }),
+      },
+      async (request) => {
+        const b = body<{ scope?: { eventIds?: string[]; roundIds?: string[] }; from?: string }>(
+          request,
+        );
+        return schedule.previewProposal({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+          ...defined({ scope: b.scope, from: b.from }),
+        });
+      },
     );
     route(
       'POST',
