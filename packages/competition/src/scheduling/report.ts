@@ -12,7 +12,8 @@ import {
  * The schedule conflict-report CONTRACT (ONCF-05E-C, ADR-0071 + ADR-0073 B1/B7). 05E-C owns the
  * shape, the vocabulary, the canonical form and the hash; it does not decide feasibility. The 05E-C
  * baseline validator fills it with the few structural checks it may run, and declares exactly those
- * in `coverage`; the 05E-D engine will fill it with every other code, without changing this module.
+ * in `coverage`; the 05E-D engine (`engine.ts`) fills it with every other code, through the one
+ * additive revision ADR-0074 D13 authorizes (`reportVersion: 2`).
  *
  * Determinism: lists are sorted, pairwise conflicts collapse to one, conflicts are ordered by the
  * seven frozen keys, and nothing depends on insertion order, map iteration, wall-clock or randomness.
@@ -126,6 +127,11 @@ export interface ScheduleReportEventInput {
 
 export interface ScheduleReportInputs {
   readonly events: readonly ScheduleReportEventInput[];
+  /**
+   * reportVersion 2 (ADR-0074 D13): the competition's IANA zone — the zone of the competition
+   * availability layer and of every resource without its own zone. Absent in version 1.
+   */
+  readonly competitionTimezone?: string;
   readonly resourceRevisionIds: readonly string[];
   readonly availabilityFactIds: readonly string[];
   /** Digest of the 05D occupancy the report used. */
@@ -133,8 +139,14 @@ export interface ScheduleReportInputs {
   readonly contestStatuses: readonly { readonly contestId: string; readonly status: string }[];
 }
 
+/**
+ * 1 = the 05E-C contract (baseline validator); 2 = the additive ADR-0074 revision (05E-D engine):
+ * `inputs.competitionTimezone`, and an occupancy digest that also covers 05D place states.
+ */
+export type ScheduleReportVersion = 1 | 2;
+
 export interface ScheduleConflictReport {
-  readonly reportVersion: 1;
+  readonly reportVersion: ScheduleReportVersion;
   readonly competitionId: string;
   readonly scheduleVersionId: string;
   /** Content watermark: the current assignment fact ids evaluated. */
@@ -279,6 +291,13 @@ function hashOf(schemaId: string, value: CanonicalValue): ContentHash {
  * conflict's code must be inside the declared coverage.
  */
 export function canonicalScheduleReport(r: ScheduleConflictReport): ScheduleConflictReport {
+  if (r.reportVersion !== 1 && r.reportVersion !== 2)
+    throw new ScheduleReportError('reportVersion must be 1 or 2');
+  const zone = r.inputs.competitionTimezone;
+  if (r.reportVersion === 2 && (typeof zone !== 'string' || zone.length === 0))
+    throw new ScheduleReportError('a version-2 report records the competition time zone');
+  if (r.reportVersion === 1 && zone !== undefined)
+    throw new ScheduleReportError('a version-1 report has no competition time zone');
   const coverage = [...new Set(r.coverage)].sort(compareUtf16) as ConflictCode[];
   for (const c of coverage)
     if (!CONFLICT_CODES.includes(c)) throw new ScheduleReportError(`unknown code ${c}`);
@@ -304,12 +323,13 @@ export function canonicalScheduleReport(r: ScheduleConflictReport): ScheduleConf
     )
     .sort((a, b) => compareUtf16(a.eventId, b.eventId));
   return {
-    reportVersion: 1,
+    reportVersion: r.reportVersion,
     competitionId: r.competitionId,
     scheduleVersionId: r.scheduleVersionId,
     assignmentIds: sorted(r.assignmentIds),
     inputs: {
       events: ev,
+      ...(r.reportVersion === 2 ? { competitionTimezone: zone as string } : {}),
       resourceRevisionIds: sorted(r.inputs.resourceRevisionIds),
       availabilityFactIds: sorted(r.inputs.availabilityFactIds),
       occupancyDigest: r.inputs.occupancyDigest,

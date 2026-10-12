@@ -1,5 +1,7 @@
 import {
   CANONICAL_CATALOG,
+  CONFLICT_ENGINE,
+  ENGINE_COVERAGE,
   RULESET_TEMPLATES,
   SCHEDULING_PROFILE_TEMPLATES,
   type DisciplineVersionSpec,
@@ -268,6 +270,19 @@ describe('ONCF-05E-C schedule versions over the API', () => {
       ).status,
     ).toBe(400);
 
+    // Declared hours, every day (ONCF-05E-D reports undeclared time as AVAILABILITY_UNDECLARED).
+    for (const weekday of [1, 2, 3, 4, 5, 6, 7])
+      expect(
+        (
+          await call(
+            'POST',
+            `/v1/competitions/${A.competitionId}/availability`,
+            { ...A.h, ...idem() },
+            { resourceId: null, fact: { kind: 'WEEKLY', weekday, start: '00:00', end: '24:00' } },
+          )
+        ).status,
+      ).toBe(201);
+
     // Drafts: COMP_MANAGE_SCHEDULE only; an idempotent retry returns the same draft.
     const base = `/v1/competitions/${A.competitionId}/schedule`;
     for (const h of [stranger.h, B.h, manager.h])
@@ -317,11 +332,13 @@ describe('ONCF-05E-C schedule versions over the API', () => {
     // Validation and publication.
     const report = await call('POST', `/v1/schedule-versions/${versionId}/validate`, scheduler.h);
     expect(report.status, report.text).toBe(200);
-    expect(report.body?.report.coverage).toEqual([
-      'INCOMPLETE_ASSIGNMENT',
-      'OUTSIDE_EVENT_WINDOW',
-      'RESOURCE_TYPE_MISMATCH',
-    ]);
+    // The 05E-D engine is the validator in force; one match a day on court 1 is feasible.
+    expect(report.body?.report.validator).toEqual(CONFLICT_ENGINE);
+    expect(report.body?.report.reportVersion).toBe(2);
+    expect([...(report.body?.report.coverage as string[])].sort()).toEqual(
+      [...ENGINE_COVERAGE].sort(),
+    );
+    expect(report.body?.conflicts).toEqual([]);
     const publish = (h: Record<string, string>, reportHash: string) =>
       call(
         'POST',
