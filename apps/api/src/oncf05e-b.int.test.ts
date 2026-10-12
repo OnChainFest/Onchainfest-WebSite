@@ -271,8 +271,9 @@ describe('ONCF-05E-B over the API', () => {
       .filter((r) => /schedul/i.test(r.url))
       .map((r) => `${r.method} ${r.url}`)
       .sort();
-    // Pre-existing BRT-05 schedule routes, this phase's catalog read, and (since ONCF-05E-C) the
-    // schedule-version surface. Still no conflict-engine, proposal or generation route (05E-D/E).
+    // Pre-existing BRT-05 schedule routes, this phase's catalog read, (since ONCF-05E-C) the
+    // schedule-version surface and (since ONCF-05E-E) the read-only proposal preview. Still no
+    // conflict-engine, proposal-commit or generation route.
     expect(routes).toEqual(
       [
         'GET /v1/catalog/scheduling-profiles/:versionId',
@@ -286,6 +287,7 @@ describe('ONCF-05E-B over the API', () => {
         'POST /v1/schedule-versions/:versionId/assignments/:contestId/lock',
         'POST /v1/schedule-versions/:versionId/assignments/:contestId/unlock',
         'POST /v1/schedule-versions/:versionId/validate',
+        'POST /v1/schedule-versions/:versionId/proposals/preview',
         'POST /v1/schedule-versions/:versionId/publish',
         'POST /v1/schedule-versions/:versionId/discard',
       ].sort(),
