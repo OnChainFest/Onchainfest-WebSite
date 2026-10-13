@@ -3,6 +3,7 @@
 - **Status:** Proposed (frozen for ONCF-05E-D implementation once approved)
 - **Date:** 2026-10-11
 - **Origin:** ONCF-05E-D-0 architecture and readiness audit, after PR #10 (ONCF-05E-C merged at `34f0ff8`). Builds on [ADR-0066](./ADR-0066-scheduling-boundary-and-competition-scope.md)–[ADR-0073](./ADR-0073-scheduling-semantics-clarifications-resource-occupancy-model.md). None of them is edited. Where this ADR narrows or extends one of their statements it says so explicitly (§ "Relationship to ADRs 0066–0073").
+- **Amended by:** ONCF-05E-F-6 (2026-10-13), D12 only: explicit unlock is not a publication-time exemption, and the moved-then-started recovery path ([ONCF-05E-F architecture](../implementation/ONCF-05E-F-ARCHITECTURE.md) Part III, findings C-1 and G-8). The amendment has this ADR's status.
 
 ## Context
 
@@ -207,7 +208,37 @@ Dependency lead and rest are independent lower bounds and are never summed (ADR-
 ### D12 — Staleness and locks (G12)
 
 - **`STALE_OCCUPANT` (HARD)**: an unsettled contest with a live assignment where any place it reads is STALE (its own dependent slot, the transition field place its `QUALIFIER` slot reads, or its dynamic round's field) — the same scope as 05D's start guard (`contestBlockers`). One per assignment, CERTAIN.
-- **`LOCKED_ASSIGNMENT_VIOLATION` (HARD)**: a settled contest (`IN_PROGRESS`, `COMPLETED`) whose live placement in the evaluated version (resource, start, expected end, changeover, or presence) differs from its live placement in the **base PUBLISHED version**. This is the case 05E-C's write-time refusal cannot see: a contest moved in the draft and started afterwards under the published schedule. Explicitly unlocked assignments are legitimate moves and are not violations. One per assignment.
+- **`LOCKED_ASSIGNMENT_VIOLATION` (HARD)**: a settled contest (`IN_PROGRESS`, `COMPLETED`) whose live placement in the evaluated version (resource, start, expected end, changeover, or presence) differs from its live placement in the **base PUBLISHED version**. This is the case 05E-C's write-time refusal cannot see: a contest moved in the draft and started afterwards under the published schedule. An explicit unlock gives no exemption: an unlocked assignment of a settled contest is judged exactly like any other (amended by ONCF-05E-F-6, below). One per assignment.
+
+**D12 amendment — explicit unlock and moved-then-started contests** (ONCF-05E-F-6, findings C-1 and G-8):
+
+- **Why it was needed.** The original text ended with: "Explicitly unlocked assignments are legitimate moves and are not violations." The engine never applied that exemption, and its input has no data to apply it with: D2 gives it live placements, not lock or unlock history. The written rule and the engine therefore disagreed (ONCF-05E-F-5, C-1). The sentence is withdrawn; the engine behaviour already matches the amended text.
+- **Two separate questions.**
+
+  | Question | Decided by | When |
+  |---|---|---|
+  | 1. May this assignment be edited manually? | The lock flag (ADR-0070 §8) and the contest's status (05E-C write-time refusals) | When the edit is written |
+  | 2. Can the resulting draft be published? | This engine (D12, D15), over live placements only | At validation and publication |
+
+  - **Lock** blocks ordinary manual moves of the assignment.
+  - **Unlock** (with a reason, ADR-0070 §8) allows a later manual edit of that assignment.
+  - Neither answers question 2. Lock state is **not an input** to `LOCKED_ASSIGNMENT_VIOLATION`.
+- **The rule.** A settled contest (`IN_PROGRESS`, `COMPLETED`) is always compared with its live placement in the base PUBLISHED version. Unlocking, moving or locking it again, in any order and at any time, never removes it from that comparison. An unlocked assignment whose contest then settles under a different published placement **is** a `LOCKED_ASSIGNMENT_VIOLATION`.
+- **The rule does not reach** unsettled contests. Their draft placements are never compared with the base, whatever their lock state. For them, unlock simply permits the edit.
+- **Moved-then-started contests (G-8).** The scenario:
+  1. contest X has published assignment A;
+  2. an organizer moves X to B in the draft;
+  3. X starts under A;
+  4. the draft is now unpublishable (`LOCKED_ASSIGNMENT_VIOLATION`, HARD);
+  5. X can no longer be edited, because a started contest is immutable for scheduling (`CONTEST_STARTED_OR_CLOSED`, 05E-C § 3; ADR-0070 §8 as amended).
+
+  This is an **intended, hard publication boundary**. Once a contest has started, its published assignment is the operational truth. No draft may weaken that, and no command may edit a started contest to make a draft publishable again.
+- **Recovery in v1.** Use the existing ADR-0070 commands:
+  1. discard the conflicting draft (`DRAFT → DISCARDED`, with a reason);
+  2. open a new draft. It is based on the current PUBLISHED version and carries the started contest's published placement unchanged (05E-C § 3, `openDraft`).
+
+  The organizer then redoes the other draft edits that are still wanted. Losing those edits is a known v1 cost. **No repair command exists, and none may be added** without a new ADR that preserves this rule.
+- **What it leaves unchanged.** The code, its severity, its scope (settled contests only), one conflict per assignment, the D4 exception and D13's field usage. No report-contract change, no new input, no engine change, no migration.
 
 ### D13 — Report contract and emission (G13, G14)
 
@@ -300,7 +331,7 @@ The engine never converts malformed data into a conflict and never hides a confl
 
 ## Frozen vs Deferred
 
-**Frozen now:** D1–D16.
+**Frozen now:** D1–D16 (D12 as amended by ONCF-05E-F-6).
 
 **Deferred to the 05E-D implementation:** TypeScript names of the input type and error class; the occupancy-digest schema id string; internal indexing (sweep lines, per-person indexes); possible-occupant caching; exact test file layout.
 
