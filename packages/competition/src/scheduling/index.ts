@@ -1,4 +1,12 @@
 export * from './assignment';
+export {
+  planProposalCommit,
+  type ProposalCommitFact,
+  type ProposalCommitPlan,
+  type ProposalCommitRefusal,
+  type ProposalCommitRequest,
+  type ProposalCommitResult,
+} from './commit';
 export * from './engine';
 export * from './profile';
 export * from './report';
