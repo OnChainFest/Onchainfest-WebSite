@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import {
+  ADVANCEMENT_POLICY_TEMPLATES,
   BASKETBALL_3X3_V2,
   BOWLING_SINGLES_V2,
   CANONICAL_CATALOG,
@@ -12,10 +13,13 @@ import {
   SCHEDULING_PROFILE_TEMPLATES,
   SWIMMING_POOL_V2,
   type DisciplineVersionSpec,
+  type ScoreSheet,
 } from '@br/competition';
-import { DomainErrorCode, newId } from '@br/domain';
+import { DomainErrorCode, newId, type Uuid } from '@br/domain';
+import { CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import {
   apiDb,
+  declaredNoParticipation,
   newAthlete,
   newOrganizer,
   newTestAccount,
@@ -25,7 +29,13 @@ import {
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AdvancementStore } from './advancement-store';
+import { AuthorityStore } from './authority-store';
 import { CatalogStore } from './catalog-store';
+import {
+  CompetitionHierarchyResolver,
+  createCompetitionResultLedger,
+} from './competition-hierarchy';
 import { CompetitionReader } from './competition-reader';
 import { CompetitionStore } from './competition-store';
 import { StructureStore } from './competition-structure-store';
@@ -63,6 +73,10 @@ const scoring = new ScoringStore(db);
 const resources = new ResourceStore(db);
 const schedule = new ScheduleStore(db);
 const teams = new TeamStore(db);
+const advancement = new AdvancementStore(db, scoring);
+const authority = new AuthorityStore(db, { conflictChecker: declaredNoParticipation });
+const ledger = createCompetitionResultLedger(db, { conflictChecker: declaredNoParticipation });
+const resolver = new CompetitionHierarchyResolver(db);
 const k = () => `k-${newId()}`;
 
 const tag = newId().replace(/-/g, '').slice(-8);
@@ -130,7 +144,21 @@ beforeAll(async () => {
         name: t.name,
         versions: [{ spec: t.spec, basis: t.basis }],
       })),
+      // ONCF-05E-F-4: the 05D axes, so results and advancement can change state between a preview
+      // and its commit exactly as in production.
+      advancementPolicies: ADVANCEMENT_POLICY_TEMPLATES.map((t) => ({
+        code: `a${tag}-${t.code}`,
+        name: t.name,
+        versions: [{ spec: t.spec, basis: t.basis }],
+      })),
     },
+    classificationTemplates: CLASSIFICATION_TEMPLATES.filter((t) => t.code === 'golf_stroke').map(
+      (t) => ({
+        code: `t${tag}_${t.code}`,
+        name: t.name,
+        versions: [{ spec: t.spec, basis: t.basis }],
+      }),
+    ),
   });
   expect(report.conflicts).toEqual([]);
   const listed = await reader.catalog();
@@ -144,6 +172,10 @@ beforeAll(async () => {
     if (r.code.startsWith(`r${tag}-`)) ids[`rs:${r.code.slice(`r${tag}-`.length)}`] = r.versionId;
   for (const p of listed.schedulingProfileVersions)
     if (p.code.startsWith(`p${tag}-`)) ids[`sp:${p.code.slice(`p${tag}-`.length)}`] = p.versionId;
+  for (const t of listed.classificationTemplateVersions)
+    if (t.code.startsWith(`t${tag}_`)) ids[`tp:${t.code.slice(`t${tag}_`.length)}`] = t.versionId;
+  for (const a of listed.advancementPolicyVersions)
+    if (a.code.startsWith(`a${tag}-`)) ids[`ap:${a.code.slice(`a${tag}-`.length)}`] = a.versionId;
 }, 240_000);
 
 // ───────────────────────────── fixtures ─────────────────────────────
@@ -207,6 +239,9 @@ interface EventSpec {
   /** Seed by declared entry time (swimming heats), else a deterministic draw. */
   byEntryTime?: boolean;
   window?: { startsAt: string; endsAt: string };
+  /** 05D axes (ONCF-05E-F-4): an advancement policy and a classification template to pin. */
+  policy?: string;
+  template?: string;
 }
 
 /** An event with a locked, seeded field and a generated plan, created only through the stores. */
@@ -233,6 +268,12 @@ async function plannedEvent(comp: Comp, o: EventSpec) {
     eventId,
     rulesetVersionId: ids[`rs:${o.ruleset}`] as string,
     ...(o.profile === null ? {} : { schedulingProfileVersionId: ids[`sp:${o.profile}`] as string }),
+    ...(o.policy === undefined
+      ? {}
+      : { advancementPolicyVersionId: ids[`ap:${o.policy}`] as string }),
+    ...(o.template === undefined
+      ? {}
+      : { classificationTemplateVersionId: ids[`tp:${o.template}`] as string }),
     idempotencyKey: k(),
   });
   for (let i = 0; i < (o.entrants ?? 0); i++) {
@@ -1331,6 +1372,8 @@ describe('failure atomicity: a failure at any step leaves no trace (real rollbac
 interface SportCase extends EventSpec {
   readonly sport: string;
   readonly resources: readonly [typeCode: string, extra: Record<string, unknown>][];
+  /** The resource shape this case proves (the preview suite's table; asserted from data only). */
+  readonly shape?: 'EXCLUSIVE_PAIR' | 'GROUPED_EXCLUSIVE' | 'GROUPED_SHARED';
 }
 
 const lanes = (i: number) => ({
@@ -1351,6 +1394,7 @@ const SPORTS: readonly SportCase[] = [
       ['TENNIS_COURT', {}],
       ['TENNIS_COURT', {}],
     ],
+    shape: 'EXCLUSIVE_PAIR',
   },
   {
     sport: 'padel',
@@ -1408,6 +1452,7 @@ const SPORTS: readonly SportCase[] = [
       ['BOWLING_LANE_PAIR', lanes(0)],
       ['BOWLING_LANE_PAIR', lanes(1)],
     ],
+    shape: 'GROUPED_EXCLUSIVE',
   },
   {
     sport: 'basketball',
@@ -1431,6 +1476,7 @@ const SPORTS: readonly SportCase[] = [
     formatConfig: { rounds: 2, groupSize: 4 },
     entrants: 8,
     resources: [['GOLF_COURSE', { capacity: 144 }]],
+    shape: 'GROUPED_SHARED',
   },
 ];
 
@@ -1455,8 +1501,9 @@ describe('cross-sport commit: the same path for every sport (ADR-0075 § 21)', (
     async (c) => {
       const comp = await competition();
       const ev = await plannedEvent(comp, c);
+      const own = [];
       for (const [i, [typeCode, extra]] of c.resources.entries())
-        await resource(comp, typeCode, `${c.sport} ${i + 1}`, extra);
+        own.push(await resource(comp, typeCode, `${c.sport} ${i + 1}`, extra));
       await openAllWeek(comp);
       const versionId = await draft(comp);
       const { proposal: p } = await preview(comp.actor, versionId);
@@ -1476,6 +1523,33 @@ describe('cross-sport commit: the same path for every sport (ADR-0075 § 21)', (
           provisional: f.provisional,
         })),
       ).toEqual(p.placements.map(({ softConflictKeys: _, ...x }) => x));
+
+      // ONCF-05E-F architecture § 25 (05E-F-4): the preview suite's shape table, asserted on the
+      // PERSISTED facts — grouped units stay one unit (one start) through the per-fact write path.
+      const units = new Map<string, typeof stored>();
+      for (const f of stored)
+        units.set(f.unit_key as string, [...(units.get(f.unit_key as string) ?? []), f]);
+      const startOf = (f: (typeof stored)[number]) => f.starts_at.getTime() / 1000;
+      if (c.shape === 'GROUPED_EXCLUSIVE') {
+        // The squad: eight facts of one unit, one start, packed over both EXCLUSIVE lane pairs.
+        const squad = [...units.values()].find((u) => u.length === 8);
+        expect(squad).toBeDefined();
+        expect(new Set(squad?.map(startOf)).size).toBe(1);
+        expect(new Set(squad?.map((f) => f.resource_id))).toEqual(new Set(own));
+      }
+      if (c.shape === 'GROUPED_SHARED') {
+        // Tee groups: several facts per unit on the one SHARED course, each group with one start.
+        const groups = [...units.values()].filter((u) => u.length > 1);
+        expect(groups.length).toBeGreaterThan(0);
+        for (const g of groups) expect(new Set(g.map(startOf)).size).toBe(1);
+        expect(new Set(stored.map((f) => f.resource_id))).toEqual(new Set(own));
+      }
+      if (c.shape === 'EXCLUSIVE_PAIR') {
+        // EXCLUSIVE resources: the two first-round contests share a start on two resources.
+        const first = stored.filter((f) => startOf(f) === epoch(WEEK.startsAt));
+        expect(first).toHaveLength(2);
+        expect(new Set(first.map((f) => f.resource_id))).toEqual(new Set(own));
+      }
       // The committed draft is judged by the same engine publication uses: no HARD conflict.
       expect(
         (await schedule.validate({ actorAccountId: comp.actor, versionId })).hardConflicts,
@@ -1483,4 +1557,562 @@ describe('cross-sport commit: the same path for every sport (ADR-0075 § 21)', (
     },
     600_000,
   );
+});
+
+// ───────────────────────────── ONCF-05E-F-4 hardening ─────────────────────────────
+
+/**
+ * ONCF-05E-F-4 (ONCF-05E-F architecture §§ 5, 25, 28): every remaining authoritative change between
+ * a preview and its commit, produced only through the production commands (no SQL mutation), is
+ * refused as `PROPOSAL_STALE` with the whole competition snapshot and the key's idempotency record
+ * unchanged; each case then shows the CURRENT state still commits afresh (the refusal is the stale
+ * hash, never the state).
+ */
+async function refusedAsStale(comp: Comp, versionId: string, hash: string) {
+  const before = await snapshot(comp.competitionId, [comp.actor]);
+  const key = k();
+  await rejects(
+    commit(comp.actor, versionId, hash, { idempotencyKey: key }),
+    DomainErrorCode.CONCURRENCY_CONFLICT,
+    'PROPOSAL_STALE',
+  );
+  expect(await snapshot(comp.competitionId, [comp.actor])).toEqual(before);
+  expect(await idempotencyRows(comp.actor, key)).toBe(0);
+}
+
+/** On the current state: a fresh preview is SUCCESS and commits exactly its own placements. */
+async function commitsAfresh(comp: Comp, versionId: string) {
+  const { proposal: p } = await preview(comp.actor, versionId);
+  expect(p.status, JSON.stringify(p.unplaced)).toBe('SUCCESS');
+  const before = await facts(versionId);
+  const r = await commit(comp.actor, versionId, p.proposalHash);
+  expect(r.placedContests).toBe(p.placements.length);
+  const added = (await facts(versionId)).slice(before.length);
+  expect(
+    added.map((f) => [f.contest_id, f.resource_id, f.starts_at.getTime() / 1000, f.reason]),
+  ).toEqual(
+    [...p.placements]
+      .sort((a, b) => (a.contestId < b.contestId ? -1 : 1))
+      .map((x) => [x.contestId, x.resourceId, x.start, `proposal ${p.proposalHash}`]),
+  );
+  return p;
+}
+
+const hashOf = async (comp: Comp, versionId: string) =>
+  (await preview(comp.actor, versionId)).proposal.proposalHash;
+
+/** A referee holding the sporting capabilities on this competition (Authority Engine grant). */
+async function referee(competitionId: string) {
+  const platform = await authority.registerPrincipal({
+    principalType: 'PLATFORM',
+    label: 'platform (05E-F-4)',
+  });
+  await authority.recognizeTrustAnchor({
+    principalId: platform.id,
+    recognitionScope: { recognitionLevel: ['PLATFORM'] },
+    basisRef: 'fixture',
+    governanceDecisionRef: `fx-${newId()}`,
+  });
+  const ref = await authority.registerPrincipal({
+    principalType: 'PERSON',
+    label: 'referee (05E-F-4)',
+  });
+  await authority.issueGrant({
+    actorPrincipalId: platform.id,
+    grantorPrincipalId: platform.id,
+    granteePrincipalId: ref.id,
+    capabilities: ['SUBMIT_RESULT', 'ACCEPT_RESULT', 'DECLARE_OFFICIAL', 'CORRECT_RESULT'] as never,
+    scope: { recognitionLevel: ['PLATFORM'], competition: [competitionId as Uuid] },
+    delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+  });
+  return ref.id;
+}
+
+/** An OFFICIAL result through the ResultLedger, validated under the pinned ruleset (as 05D). */
+async function official(actor: string, ref: Uuid, contestId: string, sheet: ScoreSheet) {
+  const v = await scoring.validateScoreSheet({ actorAccountId: actor, contestId, sheet });
+  if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  const result = await ledger.createResult({
+    scopeType: 'CONTEST',
+    scopeTargetId: contestId as Uuid,
+  });
+  const scope = await resolver.scopeOf('CONTEST', contestId, { recognitionLevel: 'PLATFORM' });
+  const { draftId } = await ledger.saveDraft({
+    resultId: result.id,
+    authorPrincipalId: ref,
+    disciplineVersionRef: 'oncf05e-f@1',
+    content: v.content,
+  });
+  const sub = await ledger.submitDraft({
+    draftId,
+    actorPrincipalId: ref,
+    scope,
+    idempotencyKey: k(),
+  });
+  for (const toStatus of ['PROVISIONAL', 'OFFICIAL'] as const)
+    await ledger.transition({
+      resultVersionId: sub.resultVersionId,
+      toStatus,
+      actorPrincipalId: ref,
+      scope,
+      idempotencyKey: k(),
+    });
+}
+
+/** Commit every pending 05D unit whose key starts with `prefix`, as its organizer does. */
+async function advance(comp: Comp, eventId: string, prefix: string) {
+  const s = await advancement.state({ actorAccountId: comp.actor, eventId });
+  const units = s.units.filter((u) => u.unitKey.startsWith(prefix));
+  expect(units.length).toBeGreaterThan(0);
+  return advancement.commit({
+    actorAccountId: comp.actor,
+    eventId,
+    units: units.map((u) => ({ unitKey: u.unitKey, previewHash: u.previewHash })),
+    idempotencyKey: k(),
+  });
+}
+
+/** The judge's hashed inputs for the draft (05E-D `validate`, read-only). */
+const inputsOf = async (comp: Comp, versionId: string) =>
+  (await schedule.validate({ actorAccountId: comp.actor, versionId })).report.inputs;
+
+describe('ONCF-05E-F-4: resource, availability and draft edits between preview and commit', () => {
+  it('a resource revised, or retired and then reactivated, after the preview is PROPOSAL_STALE', async () => {
+    const { comp, courts, versionId } = await setup();
+    const [c1, c2] = courts as [string, string];
+
+    // A. Revision: a new revision of an ACTIVE court (new label; type and status unchanged).
+    const h = await hashOf(comp, versionId);
+    const rev = await resources.reviseResource({
+      actorAccountId: comp.actor,
+      resourceId: c1,
+      resource: { label: 'Court 1 (resurfaced)' },
+      idempotencyKey: k(),
+    });
+    expect(rev).toMatchObject({ revision: 2, created: true });
+    await refusedAsStale(comp, versionId, h);
+
+    // B. Reactivation (ACTIVE ↔ RETIRED is the resource lifecycle): retired before the preview,
+    // which then uses the one active court; reactivated before the commit.
+    await resources.setResourceStatus({
+      actorAccountId: comp.actor,
+      resourceId: c2,
+      status: 'RETIRED',
+      reason: 'flooded',
+      idempotencyKey: k(),
+    });
+    const { proposal: oneCourt } = await preview(comp.actor, versionId);
+    expect(oneCourt.status).toBe('SUCCESS');
+    expect(new Set(oneCourt.placements.map((x) => x.resourceId))).toEqual(new Set([c1]));
+    await resources.setResourceStatus({
+      actorAccountId: comp.actor,
+      resourceId: c2,
+      status: 'ACTIVE',
+      reason: 'drained',
+      idempotencyKey: k(),
+    });
+    await refusedAsStale(comp, versionId, oneCourt.proposalHash);
+
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.proposalHash).not.toBe(oneCourt.proposalHash);
+  }, 600_000);
+
+  it('an availability fact revoked after the preview is PROPOSAL_STALE', async () => {
+    const { comp, courts, versionId } = await setup();
+    // A blackout declared before the preview and revoked (append-only revocation) before the commit.
+    const { availabilityId } = await resources.addAvailability({
+      actorAccountId: comp.actor,
+      competitionId: comp.competitionId,
+      resourceId: courts[0] as string,
+      fact: {
+        kind: 'BLACKOUT',
+        startsAt: '2027-09-07T00:00:00Z',
+        endsAt: '2027-09-07T06:00:00Z',
+        reason: 'maintenance',
+      },
+      idempotencyKey: k(),
+    });
+    const h = await hashOf(comp, versionId);
+    const before = await inputsOf(comp, versionId);
+    await resources.revokeAvailability({
+      actorAccountId: comp.actor,
+      availabilityId,
+      reason: 'maintenance cancelled',
+      idempotencyKey: k(),
+    });
+    const after = await inputsOf(comp, versionId);
+    expect(before.availabilityFactIds).toContain(availabilityId);
+    expect(after.availabilityFactIds).not.toContain(availabilityId);
+    await refusedAsStale(comp, versionId, h);
+    await commitsAfresh(comp, versionId);
+  }, 600_000);
+
+  it('a draft assignment moved, unlocked or removed after the preview is PROPOSAL_STALE; the edit is never overwritten', async () => {
+    const { comp, ev, courts, versionId } = await setup();
+    const sf1 = (ev.contests[0] as (typeof ev.contests)[0]).id;
+    const live = async () =>
+      (await schedule.getVersion({ actorAccountId: comp.actor, versionId })).assignments.find(
+        (a) => a.contestId === sf1,
+      );
+    await schedule.setAssignment({
+      actorAccountId: comp.actor,
+      versionId,
+      contestId: sf1,
+      assignment: { resourceId: courts[0] as string, startsAt: '2027-09-05T12:00:00Z' },
+      idempotencyKey: k(),
+    });
+
+    // A. Moved: another resource and time, with the mandatory reason.
+    let h = await hashOf(comp, versionId);
+    await schedule.setAssignment({
+      actorAccountId: comp.actor,
+      versionId,
+      contestId: sf1,
+      assignment: {
+        resourceId: courts[1] as string,
+        startsAt: '2027-09-06T12:00:00Z',
+        reason: 'player request',
+      },
+      idempotencyKey: k(),
+    });
+    await refusedAsStale(comp, versionId, h);
+    expect(await live()).toMatchObject({
+      resourceId: courts[1],
+      startsAt: '2027-09-06T12:00:00.000Z',
+      reason: 'player request',
+      source: 'MANUAL',
+    });
+
+    // B. Unlocked: locked before the preview, unlocked (with a reason) before the commit.
+    await schedule.setLock({
+      actorAccountId: comp.actor,
+      versionId,
+      contestId: sf1,
+      locked: true,
+      reason: null,
+      idempotencyKey: k(),
+    });
+    h = await hashOf(comp, versionId);
+    await schedule.setLock({
+      actorAccountId: comp.actor,
+      versionId,
+      contestId: sf1,
+      locked: false,
+      reason: 'reopened',
+      idempotencyKey: k(),
+    });
+    await refusedAsStale(comp, versionId, h);
+    expect(await live()).toMatchObject({ resourceId: courts[1], locked: false });
+
+    // C. Removed (draft-only removal fact).
+    h = await hashOf(comp, versionId);
+    await schedule.removeAssignment({
+      actorAccountId: comp.actor,
+      versionId,
+      contestId: sf1,
+      reason: 'make room',
+      idempotencyKey: k(),
+    });
+    await refusedAsStale(comp, versionId, h);
+    expect(await live()).toBeUndefined();
+
+    // Only the organizer's five facts exist; no proposal fact was ever written.
+    const history = await facts(versionId);
+    expect(history).toHaveLength(5);
+    expect(history.every((f) => f.contest_id === sf1 && !f.reason?.startsWith('proposal '))).toBe(
+      true,
+    );
+    // The current state commits afresh; the removed contest is re-placed on its removal fact.
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.placements.map((x) => x.contestId)).toContain(sf1);
+    const replaced = (await facts(versionId)).find(
+      (f) => f.contest_id === sf1 && f.reason === `proposal ${fresh.proposalHash}`,
+    );
+    expect(replaced?.replaces_assignment_id).toBe(history.at(-1)?.id);
+  }, 600_000);
+});
+
+describe('ONCF-05E-F-4: 05D bracket and results changes between preview and commit', () => {
+  it('a contest whose status changes after the preview (cancelled) is PROPOSAL_STALE; the fresh proposal omits it', async () => {
+    const { comp, ev, versionId } = await setup();
+    const final = (ev.contests[2] as (typeof ev.contests)[0]).id;
+    const { proposal: p } = await preview(comp.actor, versionId);
+    expect(p.status).toBe('SUCCESS');
+    expect(p.placements.map((x) => x.contestId)).toContain(final);
+    const before = await inputsOf(comp, versionId);
+
+    await structure.cancelContest({ actorAccountId: comp.actor, contestId: final, reason: 'rain' });
+    const after = await inputsOf(comp, versionId);
+    // Exactly the contest status moved among the hashed inputs.
+    expect(after.contestStatuses.find((c) => c.contestId === final)?.status).toBe('CANCELLED');
+    expect({ ...after, contestStatuses: null }).toEqual({ ...before, contestStatuses: null });
+
+    await refusedAsStale(comp, versionId, p.proposalHash);
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.placements.map((x) => x.contestId)).not.toContain(final);
+  }, 600_000);
+
+  it('an occupant resolved by a 05D commit after the preview is PROPOSAL_STALE; the stale provisional final is never written', async () => {
+    const comp = await competition();
+    // The referee's grant is recorded before the event setup, well before its first use.
+    const ref = await referee(comp.competitionId);
+    const ev = await tennis(comp);
+    // tennis() pins no advancement policy; this event pins one so 05D can resolve the final.
+    const ko = await plannedEvent(comp, {
+      discipline: 'tennis',
+      format: 'se',
+      ruleset: 'sets-bo3-tiebreak',
+      profile: 'tennis-court-match',
+      policy: 'official-confirmed',
+      formatConfig: { drawSize: 4 },
+      entrants: 4,
+    });
+    for (const label of ['Court 1', 'Court 2', 'Court 3', 'Court 4'])
+      await resource(comp, 'TENNIS_COURT', label);
+    await openAllWeek(comp);
+    const versionId = await draft(comp);
+    const [sf1, sf2, final] = ko.contests.map((c) => c.id) as [string, string, string];
+    const win: ScoreSheet = {
+      family: 'SETS_OF_GAMES',
+      sets: [{ games: [6, 2] }, { games: [6, 3] }],
+    };
+    await official(comp.actor, ref, sf1, win);
+    await official(comp.actor, ref, sf2, win);
+
+    const { proposal: p } = await preview(comp.actor, versionId);
+    expect(p.status).toBe('SUCCESS');
+    const staleFinal = p.placements.find((x) => x.contestId === final);
+    expect(staleFinal?.provisional).toBe(true);
+    const before = await inputsOf(comp, versionId);
+
+    // 05D commits the semifinal winners into the final's places.
+    await advance(comp, ko.eventId, 'contest:');
+    const after = await inputsOf(comp, versionId);
+    // Exactly the occupancy digest moved (no contest status, resource, availability or pin).
+    expect(after.occupancyDigest).not.toBe(before.occupancyDigest);
+    expect({ ...after, occupancyDigest: null }).toEqual({ ...before, occupancyDigest: null });
+
+    await refusedAsStale(comp, versionId, p.proposalHash);
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.placements.find((x) => x.contestId === final)?.provisional).toBe(false);
+    const written = (await facts(versionId)).find((f) => f.contest_id === final);
+    expect(written).toMatchObject({ provisional: false, reason: `proposal ${fresh.proposalHash}` });
+    // The other event was proposed and committed alongside, untouched by the 05D change.
+    expect((await facts(versionId)).map((f) => f.contest_id).sort()).toEqual(
+      [...ev.contests, ...ko.contests].map((c) => c.id).sort(),
+    );
+  }, 600_000);
+
+  it('contests materialized by a committed 05D cut after the preview are PROPOSAL_STALE; the fresh proposal places them', async () => {
+    const comp = await competition();
+    // The referee's grant is recorded before the event setup, well before its first use.
+    const ref = await referee(comp.competitionId);
+    const ev = await plannedEvent(comp, {
+      discipline: 'golf',
+      format: 'mr',
+      ruleset: 'golf-stroke-gross',
+      profile: 'golf-course-tee-groups',
+      template: 'golf_stroke',
+      policy: 'field-cut-official',
+      formatConfig: {
+        rounds: 3,
+        cutAfterRound: 2,
+        cutTopN: 2,
+        cutIncludesTies: true,
+        groupSize: 3,
+      },
+      entrants: 5,
+    });
+    await resource(comp, 'GOLF_COURSE', 'Course', { capacity: 144 });
+    await openAllWeek(comp);
+    const versionId = await draft(comp);
+
+    // Rounds 1 and 2 are OFFICIAL: three players make the cut (a tie at the line), one DNF.
+    const { rows: occ } = await sql<{ contest_id: string; participant_id: string }>`
+      SELECT contest_id, participant_id FROM competition.v_contest_occupant
+      WHERE contest_id = ANY(${ev.contests.map((c) => c.id)}::uuid[])`.execute(owner);
+    const players = [...new Set(occ.map((o) => o.participant_id))].sort();
+    expect(players).toHaveLength(5);
+    const card: Record<number, number[]> = { 1: [70, 71, 72, 75, 72], 2: [70, 71, 70, 75, -1] };
+    const holes = (total: number) =>
+      Array.from(
+        { length: 18 },
+        (_, i) => 4 + (i < Math.abs(total - 72) ? Math.sign(total - 72) : 0),
+      );
+    for (const c of ev.contests) {
+      const p = occ.find((o) => o.contest_id === c.id)?.participant_id as string;
+      const strokes = card[c.round]?.[players.indexOf(p)] as number;
+      await official(comp.actor, ref, c.id, {
+        family: 'STROKES',
+        entries: [
+          strokes < 0
+            ? { participantId: p, status: 'DNF' }
+            : { participantId: p, status: 'FINISHED', holes: holes(strokes) },
+        ],
+      });
+    }
+
+    // Fixture precondition (05D, before the preview): the cut field is resolved, three places.
+    const pending = await advancement.state({ actorAccountId: comp.actor, eventId: ev.eventId });
+    expect(
+      pending.units
+        .filter((u) => u.unitKey.startsWith('field:'))
+        .flatMap((u) => u.targets.map((t) => t.proposed.state)),
+    ).toEqual(['RESOLVED', 'RESOLVED', 'RESOLVED']);
+
+    const { proposal: p } = await preview(comp.actor, versionId);
+    const before = await inputsOf(comp, versionId);
+    expect(before.contestStatuses).toHaveLength(ev.contests.length);
+
+    // 05D commits the cut: the round-3 contests now exist (structure changed after the preview).
+    const cut = await advance(comp, ev.eventId, 'field:');
+    expect(cut.materializedContests).toBe(3);
+    const after = await inputsOf(comp, versionId);
+    const known = new Set(ev.contests.map((c) => c.id));
+    const created = after.contestStatuses.map((c) => c.contestId).filter((id) => !known.has(id));
+    expect(created).toHaveLength(3);
+
+    // Whatever the stale proposal's status, a changed structure is stale first (ADR-0076 C5).
+    await refusedAsStale(comp, versionId, p.proposalHash);
+    expect(p.placements.map((x) => x.contestId)).not.toEqual(expect.arrayContaining(created));
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.placements.map((x) => x.contestId)).toEqual(expect.arrayContaining(created));
+  }, 900_000);
+});
+
+describe('ONCF-05E-F-4: event window and profile pin', () => {
+  it('frozen for a locked event; another event of the competition edited after the preview is PROPOSAL_STALE', async () => {
+    const { comp, ev, versionId } = await setup();
+    // ADR-0069 § 1: a field-locked event's settings and pins cannot change at all, so the target
+    // event's own window or profile can never change between a preview and its commit.
+    await expect(
+      comps.updateEventSettings({
+        actorAccountId: comp.actor,
+        eventId: ev.eventId,
+        settings: { name: 'Category', ...WEEK, startsAt: '2027-09-02T12:00:00Z' },
+      }),
+    ).rejects.toMatchObject({ code: DomainErrorCode.INVALID_TRANSITION });
+    await expect(
+      scoring.pinScoring({
+        actorAccountId: comp.actor,
+        eventId: ev.eventId,
+        rulesetVersionId: ids['rs:sets-bo3-tiebreak'] as string,
+        idempotencyKey: k(),
+      }),
+    ).rejects.toMatchObject({ code: DomainErrorCode.INVALID_TRANSITION });
+
+    // Another event of the same competition, still open for registration: its window and pin are
+    // legitimately editable, and every event's window and pin is a hashed input of the proposal.
+    const { eventId: side } = await comps.createEvent({
+      actorAccountId: comp.actor,
+      competitionId: comp.competitionId,
+      slug: uniqueSlug('ev'),
+      disciplineVersionId: ids['tennis'] as string,
+      formatVersionId: ids['se'] as string,
+      formatConfig: { drawSize: 4 },
+      settings: { name: 'Doubles', capacity: null, registrationMode: 'AUTO_CONFIRM', ...WEEK },
+      idempotencyKey: k(),
+    });
+    await comps.openRegistration({ actorAccountId: comp.actor, eventId: side });
+    await scoring.pinScoring({
+      actorAccountId: comp.actor,
+      eventId: side,
+      rulesetVersionId: ids['rs:sets-bo3-tiebreak'] as string,
+      idempotencyKey: k(),
+    });
+    const sideInput = async () =>
+      (await inputsOf(comp, versionId)).events.find((e) => e.eventId === side);
+
+    // A. Window.
+    let h = await hashOf(comp, versionId);
+    const w0 = await sideInput();
+    await comps.updateEventSettings({
+      actorAccountId: comp.actor,
+      eventId: side,
+      settings: {
+        name: 'Doubles',
+        capacity: null,
+        registrationMode: 'AUTO_CONFIRM',
+        ...WEEK,
+        startsAt: '2027-09-02T12:00:00Z',
+      },
+    });
+    expect((await sideInput())?.windowStart).not.toBe(w0?.windowStart);
+    await refusedAsStale(comp, versionId, h);
+
+    // B. Profile pin (none → the tennis profile).
+    h = await hashOf(comp, versionId);
+    await scoring.pinScoring({
+      actorAccountId: comp.actor,
+      eventId: side,
+      rulesetVersionId: ids['rs:sets-bo3-tiebreak'] as string,
+      schedulingProfileVersionId: ids['sp:tennis-court-match'] as string,
+      idempotencyKey: k(),
+    });
+    expect((await sideInput())?.profileVersionId).toBe(ids['sp:tennis-court-match']);
+    await refusedAsStale(comp, versionId, h);
+
+    // The side event has no plan: the fresh commit places exactly the locked event's contests.
+    const fresh = await commitsAfresh(comp, versionId);
+    expect(fresh.placements.map((x) => x.contestId).sort()).toEqual(
+      ev.contests.map((c) => c.id).sort(),
+    );
+  }, 600_000);
+});
+
+describe('ONCF-05E-F-4: a scoped SUCCESS proposal commits only its scope (ADR-0075 § 4, § 7)', () => {
+  it('event scope: facts, per-fact events and audits only for the scoped event; the other event untouched and still placeable', async () => {
+    const comp = await competition();
+    const a = await tennis(comp);
+    const b = await tennis(comp);
+    for (const label of ['Court 1', 'Court 2']) await resource(comp, 'TENNIS_COURT', label);
+    await openAllWeek(comp);
+    const versionId = await draft(comp);
+    const aIds = a.contests.map((c) => c.id).sort();
+    const bIds = b.contests.map((c) => c.id).sort();
+
+    const scope = { eventIds: [a.eventId] };
+    const { proposal: p } = await preview(comp.actor, versionId, { scope });
+    expect(p.status).toBe('SUCCESS');
+    expect(p.placements.map((x) => x.contestId).sort()).toEqual(aIds);
+    const before = await snapshot(comp.competitionId);
+    const bOutboxBefore = await Promise.all(bIds.map((id) => outboxOf(id)));
+
+    const r = await commit(comp.actor, versionId, p.proposalHash, { scope });
+    expect(r).toMatchObject({ placedContests: 3, created: true });
+
+    // Facts: exactly the scoped event's three contests, nothing for the other event.
+    expect((await facts(versionId)).map((f) => f.contest_id)).toEqual(aIds);
+    // Per-fact outbox events and audits only for the committed facts; one commit event and audit.
+    const outbox = await outboxOf(versionId);
+    expect(
+      outbox
+        .filter((e) => e.event_type === 'ScheduleAssignmentChanged')
+        .map((e) => e.payload.contestId)
+        .sort(),
+    ).toEqual(aIds);
+    const committed = outbox.filter((e) => e.event_type === 'ScheduleProposalCommitted');
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.payload).toMatchObject({
+      proposalHash: p.proposalHash,
+      placedContests: 3,
+      assignments: r.assignmentIds,
+    });
+    expect(await auditOf('schedule.proposal-committed', versionId)).toHaveLength(1);
+    for (const id of aIds) expect(await auditOf('schedule.assignment-set', id)).toHaveLength(1);
+    for (const id of bIds) expect(await auditOf('schedule.assignment-set', id)).toEqual([]);
+    expect(await Promise.all(bIds.map((id) => outboxOf(id)))).toEqual(bOutboxBefore);
+
+    // Everything else of the competition is unchanged: versions, projection, contest / event /
+    // competition status, resources, availability, pins, read models.
+    const after = await snapshot(comp.competitionId);
+    for (const t of Object.keys(before) as (keyof typeof before)[])
+      if (!['schedule_assignment', 'audit_event', 'outbox_event'].includes(t))
+        expect(after[t], t).toEqual(before[t]);
+
+    // The other event is still unplaced and placeable: the whole-competition proposal now
+    // targets exactly its contests.
+    const rest = await commitsAfresh(comp, versionId);
+    expect(rest.placements.map((x) => x.contestId).sort()).toEqual(bIds);
+  }, 600_000);
 });
