@@ -78,6 +78,8 @@ export const DomainEventType = {
   ScheduleAssignmentChanged: 'ScheduleAssignmentChanged',
   ScheduleVersionPublished: 'ScheduleVersionPublished',
   ScheduleDraftDiscarded: 'ScheduleDraftDiscarded',
+  // ONCF-05E-F proposal commit (ADR-0075 § 16–17: `schedule.proposal_committed`)
+  ScheduleProposalCommitted: 'ScheduleProposalCommitted',
   EventScoringPinned: 'EventScoringPinned',
   // BRT-05 competition operations (operational facts only — never results/verification)
   CompetitionCreated: 'CompetitionCreated',
