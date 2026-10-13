@@ -5,6 +5,7 @@ import {
   evaluateSchedule,
   ianaZoneIssue,
   isWholeSecond,
+  planProposalCommit,
   proposeSchedule,
   reportVerdict,
   resolveRequirement,
@@ -20,9 +21,12 @@ import {
   type EvaluationPlace,
   type OccupancyMode,
   type PlaceState,
+  type ProposalCommitFact,
+  type ProposalCommitRefusal,
   type RoundType,
   type ScheduleEvaluationInput,
   type ScheduleProposal,
+  type ScheduleProposalInput,
   type SchedulingProfileSpec,
   type StagePrimitive,
   type UnitContestFacts,
@@ -179,6 +183,59 @@ const published = (a: AssignmentRow) =>
 
 function stale(reason: string, message: string): DomainError {
   return new DomainError(DomainErrorCode.CONCURRENCY_CONFLICT, message, { reason });
+}
+
+/** The proposal request parameters (ADR-0075 § 4): the only client values a proposal reads. */
+interface ProposalScope {
+  readonly eventIds?: readonly string[];
+  readonly roundIds?: readonly string[];
+}
+
+/** `from` as epoch ms, refused unless a whole-second instant (ADR-0075 § 13). */
+function fromMsOf(from: Date | string | undefined): number | undefined {
+  const ms = from === undefined ? undefined : instantOrThrow(from, 'from').getTime();
+  if (ms !== undefined && ms % 1000 !== 0)
+    throw new DomainError(DomainErrorCode.INVALID_INPUT, 'from must be a whole-second instant');
+  return ms;
+}
+
+/** ADR-0075 § 13 engine refusals: no proposal. INCOMPLETE_STATE is a state conflict, never a status. */
+function proposalRefused(e: ScheduleProposalError): DomainError {
+  return new DomainError(
+    e.code === 'INVALID_INPUT' ? DomainErrorCode.INVALID_INPUT : DomainErrorCode.INVALID_TRANSITION,
+    `proposal refused (${e.code}): ${e.message}`,
+    { reason: e.code },
+  );
+}
+
+/** A 05E-F-1 commit refusal as the existing domain error it names (ADR-0076 C4–C5). */
+function commitRefused(r: ProposalCommitRefusal): DomainError {
+  switch (r.reason) {
+    case 'PROPOSAL_STALE':
+      return stale(
+        'PROPOSAL_STALE',
+        'the schedule changed since this proposal was previewed; preview it again',
+      );
+    case 'PROPOSAL_NOT_COMMITTABLE':
+      return new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        `a ${r.status} proposal cannot be committed; only a SUCCESS proposal can`,
+        { reason: r.reason, status: r.status },
+      );
+    case 'NOT_A_DRAFT':
+    case 'COMPETITION_CLOSED':
+      return new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        `the proposal cannot be committed (${r.status})`,
+        { reason: r.reason, status: r.status },
+      );
+    case 'INVALID_INPUT':
+      return new DomainError(
+        DomainErrorCode.INVALID_INPUT,
+        `proposal refused (INVALID_INPUT): ${r.message}`,
+        { reason: 'INVALID_INPUT' },
+      );
+  }
 }
 
 /** 05D target states per event (eventId → targetKey → state), computed on read (ADR-0074 D2). */
@@ -879,13 +936,10 @@ export class ScheduleStore {
   async previewProposal(input: {
     actorAccountId: string;
     versionId: string;
-    scope?: { readonly eventIds?: readonly string[]; readonly roundIds?: readonly string[] };
+    scope?: ProposalScope;
     from?: Date | string;
   }) {
-    const fromMs =
-      input.from === undefined ? undefined : instantOrThrow(input.from, 'from').getTime();
-    if (fromMs !== undefined && fromMs % 1000 !== 0)
-      throw new DomainError(DomainErrorCode.INVALID_INPUT, 'from must be a whole-second instant');
+    const fromMs = fromMsOf(input.from);
     const states = await this.targetStates(input.actorAccountId, input.versionId);
     return this.tx(async (ctx) => {
       const v = await this.version(ctx, input.versionId);
@@ -897,67 +951,13 @@ export class ScheduleStore {
       );
       // From here on PostgreSQL refuses any write of this transaction.
       await sql`SET TRANSACTION READ ONLY`.execute(ctx.trx);
-      const { rows: drafts } = await sql<{ n: number }>`
-        SELECT count(*)::int AS n FROM competition.v_schedule_version_current
-        WHERE competition_id = ${v.competition_id} AND status = 'DRAFT'`.execute(ctx.trx);
-      // One open draft per competition is a schema invariant; never pick one arbitrarily.
-      if ((drafts[0]?.n ?? 0) > 1)
-        throw new DomainError(
-          DomainErrorCode.INVALID_TRANSITION,
-          'the competition has more than one open schedule draft',
-          { reason: 'AMBIGUOUS_DRAFT' },
-        );
-
-      const judge = await this.evaluationInput(ctx, v, states);
-      // Scope names only this competition's events and rounds (ADR-0075 § 13). Fixed message: the
-      // request's ids are never echoed, and a foreign id reads the same whether it exists or not.
-      const events = new Set(judge.events.map((e) => e.id));
-      const rounds = new Set(judge.contests.map((x) => x.roundId));
-      if (
-        (input.scope?.eventIds ?? []).some((id) => !events.has(id)) ||
-        (input.scope?.roundIds ?? []).some((id) => !rounds.has(id))
-      )
-        throw new DomainError(
-          DomainErrorCode.INVALID_INPUT,
-          'the scope names an event or round outside this competition',
-          { reason: 'FOREIGN_SCOPE' },
-        );
-
-      const { rows: eventStatuses } = await sql<{ event_id: string; status: string }>`
-        SELECT s.event_id, s.status FROM competition.v_event_current s
-        JOIN competition.event e ON e.id = s.event_id
-        WHERE e.competition_id = ${v.competition_id}`.execute(ctx.trx);
-      // The same latest plan offset 05E-C's write default uses for the expected end.
-      const { rows: offsets } = await sql<{ contest_id: string; seconds: number }>`
-        SELECT c.id AS contest_id, coalesce(max(ce.start_offset_seconds), 0)::int AS seconds
-        FROM competition.contest c JOIN competition.event e ON e.id = c.event_id
-        LEFT JOIN competition.contest_entry ce ON ce.contest_id = c.id
-        WHERE e.competition_id = ${v.competition_id} GROUP BY c.id`.execute(ctx.trx);
+      const proposalInput = await this.proposalInput(ctx, v, c.status, states, input.scope, fromMs);
 
       let proposal: ScheduleProposal;
       try {
-        proposal = proposeSchedule({
-          judge,
-          draftStatus: v.status,
-          competitionStatus: c.status,
-          basePublishedVersionId: v.base_version_id,
-          eventStatuses: eventStatuses
-            .filter((e) => events.has(e.event_id))
-            .map((e) => ({ eventId: e.event_id, status: e.status })),
-          latestOffsets: offsets.map((o) => ({ contestId: o.contest_id, seconds: o.seconds })),
-          ...(input.scope === undefined ? {} : { scope: input.scope }),
-          ...(fromMs === undefined ? {} : { fromMs }),
-        });
+        proposal = proposeSchedule(proposalInput);
       } catch (e) {
-        // ADR-0075 § 13 refusals: no proposal. INCOMPLETE_STATE is a state conflict, never a status.
-        if (e instanceof ScheduleProposalError)
-          throw new DomainError(
-            e.code === 'INVALID_INPUT'
-              ? DomainErrorCode.INVALID_INPUT
-              : DomainErrorCode.INVALID_TRANSITION,
-            `proposal refused (${e.code}): ${e.message}`,
-            { reason: e.code },
-          );
+        if (e instanceof ScheduleProposalError) throw proposalRefused(e);
         throw e;
       }
       // The canonical proposal (hashed) and the execution metadata (never hashed), kept apart.
@@ -968,6 +968,211 @@ export class ScheduleStore {
         proposal: body,
         diagnostics,
       };
+    });
+  }
+
+  /**
+   * The proposal engine's input for the version (ADR-0075 § 4), the one assembly shared by preview
+   * and commit so the two can never drift: the judge's input from `evaluationInput` (the loader
+   * `validate` / `publish` use) plus the authoritative facts the judge does not read — lifecycle
+   * states, latest plan offsets and the base PUBLISHED version — and the request's `scope` / `from`.
+   */
+  private async proposalInput(
+    ctx: TxContext,
+    v: VersionRow,
+    competitionStatus: string,
+    states: TargetStates,
+    scope: ProposalScope | undefined,
+    fromMs: number | undefined,
+  ): Promise<ScheduleProposalInput> {
+    const { rows: drafts } = await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM competition.v_schedule_version_current
+      WHERE competition_id = ${v.competition_id} AND status = 'DRAFT'`.execute(ctx.trx);
+    // One open draft per competition is a schema invariant; never pick one arbitrarily.
+    if ((drafts[0]?.n ?? 0) > 1)
+      throw new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        'the competition has more than one open schedule draft',
+        { reason: 'AMBIGUOUS_DRAFT' },
+      );
+
+    const judge = await this.evaluationInput(ctx, v, states);
+    // Scope names only this competition's events and rounds (ADR-0075 § 13). Fixed message: the
+    // request's ids are never echoed, and a foreign id reads the same whether it exists or not.
+    const events = new Set(judge.events.map((e) => e.id));
+    const rounds = new Set(judge.contests.map((x) => x.roundId));
+    if (
+      (scope?.eventIds ?? []).some((id) => !events.has(id)) ||
+      (scope?.roundIds ?? []).some((id) => !rounds.has(id))
+    )
+      throw new DomainError(
+        DomainErrorCode.INVALID_INPUT,
+        'the scope names an event or round outside this competition',
+        { reason: 'FOREIGN_SCOPE' },
+      );
+
+    const { rows: eventStatuses } = await sql<{ event_id: string; status: string }>`
+      SELECT s.event_id, s.status FROM competition.v_event_current s
+      JOIN competition.event e ON e.id = s.event_id
+      WHERE e.competition_id = ${v.competition_id}`.execute(ctx.trx);
+    // The same latest plan offset 05E-C's write default uses for the expected end.
+    const { rows: offsets } = await sql<{ contest_id: string; seconds: number }>`
+      SELECT c.id AS contest_id, coalesce(max(ce.start_offset_seconds), 0)::int AS seconds
+      FROM competition.contest c JOIN competition.event e ON e.id = c.event_id
+      LEFT JOIN competition.contest_entry ce ON ce.contest_id = c.id
+      WHERE e.competition_id = ${v.competition_id} GROUP BY c.id`.execute(ctx.trx);
+
+    return {
+      judge,
+      draftStatus: v.status,
+      competitionStatus,
+      basePublishedVersionId: v.base_version_id,
+      eventStatuses: eventStatuses
+        .filter((e) => events.has(e.event_id))
+        .map((e) => ({ eventId: e.event_id, status: e.status })),
+      latestOffsets: offsets.map((o) => ({ contestId: o.contest_id, seconds: o.seconds })),
+      ...(scope === undefined ? {} : { scope }),
+      ...(fromMs === undefined ? {} : { fromMs }),
+    };
+  }
+
+  // ───────────────────────────── proposal commit (05E-F; ADR-0075 § 16–18, ADR-0076) ─────────────────────────────
+
+  /**
+   * ADR-0075 § 16 COMMIT: append the server's own recomputation of a previewed proposal to the open
+   * draft, in ONE transaction. The client supplies only the presented `proposalHash` and the request
+   * parameters that reproduce the proposal (`scope`, `from`); never placements, never a status.
+   *
+   * Under the competition-schedule advisory lock (taken by `draft()`, which also re-resolves
+   * `COMP_MANAGE_SCHEDULE` and re-reads DRAFT), the input is reloaded with the preview's assembly
+   * and the 05E-F-1 decision (`planProposalCommit`) recomputes the proposal: a hash mismatch is
+   * `PROPOSAL_STALE`, a non-SUCCESS status `PROPOSAL_NOT_COMMITTABLE` — both before the first write.
+   * The plan is then applied through the per-fact write path (every 05E-C structural refusal and
+   * per-fact event/audit applies), additive only, followed by one `ScheduleProposalCommitted` event,
+   * one `schedule.proposal-committed` audit and the idempotency record. Any throw rolls all of it
+   * back. READ COMMITTED (never REPEATABLE READ): every read after the lock sees the facts of the
+   * previous holder, so a commit that waited for a concurrent one is recomputed against them.
+   */
+  async commitProposal(input: {
+    actorAccountId: string;
+    versionId: string;
+    proposalHash: string;
+    scope?: ProposalScope;
+    from?: Date | string;
+    idempotencyKey: string;
+  }) {
+    const fromMs = fromMsOf(input.from);
+    const canonical = (ids: readonly string[] | undefined) =>
+      ids === undefined ? null : [...new Set(ids)].sort();
+    const states = await this.targetStates(input.actorAccountId, input.versionId);
+    return this.tx(async (ctx) => {
+      const idem = await identityIdempotency<{
+        versionId: string;
+        competitionId: string;
+        proposalHash: string;
+        baseStateIdentity: string;
+        assignmentIds: { contestId: string; assignmentId: string }[];
+        placedContests: number;
+      }>(ctx, {
+        command: 'CommitScheduleProposal',
+        actorAccountId: input.actorAccountId,
+        idempotencyKey: input.idempotencyKey,
+        params: {
+          versionId: input.versionId,
+          proposalHash: input.proposalHash,
+          // As the engine canonicalizes it: sorted, unique; absent stays distinct from empty.
+          scope: {
+            eventIds: canonical(input.scope?.eventIds),
+            roundIds: canonical(input.scope?.roundIds),
+          },
+          from: fromMs ?? null,
+        },
+      });
+      if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
+      const v = await this.draft(ctx, input.actorAccountId, input.versionId);
+      const c = await loadCompetition(ctx, v.competition_id);
+      const proposalInput = await this.proposalInput(ctx, v, c.status, states, input.scope, fromMs);
+
+      let decision;
+      try {
+        decision = planProposalCommit(proposalInput, { proposalHash: input.proposalHash });
+      } catch (e) {
+        if (e instanceof ScheduleProposalError) throw proposalRefused(e);
+        throw e;
+      }
+      if (!decision.ok) throw commitRefused(decision.refusal);
+      const plan = decision.plan;
+      if (plan.scheduleVersionId !== v.version_id || plan.competitionId !== v.competition_id)
+        throw new Error('proposal commit invariant: the plan names another version');
+
+      // The plan's facts, in its order (contest id), exactly as recomputed (ADR-0075 § 17).
+      const assignmentIds: { contestId: string; assignmentId: string }[] = [];
+      for (const f of plan.facts) {
+        const { assignmentId } = await this.setAssignmentTx(
+          ctx,
+          v,
+          input.actorAccountId,
+          f.contestId,
+          {
+            resourceId: f.resourceId,
+            startsAt: new Date(f.start * 1000),
+            expectedEnd: new Date(f.expectedEnd * 1000),
+            changeoverSeconds: f.changeoverSeconds,
+            zone: f.zone,
+            reason: plan.reason,
+          },
+          f,
+        );
+        assignmentIds.push({ contestId: f.contestId, assignmentId });
+      }
+
+      // ADR-0070 §10, ADR-0075 § 17: the commit's provenance — ids, hashes and counts only.
+      await emitEvent(ctx, {
+        eventType: 'ScheduleProposalCommitted',
+        aggregateType: 'SCHEDULE_VERSION',
+        aggregateId: v.version_id as Uuid,
+        payload: {
+          competitionId: v.competition_id,
+          proposalHash: plan.proposalHash,
+          baseStateIdentity: plan.baseStateIdentity,
+          strategy: plan.strategy,
+          budget: plan.budget,
+          reportHash: plan.reportHash,
+          placedUnits: plan.placedUnits,
+          placedContests: plan.placedContests,
+          unplacedUnits: plan.unplacedUnits,
+          assignments: assignmentIds,
+        },
+      });
+      await recordAudit(ctx, {
+        actorAccountId: input.actorAccountId,
+        action: 'schedule.proposal-committed',
+        targetType: 'SCHEDULE_VERSION',
+        targetId: v.version_id,
+        details: {
+          competitionId: v.competition_id,
+          proposalHash: plan.proposalHash,
+          baseStateIdentity: plan.baseStateIdentity,
+          strategyId: plan.strategy.id,
+          strategyVersion: plan.strategy.version,
+          maxEvaluations: plan.budget.maxEvaluations,
+          maxEvaluationsPerUnit: plan.budget.maxEvaluationsPerUnit,
+          reportHash: plan.reportHash,
+          placedUnits: plan.placedUnits,
+          placedContests: plan.placedContests,
+          unplacedUnits: plan.unplacedUnits,
+        },
+      });
+      const response = {
+        versionId: v.version_id,
+        competitionId: v.competition_id,
+        proposalHash: plan.proposalHash,
+        baseStateIdentity: plan.baseStateIdentity,
+        assignmentIds,
+        placedContests: plan.placedContests,
+      };
+      await idem.record(response);
+      return { ...response, created: true };
     });
   }
 
@@ -1063,6 +1268,10 @@ export class ScheduleStore {
    * and ACTIVE; instants are whole seconds with end > start; a locked or started contest is not
    * moved; a move needs a reason. Overlaps, capacity, spacing, participants, rest, dependencies,
    * availability and daily limits are NOT checked here (05E-D).
+   *
+   * `committed`: the proposal fact being applied (05E-F). Its contest must have no live assignment
+   * (ADR-0075 § 7, additive only), and the unit key and provisional flag this path derives must
+   * equal the hashed placement's; a difference is an internal invariant failure, never written.
    */
   private async setAssignmentTx(
     ctx: TxContext,
@@ -1070,6 +1279,7 @@ export class ScheduleStore {
     actor: string,
     contestId: string,
     input: AssignmentInput,
+    committed?: ProposalCommitFact,
   ) {
     const start = instantOrThrow(input.startsAt, 'startsAt');
     if (!isWholeSecond(start.getTime()))
@@ -1200,6 +1410,17 @@ export class ScheduleStore {
       });
     const unitKey = (await this.unitKeys(ctx, c.event_id, profile?.spec)).get(contestId);
     if (unitKey === undefined) throw new Error('unit key not derivable');
+    const provisional = await this.provisional(ctx, contestId, c.dynamic);
+    if (committed !== undefined) {
+      if (live !== undefined)
+        throw new Error(
+          `proposal commit invariant: contest ${contestId} already has an assignment`,
+        );
+      if (unitKey !== committed.unitKey || provisional !== committed.provisional)
+        throw new Error(
+          `proposal commit invariant: contest ${contestId} unit key or provisional flag differs from the proposal`,
+        );
+    }
     const fact = {
       version_id: v.version_id,
       competition_id: v.competition_id,
@@ -1207,7 +1428,7 @@ export class ScheduleStore {
       ...next,
       zone,
       unit_key: unitKey,
-      provisional: await this.provisional(ctx, contestId, c.dynamic),
+      provisional,
       locked: false,
       removed: false,
       venue_organization_id: input.venueOrganizationId ?? null,
