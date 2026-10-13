@@ -16,8 +16,8 @@ import { buildServer } from './server';
 // ONCF-05E-E API: the read-only proposal PREVIEW (ADR-0075 § 16). COMP_MANAGE_SCHEDULE (OWNER,
 // ADMIN, SCHEDULER); the closed body carries only `scope` and `from`, and any client-supplied
 // authoritative data (resources, availability, profiles, placements, budget...) is refused. Nothing
-// is written: no assignment, version, publication, resource or availability changes. There is no
-// commit, generation or optimization route.
+// is written: no assignment, version, publication, resource or availability changes. The commit
+// route is ONCF-05E-F's (oncf05e-f.int.test.ts); there is no generation or optimization route.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- free-form navigation of JSON responses
 type Json = Record<string, any>;
@@ -397,16 +397,20 @@ describe('ONCF-05E-E proposal preview over the API', () => {
     expect(closed.body?.proposal).toBeUndefined();
   }, 600_000);
 
-  it('the route inventory: one read-only proposal route; no commit, generation or optimization route', () => {
+  it('the route inventory: the read-only preview and (since ONCF-05E-F) its commit; no generation or optimization route', () => {
     // (BRT-10's classification proposals are a different, result-side surface.)
     expect(
       app.v1Routes
         .filter((r) => /propos/i.test(r.url) && !/classification-proposals/.test(r.url))
-        .map((r) => `${r.method} ${r.url}`),
-    ).toEqual(['POST /v1/schedule-versions/:versionId/proposals/preview']);
+        .map((r) => `${r.method} ${r.url}`)
+        .sort(),
+    ).toEqual([
+      'POST /v1/schedule-versions/:versionId/proposals/commit',
+      'POST /v1/schedule-versions/:versionId/proposals/preview',
+    ]);
     expect(
       app.v1Routes.filter((r) =>
-        /proposals\/(?!preview$)|commit-proposal|optimi|generate-schedule|auto-publish/i.test(
+        /proposals\/(?!(preview|commit)$)|commit-proposal|optimi|generate-schedule|auto-publish/i.test(
           r.url,
         ),
       ),

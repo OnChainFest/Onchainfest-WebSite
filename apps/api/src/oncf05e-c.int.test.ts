@@ -389,8 +389,9 @@ describe('ONCF-05E-C schedule versions over the API', () => {
     expect(discarded.status, discarded.text).toBe(200);
   }, 600_000);
 
-  it('the route inventory: schedule versions only — no conflict-engine, proposal-commit or optimization route', () => {
-    // Since ONCF-05E-E the read-only proposal preview is part of the schedule-version surface.
+  it('the route inventory: schedule versions only — no conflict-engine or optimization route', () => {
+    // Since ONCF-05E-E the read-only proposal preview, and since ONCF-05E-F its commit into the
+    // open draft, are part of the schedule-version surface.
     const routes = app.v1Routes
       .filter((r) => /schedule-versions|schedule\/(versions|drafts)/.test(r.url))
       .map((r) => `${r.method} ${r.url}`)
@@ -406,6 +407,7 @@ describe('ONCF-05E-C schedule versions over the API', () => {
         'POST /v1/schedule-versions/:versionId/assignments/:contestId/unlock',
         'POST /v1/schedule-versions/:versionId/validate',
         'POST /v1/schedule-versions/:versionId/proposals/preview',
+        'POST /v1/schedule-versions/:versionId/proposals/commit',
         'POST /v1/schedule-versions/:versionId/publish',
         'POST /v1/schedule-versions/:versionId/discard',
       ].sort(),

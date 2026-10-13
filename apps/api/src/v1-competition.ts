@@ -1467,8 +1467,9 @@ export function registerCompetitionV1(
   // Reads need COMP_VIEW_PRIVATE; every change, validation and publication COMP_MANAGE_SCHEDULE,
   // decided in the store. Drafts are private; the public schedule is the PUBLISHED projection only.
   // Publication is this explicit, human command — nothing publishes automatically. The conflict
-  // engine runs only inside validate / publish (05E-D). The one 05E-E route is the read-only
-  // proposal preview: no commit, generation or optimization route exists here.
+  // engine runs only inside validate / publish (05E-D). The proposal routes are the read-only
+  // preview (05E-E) and its commit into the open draft (05E-F): no generation, optimization or
+  // auto-publish route exists here.
   const schedule = deps.schedule;
   if (schedule !== undefined) {
     const versionContestParams = {
@@ -1631,6 +1632,46 @@ export function registerCompetitionV1(
           actorAccountId: requireAuth(request).accountId,
           versionId: params<{ versionId: string }>(request).versionId,
           ...defined({ scope: b.scope, from: b.from }),
+        });
+      },
+    );
+    // ONCF-05E-F proposal COMMIT (ADR-0075 § 16–18, ADR-0076): COMP_MANAGE_SCHEDULE, re-resolved in
+    // the commit transaction, with an Idempotency-Key. The closed body carries the presented hash and
+    // the preview's own request parameters (`scope`, `from`) only — never placements, resources,
+    // a status or a base-state identity. The store recomputes the proposal under the schedule lock:
+    // a hash mismatch is PROPOSAL_STALE, a non-SUCCESS status PROPOSAL_NOT_COMMITTABLE (both 409,
+    // nothing written). Commit writes into the open draft only; it never validates or publishes.
+    route(
+      'POST',
+      '/v1/schedule-versions/:versionId/proposals/commit',
+      'COMP_STAFF',
+      {
+        params: idParams('versionId'),
+        headers: idempotencyHeaders,
+        body: obj(
+          {
+            proposalHash: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+            scope: obj({
+              eventIds: { type: 'array', maxItems: 100, uniqueItems: true, items: uuid },
+              roundIds: { type: 'array', maxItems: 1000, uniqueItems: true, items: uuid },
+            }),
+            from: instant,
+          },
+          ['proposalHash'],
+        ),
+      },
+      async (request) => {
+        const b = body<{
+          proposalHash: string;
+          scope?: { eventIds?: string[]; roundIds?: string[] };
+          from?: string;
+        }>(request);
+        return schedule.commitProposal({
+          actorAccountId: requireAuth(request).accountId,
+          versionId: params<{ versionId: string }>(request).versionId,
+          proposalHash: b.proposalHash,
+          ...defined({ scope: b.scope, from: b.from }),
+          idempotencyKey: key(request),
         });
       },
     );

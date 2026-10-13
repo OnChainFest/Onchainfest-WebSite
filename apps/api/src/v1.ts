@@ -146,15 +146,19 @@ export function errorBody(err: DomainError): {
   // BRT-06: a fixed-vocabulary reason code (never input values) where it helps a signer.
   const reason = err.details.reason ?? err.details.availability;
   const withReason =
-    (err.code === 'KEY_NOT_VALID' ||
+    ((err.code === 'KEY_NOT_VALID' ||
       err.code === 'EVIDENCE_NOT_AVAILABLE' ||
       err.code === 'VERIFICATION_INTEGRITY_FAILURE' ||
       err.code === 'VERIFICATION_TIME_INCONSISTENT' ||
       err.code === 'ACHIEVEMENT_INTEGRITY_FAILURE' ||
       err.code === 'RECORD_INTEGRITY_FAILURE' ||
       err.code === 'RANKING_INTEGRITY_FAILURE') &&
-    typeof reason === 'string' &&
-    /^[A-Z][A-Z0-9_]{0,39}$/.test(reason);
+      typeof reason === 'string' &&
+      /^[A-Z][A-Z0-9_]{0,39}$/.test(reason)) ||
+    // ONCF-05E-F (ADR-0076 C4): the two proposal-commit refusals a client must tell apart from
+    // every other 409 of its code. Exactly these fixed values; no other 409 reason is exposed.
+    (err.code === 'CONCURRENCY_CONFLICT' && reason === 'PROPOSAL_STALE') ||
+    (err.code === 'INVALID_TRANSITION' && reason === 'PROPOSAL_NOT_COMMITTABLE');
   // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
   const rawIssues = err.code === 'INVALID_INPUT' ? err.details.issues : undefined;
   const issues = Array.isArray(rawIssues)
