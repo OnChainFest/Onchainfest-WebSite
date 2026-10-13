@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** ONCF-05E-F-1 implementation — NOT STARTED; nothing is implemented |
+| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** Implementation: ONCF-05E-F-1, F-2 and F-3 merged; ONCF-05E-F-4 (tests / hardening) implemented (§ 30) |
 | Baseline | `b93d57c` on `main` (PR #14, ONCF-05E-E-2 read-only preview merged) |
 | Contract | ADR-0066–0075 (**unchanged**) · [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) (commit eligibility, new) · [ONCF-05E architecture](./ONCF-05E-ARCHITECTURE.md) · [ONCF-05E-E architecture](./ONCF-05E-E-ARCHITECTURE.md) §§ 25–27, 34, 35 |
 | Migration | None required (§ 21) |
@@ -491,6 +491,9 @@ ADR-0066–0075 (ADR-0076 is added, not an edit); 05E-A/B/C/D semantics; the 05E
 | ONCF-05E-F-0 audit | Complete |
 | Gap F-G1 (commit eligibility) | **[ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN** |
 | Other ADR gaps | None; observations O1–O8 need no ADR change |
-| ONCF-05E-F-1 implementation | **NOT STARTED** |
+| ONCF-05E-F-1 commit domain logic | Merged (PR #16) |
+| ONCF-05E-F-2 persistence transaction | Merged (PR #17) |
+| ONCF-05E-F-3 API | Merged (PR #18) |
+| ONCF-05E-F-4 tests / hardening | Implemented (remaining § 28 rows; § 25 shapes asserted on persisted facts) |
 
 **ONCF-05E-F-0 UNBLOCKED — ADR-0076 FROZEN**
