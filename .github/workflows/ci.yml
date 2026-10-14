@@ -48,7 +48,7 @@ jobs:
           echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
       - name: Format check
         run: pnpm format:check
-      - name: Lint (incl. key-material, result-ledger composition and no-manual-verification guards)
+      - name: Lint (incl. key-material, result-ledger composition, no-manual-verification and no-manual-authority guards)
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck

@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { sql, type Kysely } from 'kysely';
 import pg from 'pg';
+import type { Database } from './db';
 
 export const MIGRATIONS_DIR = fileURLToPath(new URL('../../../db/migrations/', import.meta.url));
 
@@ -92,4 +94,29 @@ export async function pendingMigrations(
   return listMigrations()
     .filter((m) => !applied.has(m.version))
     .map((m) => m.name);
+}
+
+/**
+ * LAUNCH-02 · Readiness of a process login: the database answers and no migration on disk is
+ * pending. Used by the worker preflight (`--check`); the API's /ready runs the same two checks.
+ */
+export async function databaseReadiness(
+  db: Kysely<Database>,
+): Promise<
+  | { readonly status: 'ready' }
+  | { readonly status: 'not_ready'; readonly reason: 'database_unavailable' }
+  | { readonly status: 'not_ready'; readonly reason: 'pending_migrations'; pending: string[] }
+> {
+  try {
+    await sql`SELECT 1`.execute(db);
+  } catch {
+    return { status: 'not_ready', reason: 'database_unavailable' };
+  }
+  const pending = await pendingMigrations(async (text) => {
+    const { rows } = await sql.raw<{ version: string }>(text).execute(db);
+    return { rows };
+  });
+  return pending.length > 0
+    ? { status: 'not_ready', reason: 'pending_migrations', pending }
+    : { status: 'ready' };
 }

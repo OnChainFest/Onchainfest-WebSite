@@ -1,0 +1,33 @@
+name: containers
+
+# LAUNCH-02 · Build the provider-neutral API and worker images (Dockerfile) on every push and pull
+# request, and prove they fail closed without production configuration. Nothing is pushed to any
+# registry: publishing and deploying stay manual until a hosting provider is chosen
+# (docs/operations/LAUNCH-02-PRODUCTION-RUNBOOK.md).
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: image (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build --target "${{ matrix.target }}" -t "onchainfest-${{ matrix.target }}:ci" .
+      - name: Refuses to start without production configuration (fail closed)
+        run: |
+          set -uo pipefail
+          out=$(docker run --rm "onchainfest-${{ matrix.target }}:ci" 2>&1); status=$?
+          echo "$out" | tail -5
+          if [ "$status" -eq 0 ]; then echo "::error::the image started without configuration"; exit 1; fi
+          echo "$out" | grep -Eq 'must be set in production|configuration refused'

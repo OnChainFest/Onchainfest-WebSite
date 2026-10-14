@@ -1,0 +1,17 @@
+# LAUNCH-02 · Container build context allowlist (API and worker images; see Dockerfile).
+# Everything is excluded, then only the workspace the API and worker need is re-included.
+# Secrets (.env*), local tooling state, the marketing site and docs never enter the image.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!tsconfig.base.json
+!apps
+!packages
+!db
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+**/.env
+**/.env.*

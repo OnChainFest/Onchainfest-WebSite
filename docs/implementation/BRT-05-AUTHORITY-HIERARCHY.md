@@ -75,7 +75,7 @@ Guarantees:
 
 ## 6. Deferred
 
-- The conflict-of-interest checker is still not participation-backed. Participants reference athletes and teams; persons and athletes have no Principal mapping yet. Conflict-sensitive capabilities therefore still require an explicit checker (fail-closed default).
+- The conflict-of-interest checker is still not participation-backed. (LAUNCH-02 / ADR-0077 adds `competition-participation/1` for API result actions only; the general participation index remains deferred.) Participants reference athletes and teams; persons and athletes have no Principal mapping yet. Conflict-sensitive capabilities therefore still require an explicit checker (fail-closed default).
 - Advancement on provisional results (ADR-0008).
 - Sanctioning (`COMPETITION_SANCTIONED`) and recognition-level policy.
 

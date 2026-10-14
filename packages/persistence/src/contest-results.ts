@@ -12,6 +12,10 @@ import {
   CompetitionHierarchyResolver,
   createCompetitionResultLedger,
 } from './competition-hierarchy';
+import {
+  competitionParticipationChecker,
+  personParticipatesInCompetition,
+} from './competition-participation';
 import { loadCompetition, loadEvent, requireCompPermission } from './competition-support';
 import type { Db } from './db';
 import type { ResultLedger } from './result-ledger';
@@ -27,22 +31,33 @@ import { inTransaction, ModuleRole } from './tx';
  * Score sheets are validated under the pinned ruleset (05C) and become the canonical content the
  * ledger hashes; the principal is derived server-side from the account (SELF person only), never
  * taken from the request.
+ *
+ * Conflict of interest (BRT-03R, fail closed): an explicitly injected checker answers when one is
+ * given. Otherwise, with `participationIndex` (ADR-0077 §2.5, the production composition), each
+ * action builds a `competition-participation/1` checker for the actor from database facts. Without
+ * either, conflict-sensitive actions are refused.
  */
 export class ContestResultService {
   private readonly db: Db;
   private readonly scoring: ScoringStore;
   private readonly ledger: ResultLedger;
   private readonly resolver: CompetitionHierarchyResolver;
+  private readonly participationIndex: boolean;
 
   constructor(
     db: Db,
     scoring: ScoringStore,
-    options: { conflictChecker?: ConflictOfInterestChecker } = {},
+    options: { conflictChecker?: ConflictOfInterestChecker; participationIndex?: boolean } = {},
   ) {
     this.db = db;
     this.scoring = scoring;
-    this.ledger = createCompetitionResultLedger(db, options);
+    this.ledger = createCompetitionResultLedger(
+      db,
+      options.conflictChecker === undefined ? {} : { conflictChecker: options.conflictChecker },
+    );
     this.resolver = new CompetitionHierarchyResolver(db);
+    this.participationIndex =
+      options.conflictChecker === undefined && options.participationIndex === true;
   }
 
   /** Competition staff gate + the caller's own PERSON principal (created on first use). */
@@ -64,21 +79,35 @@ export class ContestResultService {
         await loadCompetition(ctx, e.competitionId),
         'COMP_VIEW_PRIVATE',
       );
-      return c;
+      return { ...c, competition_id: e.competitionId };
     });
-    const principalId = await inTransaction(this.db, ModuleRole.identity, async (ctx) => {
-      const { rows } = await sql<{ p: string | null }>`
-        SELECT identity.ensure_person_principal(${accountId}::uuid, apc.person_id) AS p
+    const self = await inTransaction(this.db, ModuleRole.identity, async (ctx) => {
+      const { rows } = await sql<{ p: string | null; person_id: string }>`
+        SELECT identity.ensure_person_principal(${accountId}::uuid, apc.person_id) AS p, apc.person_id
         FROM identity.account_person_control apc
         WHERE apc.account_id = ${accountId} AND apc.control_kind = 'SELF'
         ORDER BY apc.recorded_at LIMIT 1`.execute(ctx.trx);
-      return rows[0]?.p ?? null;
+      return rows[0];
     });
-    if (principalId === null)
+    if (self?.p === undefined || self.p === null)
       throw new DomainError(DomainErrorCode.FORBIDDEN, 'acting on results needs your own person', {
         reason: 'NO_PERSON_PRINCIPAL',
       });
-    return { principalId: principalId as Uuid, disciplineRef: contest.discipline_ref };
+    const principalId = self.p as Uuid;
+    let ledger = this.ledger;
+    if (this.participationIndex) {
+      const participates = await inTransaction(this.db, ModuleRole.competition, (ctx) =>
+        personParticipatesInCompetition(ctx, self.person_id, contest.competition_id),
+      );
+      ledger = createCompetitionResultLedger(this.db, {
+        conflictChecker: competitionParticipationChecker({
+          principalId,
+          competitionId: contest.competition_id,
+          participates,
+        }),
+      });
+    }
+    return { principalId, disciplineRef: contest.discipline_ref, ledger };
   }
 
   private scope(contestId: string, recognitionLevel: string) {
@@ -129,13 +158,13 @@ export class ContestResultService {
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
     const resultId = await this.resultId(input.contestId);
-    const { draftId } = await this.ledger.saveDraft({
+    const { draftId } = await a.ledger.saveDraft({
       resultId,
       authorPrincipalId: a.principalId,
       disciplineVersionRef: a.disciplineRef,
       content: v.content,
     });
-    const out = await this.ledger.submitDraft({
+    const out = await a.ledger.submitDraft({
       draftId,
       actorPrincipalId: a.principalId,
       scope,
@@ -172,7 +201,7 @@ export class ContestResultService {
       throw new DomainError(DomainErrorCode.NOT_FOUND, 'result version not found');
     const contestId = await this.contestOfVersion(input.resultVersionId);
     const a = await this.actor(input.actorAccountId, contestId);
-    const out = await this.ledger.transition({
+    const out = await a.ledger.transition({
       resultVersionId: input.resultVersionId as Uuid,
       toStatus: input.toStatus,
       actorPrincipalId: a.principalId,
@@ -196,13 +225,13 @@ export class ContestResultService {
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
     const resultId = await this.resultId(input.contestId);
-    const { draftId } = await this.ledger.saveDraft({
+    const { draftId } = await a.ledger.saveDraft({
       resultId,
       authorPrincipalId: a.principalId,
       disciplineVersionRef: a.disciplineRef,
       content: v.content,
     });
-    const out = await this.ledger.correct({
+    const out = await a.ledger.correct({
       draftId,
       supersedesVersionId: input.supersedesVersionId as Uuid,
       actorPrincipalId: a.principalId,
