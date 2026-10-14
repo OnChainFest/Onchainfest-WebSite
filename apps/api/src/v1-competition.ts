@@ -13,7 +13,7 @@ import type {
   StructureStore,
   TeamStore,
 } from '@br/persistence';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   defined,
   idempotencyHeaders,
@@ -52,6 +52,47 @@ export interface CompetitionV1Deps {
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
 
 /**
+ * ONCF-05E-H-1 (ADR-0070 §9 amendment; BRT-02 `ETag` / `If-Match`): a manual schedule edit states
+ * the contest's last fact in the draft as `If-Match: "<assignmentId>"`, or as `If-None-Match: *`
+ * when the contest has none. Exactly one is required. A stale one is 409 `CONCURRENCY_CONFLICT`;
+ * the edit's response carries the new fact as its `ETag`. Built at registration: `./v1` imports
+ * this module, so its exports are not initialized while this module loads.
+ */
+const scheduleEditHeaders = () =>
+  ({
+    ...idempotencyHeaders,
+    properties: {
+      ...idempotencyHeaders.properties,
+      'if-match': { type: 'string', pattern: '^"[0-9A-Fa-f-]{36}"$' },
+      'if-none-match': { type: 'string', pattern: '^\\*$' },
+    },
+  }) as const;
+
+/** The stated last fact: an assignment fact id, or null for an explicit "none". */
+function lastFact(request: FastifyRequest): string | null {
+  const match = request.headers['if-match'];
+  const noneMatch = request.headers['if-none-match'];
+  if (match !== undefined && noneMatch !== undefined)
+    throw new DomainError(
+      DomainErrorCode.INVALID_INPUT,
+      'state either If-Match or If-None-Match: *, not both',
+    );
+  if (typeof match === 'string') return match.slice(1, -1).toLowerCase();
+  if (noneMatch === '*') return null;
+  throw new DomainError(
+    DomainErrorCode.INVALID_INPUT,
+    "a manual schedule edit needs If-Match with the contest's last fact, or If-None-Match: *",
+    { reason: 'PRECONDITION_REQUIRED' },
+  );
+}
+
+/** The fact a successful manual edit wrote is the next edit's `If-Match`. */
+function withFactTag<T extends { assignmentId: string }>(reply: FastifyReply, r: T): T {
+  void reply.header('etag', `"${r.assignmentId}"`);
+  return r;
+}
+
+/**
  * BRT-05 /v1 surface. PUBLIC reads return public DTOs only. Every mutation is an explicit lifecycle
  * command (no status PATCH); SELF/COMP_STAFF/ORG_ADMIN decisions are made inside the store from
  * database facts. Catalog mutation is INTERNAL (operator flag). Commands that create or change
@@ -65,6 +106,7 @@ export function registerCompetitionV1(
   },
 ): void {
   const { route, requireAuth, operator, key } = t;
+  const editHeaders = scheduleEditHeaders();
   const slug = slugSchema;
   const lookup = lookupSlugSchema;
   const compSlugParams = obj({ slug: lookup }, ['slug']);
@@ -1522,7 +1564,7 @@ export function registerCompetitionV1(
       'COMP_STAFF',
       {
         params: versionContestParams,
-        headers: idempotencyHeaders,
+        headers: editHeaders,
         body: obj(
           {
             resourceId: { type: ['string', 'null'], format: 'uuid' },
@@ -1538,15 +1580,19 @@ export function registerCompetitionV1(
           ['startsAt'],
         ),
       },
-      async (request) => {
+      async (request, reply) => {
         const p = params<{ versionId: string; contestId: string }>(request);
-        return schedule.setAssignment({
-          actorAccountId: requireAuth(request).accountId,
-          versionId: p.versionId,
-          contestId: p.contestId,
-          assignment: defined(body<{ startsAt: string }>(request)),
-          idempotencyKey: key(request),
-        });
+        return withFactTag(
+          reply,
+          await schedule.setAssignment({
+            actorAccountId: requireAuth(request).accountId,
+            versionId: p.versionId,
+            contestId: p.contestId,
+            assignment: defined(body<{ startsAt: string }>(request)),
+            expectedLastFactId: lastFact(request),
+            idempotencyKey: key(request),
+          }),
+        );
       },
     );
     route(
@@ -1555,18 +1601,22 @@ export function registerCompetitionV1(
       'COMP_STAFF',
       {
         params: versionContestParams,
-        headers: idempotencyHeaders,
+        headers: editHeaders,
         body: obj({ reason: { type: 'string', minLength: 1, maxLength: 500 } }, ['reason']),
       },
-      async (request) => {
+      async (request, reply) => {
         const p = params<{ versionId: string; contestId: string }>(request);
-        return schedule.removeAssignment({
-          actorAccountId: requireAuth(request).accountId,
-          versionId: p.versionId,
-          contestId: p.contestId,
-          reason: body<{ reason: string }>(request).reason,
-          idempotencyKey: key(request),
-        });
+        return withFactTag(
+          reply,
+          await schedule.removeAssignment({
+            actorAccountId: requireAuth(request).accountId,
+            versionId: p.versionId,
+            contestId: p.contestId,
+            reason: body<{ reason: string }>(request).reason,
+            expectedLastFactId: lastFact(request),
+            idempotencyKey: key(request),
+          }),
+        );
       },
     );
     for (const [path, locked] of [
@@ -1579,19 +1629,23 @@ export function registerCompetitionV1(
         'COMP_STAFF',
         {
           params: versionContestParams,
-          headers: idempotencyHeaders,
+          headers: editHeaders,
           body: obj({ reason: scheduleReason }, locked ? [] : ['reason']),
         },
-        async (request) => {
+        async (request, reply) => {
           const p = params<{ versionId: string; contestId: string }>(request);
-          return schedule.setLock({
-            actorAccountId: requireAuth(request).accountId,
-            versionId: p.versionId,
-            contestId: p.contestId,
-            locked,
-            reason: body<{ reason?: string | null }>(request).reason ?? null,
-            idempotencyKey: key(request),
-          });
+          return withFactTag(
+            reply,
+            await schedule.setLock({
+              actorAccountId: requireAuth(request).accountId,
+              versionId: p.versionId,
+              contestId: p.contestId,
+              locked,
+              reason: body<{ reason?: string | null }>(request).reason ?? null,
+              expectedLastFactId: lastFact(request),
+              idempotencyKey: key(request),
+            }),
+          );
         },
       );
     route(
@@ -1994,7 +2048,7 @@ export function registerCompetitionV1(
     'COMP_STAFF',
     {
       params: idParams('contestId'),
-      headers: idempotencyHeaders,
+      headers: editHeaders,
       body: obj(
         {
           scheduledStart: instant,
@@ -2009,7 +2063,7 @@ export function registerCompetitionV1(
         ['scheduledStart'],
       ),
     },
-    async (request) => {
+    async (request, reply) => {
       const ctx = requireAuth(request);
       const b = body<{
         scheduledStart: string;
@@ -2020,12 +2074,16 @@ export function registerCompetitionV1(
         resourceId?: string | null;
         reason?: string | null;
       }>(request);
-      return deps.structure.scheduleContest(
-        defined({
-          actorAccountId: ctx.accountId,
-          contestId: params<{ contestId: string }>(request).contestId,
-          ...b,
-          idempotencyKey: key(request),
+      return withFactTag(
+        reply,
+        await deps.structure.scheduleContest({
+          ...defined({
+            actorAccountId: ctx.accountId,
+            contestId: params<{ contestId: string }>(request).contestId,
+            ...b,
+            idempotencyKey: key(request),
+          }),
+          expectedLastFactId: lastFact(request),
         }),
       );
     },

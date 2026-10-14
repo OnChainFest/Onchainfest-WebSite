@@ -18,6 +18,7 @@ import {
   operatorDb,
   ownerDb,
   uniqueSlug,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -277,12 +278,13 @@ describe('validate and publish run the 05E-D engine — the only validator in fo
       competitionId: t.competitionId,
       idempotencyKey: k(),
     });
-    const put = (contestId: string, resourceId: string, startsAt: Date, reason?: string) =>
+    const put = async (contestId: string, resourceId: string, startsAt: Date, reason?: string) =>
       schedule.setAssignment({
         actorAccountId: t.actor,
         versionId,
         contestId,
         assignment: { resourceId, startsAt, ...(reason === undefined ? {} : { reason }) },
+        expectedLastFactId: await lastScheduleFact(db, contestId, versionId),
         idempotencyKey: k(),
       });
     await put(t.sf1, t.c1, at(9));
@@ -397,6 +399,7 @@ describe('validate and publish run the 05E-D engine — the only validator in fo
         versionId,
         contestId,
         assignment: { resourceId, startsAt: at(h) },
+        expectedLastFactId: await lastScheduleFact(db, contestId, versionId),
         idempotencyKey: k(),
       });
     const unresolved = await schedule.validate({ actorAccountId: t.actor, versionId });

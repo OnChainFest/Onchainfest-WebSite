@@ -510,6 +510,38 @@ export async function publishSchedule(
   return draft.versionId;
 }
 
+/**
+ * Test helper (ONCF-05E-H-1): the contest's last schedule fact as a client reads it before a manual
+ * edit (ADR-0070 §9 amendment), or null for "none". With `versionId`: its current fact in that
+ * version. Without: the legacy route's expectation — the fact in the open draft, or, when no draft
+ * is open, the PUBLISHED fact the route's CARRIED copy will replace.
+ */
+export async function lastScheduleFact(
+  db: Db,
+  contestId: string,
+  versionId?: string,
+): Promise<string | null> {
+  return inTransaction(db, ModuleRole.competition, async (ctx) => {
+    const factIn = async (version: string) => {
+      const { rows } = await sql<{ id: string; removed: boolean }>`
+        SELECT id, removed FROM competition.v_schedule_assignment_current
+        WHERE version_id = ${version} AND contest_id = ${contestId}`.execute(ctx.trx);
+      return rows[0];
+    };
+    if (versionId !== undefined) return (await factIn(versionId))?.id ?? null;
+    const { rows } = await sql<{ version_id: string; status: string }>`
+      SELECT v.version_id, v.status FROM competition.v_schedule_version_current v
+      JOIN competition.event e ON e.competition_id = v.competition_id
+      JOIN competition.contest c ON c.event_id = e.id
+      WHERE c.id = ${contestId} AND v.status IN ('DRAFT', 'PUBLISHED')`.execute(ctx.trx);
+    const draft = rows.find((r) => r.status === 'DRAFT');
+    if (draft !== undefined) return (await factIn(draft.version_id))?.id ?? null;
+    const published = rows.find((r) => r.status === 'PUBLISHED');
+    const fact = published === undefined ? undefined : await factIn(published.version_id);
+    return fact === undefined || fact.removed ? null : fact.id;
+  });
+}
+
 export async function newContestResult(deps: {
   db: Db;
   identity: IdentityStore;
@@ -623,6 +655,8 @@ export async function newContestResult(deps: {
       contestId: contest.contestId,
       // Schedule instants are whole seconds (ONCF-05E-C).
       scheduledStart: new Date(Math.ceil((Date.now() + 60_000) / 1000) * 1000),
+      // A freshly generated contest has no assignment yet (ADR-0070 §9 amendment).
+      expectedLastFactId: null,
       idempotencyKey: k(),
     });
     // The route edits a draft; the contest becomes SCHEDULED when the draft is published.

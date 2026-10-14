@@ -479,11 +479,12 @@ describe('BRT-05 API: public competition pages', () => {
     expect(bracket.results.status).toBe('NOT_AVAILABLE');
 
     const semi = bracket.rounds[0].contests[0];
-    await ok(
+    // ONCF-05E-H-1: every manual edit states the contest's last fact (If-None-Match: * for none).
+    const placed = await ok(
       call(
         'POST',
         `/v1/contests/${semi.contestId}/schedule`,
-        { ...c.org, ...idem() },
+        { ...c.org, ...idem(), 'if-none-match': '*' },
         { scheduledStart: '2027-06-10T09:00:00+02:00', courtLabel: 'Court 1' },
       ),
     );
@@ -494,7 +495,7 @@ describe('BRT-05 API: public competition pages', () => {
         await call(
           'POST',
           `/v1/contests/${semi.contestId}/schedule`,
-          { ...c.org, ...idem() },
+          { ...c.org, ...idem(), 'if-match': `"${placed.assignmentId}"` },
           { scheduledStart: '2027-07-10T09:00:00Z' },
         )
       ).status,
@@ -503,7 +504,7 @@ describe('BRT-05 API: public competition pages', () => {
       call(
         'POST',
         `/v1/contests/${semi.contestId}/schedule`,
-        { ...c.org, ...idem() },
+        { ...c.org, ...idem(), 'if-match': `"${placed.assignmentId}"` },
         { scheduledStart: '2027-07-10T09:00:00Z', reason: 'venue change' },
       ),
     );
@@ -531,7 +532,7 @@ describe('BRT-05 API: public competition pages', () => {
       call(
         'POST',
         `/v1/contests/${semi.contestId}/schedule`,
-        { ...c.org, ...idem() },
+        { ...c.org, ...idem(), 'if-match': `"${moved.assignmentId}"` },
         { scheduledStart: '2027-06-10T09:00:00+02:00', courtLabel: 'Court 1', reason: 'back' },
       ),
     );

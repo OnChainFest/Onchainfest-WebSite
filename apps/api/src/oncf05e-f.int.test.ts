@@ -741,10 +741,18 @@ describe('ONCF-05E-F proposal commit over the API', () => {
     // A draft edit (an assignment set by hand) after the preview.
     const p1 = await preview(A, a.versionId);
     expect(p1.status).toBe('SUCCESS');
+    const draftNow = await call('GET', `/v1/schedule-versions/${a.versionId}`, A.h);
+    const lastFact = (draftNow.body?.history as Json[])
+      .filter((f) => f.contestId === a.contests[0]?.contestId)
+      .at(-1)?.assignmentId as string | undefined;
     const set = await call(
       'PUT',
       `/v1/schedule-versions/${a.versionId}/assignments/${a.contests[0]?.contestId}`,
-      { ...A.h, ...idem() },
+      {
+        ...A.h,
+        ...idem(),
+        ...(lastFact === undefined ? { 'if-none-match': '*' } : { 'if-match': `"${lastFact}"` }),
+      },
       { resourceId: a.courtId, startsAt: '2027-09-05T12:00:00Z' },
     );
     expect(set.status, set.text).toBe(200);

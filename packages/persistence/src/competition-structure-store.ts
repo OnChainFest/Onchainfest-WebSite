@@ -1160,6 +1160,8 @@ export class StructureStore {
     locationLabel?: string | null;
     courtLabel?: string | null;
     reason?: string | null;
+    /** The contest's last fact in the open draft, or null for none (ADR-0070 §9 amendment). */
+    expectedLastFactId: string | null;
     idempotencyKey: string;
   }) {
     return new ScheduleStore(this.db).scheduleContest(input);

@@ -54,6 +54,7 @@ async function call(
     status: res.statusCode,
     body: res.body.length > 0 ? (res.json() as Json) : null,
     text: res.body,
+    etag: res.headers.etag,
   };
 }
 async function person(label: string) {
@@ -294,11 +295,12 @@ describe('ONCF-05E-C schedule versions over the API', () => {
     expect(retry.status).toBe(200);
     expect(retry.body?.versionId).toBe(draft.body?.versionId);
     const versionId = draft.body?.versionId as string;
+    // ONCF-05E-H-1: a first assignment states that the contest had none (If-None-Match: *).
     const put = (contestId: string, payload: Json, h = A.h) =>
       call(
         'PUT',
         `/v1/schedule-versions/${versionId}/assignments/${contestId}`,
-        { ...h, ...idem() },
+        { ...h, ...idem(), 'if-none-match': '*' },
         payload,
       );
     expect((await put(first.contestId, { startsAt: '2027-06-01T15:00:00Z' })).status).toBe(400);
@@ -311,16 +313,63 @@ describe('ONCF-05E-C schedule versions over the API', () => {
         )
       ).status,
     ).toBe(403);
-    for (const [i, c] of contests.entries())
-      expect(
-        (
-          await put(
-            c.contestId,
-            { resourceId: courtId, startsAt: `2027-06-0${i + 1}T15:00:00Z` },
-            scheduler.h,
-          )
-        ).status,
-      ).toBe(200);
+    const placed = new Map<string, string>();
+    for (const [i, c] of contests.entries()) {
+      const r = await put(
+        c.contestId,
+        { resourceId: courtId, startsAt: `2027-06-0${i + 1}T15:00:00Z` },
+        scheduler.h,
+      );
+      expect(r.status).toBe(200);
+      expect(r.etag).toBe(`"${r.body?.assignmentId}"`);
+      placed.set(c.contestId, r.body?.assignmentId as string);
+    }
+
+    // ONCF-05E-H-1: If-Match "<assignmentId>" or If-None-Match: * states the contest's last fact
+    // (ADR-0070 §9 amendment); exactly one is required, and an edit's ETag is the next If-Match.
+    const firstFact = placed.get(first.contestId) as string;
+    const edit = (path: 'lock' | 'unlock', h: Record<string, string>, payload: Json = {}) =>
+      call(
+        'POST',
+        `/v1/schedule-versions/${versionId}/assignments/${first.contestId}/${path}`,
+        { ...A.h, ...idem(), ...h },
+        payload,
+      );
+    for (const h of [
+      {},
+      { 'if-match': `"${firstFact}"`, 'if-none-match': '*' },
+      { 'if-match': firstFact },
+      { 'if-match': '*' },
+      { 'if-none-match': `"${firstFact}"` },
+    ]) {
+      const r = await edit('lock', h);
+      expect([r.status, r.body?.error.code]).toEqual([400, 'INVALID_INPUT']);
+    }
+    const staleNone = await put(first.contestId, {
+      resourceId: courtId,
+      startsAt: '2027-06-01T16:00:00Z',
+      reason: 'later',
+    });
+    expect([staleNone.status, staleNone.body?.error]).toEqual([
+      409,
+      expect.objectContaining({ code: 'CONCURRENCY_CONFLICT', reason: 'LAST_FACT_STALE' }),
+    ]);
+    const locked = await edit('lock', { 'if-match': `"${firstFact}"` });
+    expect(locked.status, locked.text).toBe(200);
+    expect(locked.etag).toBe(`"${locked.body?.assignmentId}"`);
+    // A second client still holding the replaced fact cannot unlock: 409, nothing written.
+    const staleUnlock = await edit('unlock', { 'if-match': `"${firstFact}"` }, { reason: 'x' });
+    expect([staleUnlock.status, staleUnlock.body?.error]).toEqual([
+      409,
+      expect.objectContaining({ code: 'CONCURRENCY_CONFLICT', reason: 'LAST_FACT_STALE' }),
+    ]);
+    const unlocked = await edit(
+      'unlock',
+      { 'if-match': locked.etag as string },
+      { reason: 'organizer decision' },
+    );
+    expect(unlocked.status, unlocked.text).toBe(200);
+    placed.set(first.contestId, unlocked.body?.assignmentId as string);
     // Draft reads are private; the public schedule shows nothing yet.
     expect((await call('GET', `/v1/schedule-versions/${versionId}`, stranger.h)).status).toBe(403);
     const read = await call('GET', `/v1/schedule-versions/${versionId}`, manager.h);
@@ -357,8 +406,14 @@ describe('ONCF-05E-C schedule versions over the API', () => {
     ).toHaveLength(3);
 
     // The legacy route now edits a new draft (auto-opened) and never publishes; moves need a reason.
+    // With no draft open, the stated last fact is the published one (ONCF-05E-H-1).
     const legacy = (payload: Json) =>
-      call('POST', `/v1/contests/${first.contestId}/schedule`, { ...A.h, ...idem() }, payload);
+      call(
+        'POST',
+        `/v1/contests/${first.contestId}/schedule`,
+        { ...A.h, ...idem(), 'if-match': `"${placed.get(first.contestId)}"` },
+        payload,
+      );
     expect(
       (await legacy({ scheduledStart: '2027-06-01T18:00:00Z', resourceId: courtId })).status,
     ).toBe(400);

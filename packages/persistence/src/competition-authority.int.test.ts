@@ -17,6 +17,7 @@ import {
   seedTestCatalog,
   uniqueSlug,
   type TestCatalog,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -325,6 +326,7 @@ describe('operational permissions never become sports authority', () => {
       actorAccountId: staff.accountId,
       contestId: e.contests[0]!,
       scheduledStart: '2027-05-01T10:00:00Z',
+      expectedLastFactId: await lastScheduleFact(api, e.contests[0]!),
       idempotencyKey: k(),
     });
     expect(await counts()).toEqual(before);
