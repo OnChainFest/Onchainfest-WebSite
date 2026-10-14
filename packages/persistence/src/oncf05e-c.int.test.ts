@@ -19,6 +19,7 @@ import {
   operatorDb,
   ownerDb,
   uniqueSlug,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -365,6 +366,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       versionId: v1,
       contestId: semi1!.id,
       assignment: { resourceId: court1, startsAt: s1 },
+      expectedLastFactId: await lastScheduleFact(db, semi1!.id, v1),
       idempotencyKey: k(),
     });
     // Same court, same time: 05E-C records it; 05E-D judges it (RESOURCE_OVERLAP, below).
@@ -373,6 +375,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       versionId: v1,
       contestId: semi2!.id,
       assignment: { resourceId: court1, startsAt: s2, courtLabel: 'Centre' },
+      expectedLastFactId: await lastScheduleFact(db, semi2!.id, v1),
       idempotencyKey: k(),
     });
     await schedule.setAssignment({
@@ -385,6 +388,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
         expectedEnd: '2027-06-02T18:30:00Z',
         changeoverSeconds: 0,
       },
+      expectedLastFactId: await lastScheduleFact(db, final!.id, v1),
       idempotencyKey: k(),
     });
     const v = await schedule.getVersion({ actorAccountId: ev.actor, versionId: v1 });
@@ -418,12 +422,13 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
 
   it('refuses structurally invalid writes only', async () => {
     const [semi1] = ev.contests;
-    const set = (assignment: Record<string, unknown>, contestId = semi1!.id) =>
+    const set = async (assignment: Record<string, unknown>, contestId = semi1!.id) =>
       schedule.setAssignment({
         actorAccountId: ev.actor,
         versionId: v1,
         contestId,
         assignment: assignment as never,
+        expectedLastFactId: await lastScheduleFact(db, contestId, v1),
         idempotencyKey: k(),
       });
     await rejects(set({ startsAt: s1 }), DomainErrorCode.INVALID_INPUT, 'RESOURCE_REQUIRED');
@@ -527,6 +532,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       versionId: v1,
       contestId: ev.contests[1]!.id,
       assignment: { resourceId: court2, startsAt: s2, reason: 'second court free' },
+      expectedLastFactId: await lastScheduleFact(db, ev.contests[1]!.id, v1),
       idempotencyKey: k(),
     });
     await rejects(
@@ -654,6 +660,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
         versionId: v1,
         contestId: ev.contests[0]!.id,
         assignment: { resourceId: court1, startsAt: s1 },
+        expectedLastFactId: await lastScheduleFact(db, ev.contests[0]!.id, v1),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_TRANSITION,
@@ -672,12 +679,18 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
     const carried = await schedule.getVersion({ actorAccountId: ev.actor, versionId: v2 });
     expect(carried.assignments.map((a) => a.source)).toEqual(['CARRIED', 'CARRIED', 'CARRIED']);
     const [semi1, semi2, final] = ev.contests;
-    const move = (contestId: string, startsAt: string, reason?: string, resourceId = court1) =>
+    const move = async (
+      contestId: string,
+      startsAt: string,
+      reason?: string,
+      resourceId = court1,
+    ) =>
       schedule.setAssignment({
         actorAccountId: ev.actor,
         versionId: v2,
         contestId,
         assignment: { resourceId, startsAt, ...(reason === undefined ? {} : { reason }) },
+        expectedLastFactId: await lastScheduleFact(db, contestId, v2),
         idempotencyKey: k(),
       });
     await rejects(
@@ -691,6 +704,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       versionId: v2,
       contestId: semi2!.id,
       locked: true,
+      expectedLastFactId: await lastScheduleFact(db, semi2!.id, v2),
       idempotencyKey: k(),
     });
     await rejects(
@@ -704,6 +718,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
         versionId: v2,
         contestId: semi2!.id,
         locked: false,
+        expectedLastFactId: await lastScheduleFact(db, semi2!.id, v2),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_INPUT,
@@ -715,6 +730,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
       contestId: semi2!.id,
       locked: false,
       reason: 'players agreed',
+      expectedLastFactId: await lastScheduleFact(db, semi2!.id, v2),
       idempotencyKey: k(),
     });
     await move(semi2!.id, '2027-06-01T18:00:00Z', 'players agreed', court2);
@@ -724,6 +740,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
         versionId: v2,
         contestId: final!.id,
         reason: 'x',
+        expectedLastFactId: await lastScheduleFact(db, final!.id, v2),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_TRANSITION,
@@ -789,6 +806,7 @@ describe('a tennis knockout on courts: drafts, assignments, publication, history
         versionId: d.versionId,
         contestId: ev.contests[0]!.id,
         assignment: { resourceId: court1, startsAt: s1, reason: 'x' },
+        expectedLastFactId: await lastScheduleFact(db, ev.contests[0]!.id, d.versionId),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_TRANSITION,
@@ -860,6 +878,7 @@ describe('SOFT acknowledgement and HARD blocking against the exact report', () =
       contestId: match!.id,
       scheduledStart: '2027-07-01T15:00:00Z',
       courtLabel: 'Court 9',
+      expectedLastFactId: await lastScheduleFact(db, match!.id),
       idempotencyKey: k(),
     });
     expect(r1).toMatchObject({ status: 'PLANNED', created: true });
@@ -873,6 +892,7 @@ describe('SOFT acknowledgement and HARD blocking against the exact report', () =
         actorAccountId: ev.actor,
         contestId: match!.id,
         scheduledStart: '2027-07-01T16:00:00Z',
+        expectedLastFactId: await lastScheduleFact(db, match!.id),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_INPUT,
@@ -906,6 +926,7 @@ describe('SOFT acknowledgement and HARD blocking against the exact report', () =
       contestId: match!.id,
       scheduledStart: '2027-07-05T15:00:00Z',
       reason: 'venue clash',
+      expectedLastFactId: await lastScheduleFact(db, match!.id),
       idempotencyKey: k(),
     });
     await rejects(publish([softKey]), DomainErrorCode.CONCURRENCY_CONFLICT, 'REPORT_STALE');
@@ -933,6 +954,7 @@ describe('SOFT acknowledgement and HARD blocking against the exact report', () =
       scheduledStart: '2027-07-01T15:00:00Z',
       scheduledEnd: '2027-07-01T17:00:00Z',
       reason: 'back on day one',
+      expectedLastFactId: await lastScheduleFact(db, match!.id),
       idempotencyKey: k(),
     });
     const clean = await schedule.validate({ actorAccountId: ev.actor, versionId: draft });
@@ -951,6 +973,7 @@ describe('SOFT acknowledgement and HARD blocking against the exact report', () =
       actorAccountId: ev.actor,
       contestId: ev.contests[0]!.id,
       scheduledStart: '2027-08-01T15:00:00Z',
+      expectedLastFactId: await lastScheduleFact(db, ev.contests[0]!.id),
       idempotencyKey: k(),
     });
     const report = await schedule.validate({ actorAccountId: ev.actor, versionId: r.versionId });
@@ -1023,6 +1046,7 @@ describe('a 24-entrant squad is one unit placed over six EXCLUSIVE lane pairs (g
           resourceId: pairs[Math.floor(i / 4)] as string,
           startsAt: '2027-09-01T09:00:00Z',
         },
+        expectedLastFactId: await lastScheduleFact(db, c.id, versionId),
         idempotencyKey: k(),
       });
     // A fifth bowler on pair 1 is recorded too: capacity is judged by 05E-D, not here.
@@ -1045,6 +1069,7 @@ describe('a 24-entrant squad is one unit placed over six EXCLUSIVE lane pairs (g
       versionId,
       contestId: ladder!.id,
       assignment: { resourceId: pairs[0] as string, startsAt: '2027-09-01T14:00:00Z' },
+      expectedLastFactId: await lastScheduleFact(db, ladder!.id, versionId),
       idempotencyKey: k(),
     });
     const after = await schedule.getVersion({ actorAccountId: ev.actor, versionId });
@@ -1079,6 +1104,7 @@ describe('a 24-entrant squad is one unit placed over six EXCLUSIVE lane pairs (g
           resourceId: course,
           startsAt: c.roundSequence === 1 ? '2027-10-01T08:00:00Z' : '2027-10-02T08:00:00Z',
         },
+        expectedLastFactId: await lastScheduleFact(db, c.id, versionId),
         idempotencyKey: k(),
       });
     const v = await schedule.getVersion({ actorAccountId: ev.actor, versionId });

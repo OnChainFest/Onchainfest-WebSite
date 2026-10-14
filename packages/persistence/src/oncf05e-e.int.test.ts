@@ -22,6 +22,7 @@ import {
   operatorDb,
   ownerDb,
   uniqueSlug,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -488,6 +489,7 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
       versionId,
       contestId: ev.contests[0]?.id as string,
       assignment: { resourceId: court, startsAt: '2027-09-03T12:00:00Z' },
+      expectedLastFactId: await lastScheduleFact(db, ev.contests[0]?.id as string, versionId),
       idempotencyKey: k(),
     });
     await schedule.setLock({
@@ -496,6 +498,7 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
       contestId: ev.contests[0]?.id as string,
       locked: true,
       reason: null,
+      expectedLastFactId: await lastScheduleFact(db, ev.contests[0]?.id as string, versionId),
       idempotencyKey: k(),
     });
     const before = await snapshot(comp.competitionId);
@@ -543,6 +546,7 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
       versionId: otherDraft,
       contestId: otherEv.contests[0]?.id as string,
       assignment: { resourceId: otherCourt, startsAt: WEEK.startsAt },
+      expectedLastFactId: await lastScheduleFact(db, otherEv.contests[0]?.id as string, otherDraft),
       idempotencyKey: k(),
     });
     const again = await preview(comp.actor, versionId);
@@ -568,6 +572,7 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
         versionId,
         contestId: c.id,
         assignment: { resourceId: court, startsAt: `2027-09-0${2 + i}T12:00:00Z` },
+        expectedLastFactId: await lastScheduleFact(db, c.id, versionId),
         idempotencyKey: k(),
       });
     const r = await preview(comp.actor, versionId);
@@ -651,6 +656,7 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
           startsAt: MONTH.startsAt,
           expectedEnd: '2027-10-01T00:00:00Z',
         },
+        expectedLastFactId: await lastScheduleFact(db, filler.contests[i]?.id as string, versionId),
         idempotencyKey: k(),
       });
     const r = await preview(comp.actor, versionId, { scope: { eventIds: [target.eventId] } });

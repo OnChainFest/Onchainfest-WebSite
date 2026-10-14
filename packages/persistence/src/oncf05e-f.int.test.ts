@@ -26,6 +26,7 @@ import {
   operatorDb,
   ownerDb,
   uniqueSlug,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -711,6 +712,7 @@ describe('ONCF-05E-F-2 commit: the recomputed plan, persisted atomically', () =>
       versionId: first,
       contestId: sf1.id,
       assignment: { resourceId: court, startsAt: '2027-09-03T12:00:00Z' },
+      expectedLastFactId: await lastScheduleFact(db, sf1.id, first),
       idempotencyKey: k(),
     });
     await publishDraft(comp, first);
@@ -764,6 +766,7 @@ describe('ONCF-05E-F-2 commit: the recomputed plan, persisted atomically', () =>
         versionId,
         contestId: c.id,
         assignment: { resourceId: courts[0] as string, startsAt: '2027-09-05T12:00:00Z' },
+        expectedLastFactId: await lastScheduleFact(db, c.id, versionId),
         idempotencyKey: k(),
       });
     await schedule.setLock({
@@ -772,6 +775,7 @@ describe('ONCF-05E-F-2 commit: the recomputed plan, persisted atomically', () =>
       contestId: sf1.id,
       locked: true,
       reason: null,
+      expectedLastFactId: await lastScheduleFact(db, sf1.id, versionId),
       idempotencyKey: k(),
     });
     await schedule.removeAssignment({
@@ -779,6 +783,7 @@ describe('ONCF-05E-F-2 commit: the recomputed plan, persisted atomically', () =>
       versionId,
       contestId: final.id,
       reason: 'make room',
+      expectedLastFactId: await lastScheduleFact(db, final.id, versionId),
       idempotencyKey: k(),
     });
     const before = await facts(versionId);
@@ -870,6 +875,7 @@ describe('stale base state (ADR-0075 § 16): any authoritative change refuses, n
       versionId,
       contestId: sf1.id,
       assignment: { resourceId: courts[1] as string, startsAt: '2027-09-04T12:00:00Z' },
+      expectedLastFactId: await lastScheduleFact(db, sf1.id, versionId),
       idempotencyKey: k(),
     });
     await stale(h);
@@ -884,6 +890,7 @@ describe('stale base state (ADR-0075 § 16): any authoritative change refuses, n
       contestId: sf1.id,
       locked: true,
       reason: null,
+      expectedLastFactId: await lastScheduleFact(db, sf1.id, versionId),
       idempotencyKey: k(),
     });
     await stale(h);
@@ -1031,6 +1038,7 @@ describe('only SUCCESS is committable (ADR-0076 C1, C8): refusals write nothing'
         versionId: va,
         contestId: c.id,
         assignment: { resourceId: court, startsAt: `2027-09-0${2 + i}T12:00:00Z` },
+        expectedLastFactId: await lastScheduleFact(db, c.id, va),
         idempotencyKey: k(),
       });
     await notCommittable(a, va, 'NOTHING_TO_PLACE');
@@ -1086,6 +1094,7 @@ describe('only SUCCESS is committable (ADR-0076 C1, C8): refusals write nothing'
           startsAt: MONTH.startsAt,
           expectedEnd: '2027-10-01T00:00:00Z',
         },
+        expectedLastFactId: await lastScheduleFact(db, filler.contests[i]?.id as string, versionId),
         idempotencyKey: k(),
       });
     const scope = { eventIds: [target.eventId] };
@@ -1759,6 +1768,7 @@ describe('ONCF-05E-F-4: resource, availability and draft edits between preview a
       versionId,
       contestId: sf1,
       assignment: { resourceId: courts[0] as string, startsAt: '2027-09-05T12:00:00Z' },
+      expectedLastFactId: await lastScheduleFact(db, sf1, versionId),
       idempotencyKey: k(),
     });
 
@@ -1773,6 +1783,7 @@ describe('ONCF-05E-F-4: resource, availability and draft edits between preview a
         startsAt: '2027-09-06T12:00:00Z',
         reason: 'player request',
       },
+      expectedLastFactId: await lastScheduleFact(db, sf1, versionId),
       idempotencyKey: k(),
     });
     await refusedAsStale(comp, versionId, h);
@@ -1790,6 +1801,7 @@ describe('ONCF-05E-F-4: resource, availability and draft edits between preview a
       contestId: sf1,
       locked: true,
       reason: null,
+      expectedLastFactId: await lastScheduleFact(db, sf1, versionId),
       idempotencyKey: k(),
     });
     h = await hashOf(comp, versionId);
@@ -1799,6 +1811,7 @@ describe('ONCF-05E-F-4: resource, availability and draft edits between preview a
       contestId: sf1,
       locked: false,
       reason: 'reopened',
+      expectedLastFactId: await lastScheduleFact(db, sf1, versionId),
       idempotencyKey: k(),
     });
     await refusedAsStale(comp, versionId, h);
@@ -1811,6 +1824,7 @@ describe('ONCF-05E-F-4: resource, availability and draft edits between preview a
       versionId,
       contestId: sf1,
       reason: 'make room',
+      expectedLastFactId: await lastScheduleFact(db, sf1, versionId),
       idempotencyKey: k(),
     });
     await refusedAsStale(comp, versionId, h);

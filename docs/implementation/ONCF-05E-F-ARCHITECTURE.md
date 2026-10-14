@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** Implementation: ONCF-05E-F-1, F-2 and F-3 merged; ONCF-05E-F-4 (tests / hardening) implemented (§ 30). ONCF-05E-F-5 Operations API audit: Part II (§§ 31–48). ONCF-05E-F-6 Operations API contract resolution: Part III (§§ 49–57) |
+| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** Implementation: ONCF-05E-F-1, F-2 and F-3 merged; ONCF-05E-F-4 (tests / hardening) implemented (§ 30). ONCF-05E-F-5 Operations API audit: Part II (§§ 31–48). ONCF-05E-F-6 Operations API contract resolution: Part III (§§ 49–57). ONCF-05E-H-1 manual-edit hardening (C-2, G-7) implemented: Part IV (§ 58) |
 | Baseline | `b93d57c` on `main` (PR #14, ONCF-05E-E-2 read-only preview merged) |
 | Contract | ADR-0066–0075 (**unchanged** through F-5; ONCF-05E-F-6 amends ADR-0066 §7, ADR-0070 §§ 8–9 and ADR-0074 D12, Part III) · [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) (commit eligibility, new) · [ONCF-05E architecture](./ONCF-05E-ARCHITECTURE.md) · [ONCF-05E-E architecture](./ONCF-05E-E-ARCHITECTURE.md) §§ 25–27, 34, 35 |
 | Migration | None required (§ 21) |
@@ -839,9 +839,9 @@ The known `authority-store.ts` clock-skew issue (`authorizeIn` uses host time ag
 | Finding | F-5 observation (Part II) | F-6 decision | Authoritative source | Contract | Implementation |
 |---|---|---|---|---|---|
 | **C-1** | ADR-0074 D12 exempted explicitly unlocked assignments; the engine has no exemption and no data for one (§ 44) | Unlock is a **write-time permission** only. Settled contests are always compared with the base PUBLISHED placement, whatever their lock history | ADR-0074 D12 amendment; ADR-0070 §8 amendment | **RESOLVED CONTRACTUALLY** | **Already conforms** (`checkLocks` has no exemption). No change required |
-| **C-2** | Manual edits take no expected base or last fact, so last write wins (§ 44) | Manual edits are **optimistic-concurrency** operations. The expected **last fact** is required; a stale edit is refused with `CONCURRENCY_CONFLICT` and writes nothing. This mechanism is separate from idempotency | ADR-0070 §9 amendment | **RESOLVED CONTRACTUALLY** | **IMPLEMENTATION DEFERRED** (§ 55, H-1). The code still allows last write wins |
+| **C-2** | Manual edits take no expected base or last fact, so last write wins (§ 44) | Manual edits are **optimistic-concurrency** operations. The expected **last fact** is required; a stale edit is refused with `CONCURRENCY_CONFLICT` and writes nothing. This mechanism is separate from idempotency | ADR-0070 §9 amendment | **RESOLVED CONTRACTUALLY** | **IMPLEMENTATION DEFERRED** (§ 55, H-1). The code still allows last write wins. **[H-1] IMPLEMENTED** (§ 58) |
 | **G-5** | Lifecycle routes take no `Idempotency-Key` (§ 39, § 43) | Start, complete, cancel and void take `Idempotency-Key`: replay; `IDEMPOTENCY_KEY_REUSED`; normal state machine for a new key; serialization for concurrent commands | ADR-0066 §7.1 | **CONTRACT DEFINED** | **IMPLEMENTATION DEFERRED** (H-3) |
-| **G-7** | `setLock` ignores contest status (§ 40, § 43) | Lock and unlock apply only to `PLANNED`/`SCHEDULED` contests. For `IN_PROGRESS`, `COMPLETED`, `CANCELLED` or `VOID` they are refused with the existing `INVALID_TRANSITION` `CONTEST_STARTED_OR_CLOSED` | ADR-0070 §8 amendment | **CONTRACT DEFINED** | **IMPLEMENTATION DEFERRED** (H-1) |
+| **G-7** | `setLock` ignores contest status (§ 40, § 43) | Lock and unlock apply only to `PLANNED`/`SCHEDULED` contests. For `IN_PROGRESS`, `COMPLETED`, `CANCELLED` or `VOID` they are refused with the existing `INVALID_TRANSITION` `CONTEST_STARTED_OR_CLOSED` | ADR-0070 §8 amendment | **CONTRACT DEFINED** | **IMPLEMENTATION DEFERRED** (H-1). **[H-1] IMPLEMENTED** (§ 58) |
 | **G-8** | A moved-then-started draft is unpublishable and cannot be repaired by edits (§ 43) | An intended hard boundary. Recovery in v1: discard the draft, then open a new one from the published version (existing commands). No repair command | ADR-0074 D12 amendment | **CONTRACT DEFINED** | **None needed.** Both commands exist. Tests: H-5 |
 | **G-9** | Complete, void and cancel ignore the competition's status (§ 41, § 43) | Minimum rule: no contest transition may contradict a terminal competition or event. Matrix: start refused; cancel allowed under `CANCELLED`; other terminal cells **UNDEFINED** | ADR-0066 §7.2 | **CONTRACT DEFINED** (partial; § 54) | **IMPLEMENTATION DEFERRED** for the decided cells (H-3) |
 | **G-10** | The cancel/void reason is on the status fact, not in the audit details (§ 35, § 43) | Cancel and void reasons are required and are **copied into the audit details**. The status fact is unchanged, and the outbox carries no reason | ADR-0066 §7.3 | **CONTRACT DEFINED** | **IMPLEMENTATION DEFERRED** (H-3) |
@@ -997,7 +997,7 @@ The grouping into slices is a recommendation.
 
 | # | Work | Contract | Readiness | Notes |
 |---|---|---|---|---|
-| H-1 | **Manual-edit hardening**: optimistic concurrency on set/move, remove, lock, unlock and the legacy route (C-2); lock and unlock refused for started or closed contests (G-7) | ADR-0070 §§ 8–9 amendments | **Ready** | Breaking request change on five routes; field shape chosen by the slice. Tests: stale refusal writes nothing; replay vs new key; per-contest granularity; `CONTEST_STARTED_OR_CLOSED` on lock and unlock |
+| H-1 | **Manual-edit hardening**: optimistic concurrency on set/move, remove, lock, unlock and the legacy route (C-2); lock and unlock refused for started or closed contests (G-7) | ADR-0070 §§ 8–9 amendments | **Ready** | Breaking request change on five routes; field shape chosen by the slice. Tests: stale refusal writes nothing; replay vs new key; per-contest granularity; `CONTEST_STARTED_OR_CLOSED` on lock and unlock. **[H-1] IMPLEMENTED** (§ 58) |
 | H-2 | **Lifecycle serialization (G-1)**: test-first, a deterministic two-connection reproduction (publish vs cancel; start vs event cancel), then one serialization covering every `contest_status_change` writer | BRT-05 § 8; ADR-0066 §7.1 | **Ready** (the mechanism is an implementation choice) | Separate slice. F-6 made no lock or transaction change. Should precede or accompany H-3's containing-state checks, because those read statuses that can race |
 | H-3 | **Lifecycle command hardening**: `Idempotency-Key` on start, complete, cancel and void (G-5); containing-state enforcement for the decided cells (G-9); reason copied into the audit (G-10) | ADR-0066 §§ 7.1–7.3 | **Partly ready** (U-1 and U-2 cells excluded) | Request contract gains a required header. Audit details change; outbox payloads do not |
 | H-4 | **Start authorization order (G-2 / A-1)** | Existing permissions | **Ready** | No contract change. A replay (H-3) must come before the guard |
@@ -1026,3 +1026,39 @@ The grouping into slices is a recommendation.
 | Unlock | **RESOLVED** (C-1, G-7) | Conforms for C-1; non-conforming for G-7 until H-1 |
 
 **ONCF-05E-F-6 — CONTRACT RESOLVED.** C-1 and C-2 are resolved contractually. G-5, G-7, G-8, G-9 (minimum rule and decided cells) and G-10 are defined. The remaining UNDEFINED edges (§ 54) are named, scoped and gate only part of H-3. All implementation is deferred.
+
+**[H-1]** The manual move, lock and unlock rows above now conform to C-2 and G-7 (§ 58). The other rows are unchanged.
+
+---
+
+# Part IV — ONCF-05E-H-1: manual-edit hardening
+
+## 58. Implementation of C-2 and G-7
+
+| | |
+|---|---|
+| Status | **IMPLEMENTED.** C-2 (ADR-0070 §9 amendment) and G-7 (ADR-0070 §8 amendment). No ADR changed; no migration |
+| Not in this slice | G-1 (H-2), lifecycle `Idempotency-Key` / G-5 / G-9 / G-10 (H-3), start authorization order (H-4), G-6 reason exposure for existing codes (H-6), U-5 (lock and unlock of a contest whose event is no longer schedulable: unchanged) |
+
+**C-2 — the stated last fact.**
+
+| Aspect | Implementation |
+|---|---|
+| Identity | The contest's current `schedule_assignment.id` in the draft (`assignmentId` in every response and in `getVersion`'s `history`; a removal fact counts), or "none" |
+| HTTP | BRT-02 convention: `If-Match: "<assignmentId>"`, or `If-None-Match: *` for none. Exactly one is required on `PUT …/assignments/:contestId`, `POST …/remove`, `…/lock`, `…/unlock` and `POST /v1/contests/:contestId/schedule`. Missing, both or malformed: 400 `INVALID_INPUT`. A successful edit returns the new fact as `ETag` |
+| Store | `expectedLastFactId: string \| null` (null = none) on `setAssignment`, `removeAssignment`, `setLock` and `scheduleContest`. Omitted: `INVALID_INPUT` `PRECONDITION_REQUIRED` |
+| Check | In the command's transaction, after `draft()` takes the `competition-schedule:<id>` advisory lock and re-reads the draft (READ COMMITTED, so a writer that held the lock before is seen). A mismatch is `CONCURRENCY_CONFLICT` reason `LAST_FACT_STALE` (409; the reason is exposed by `errorBody`). The whole transaction rolls back: no fact, audit, outbox or idempotency record |
+| Idempotency | Unchanged mechanism. The replay runs before the check; the expectation is part of the fingerprint |
+| Legacy route, no open draft | The route opens the draft itself, so the client could only have seen the PUBLISHED version: the expectation is the published fact the CARRIED copy replaces, or none. Once a draft is open, the draft's current fact applies. A refusal also rolls back the draft it opened |
+| Not covered (by the contract) | Proposal commit (ADR-0075/0076) and publication (`baseVersionId`, `reportHash`) |
+
+**G-7.** `setLock` re-reads the contest's status inside the same transaction, after the schedule lock. A contest that is not `PLANNED` or `SCHEDULED` is refused with `INVALID_TRANSITION` `CONTEST_STARTED_OR_CLOSED` and nothing is written. Lock and unlock read nothing that the lifecycle writers write, so a lock that truly overlaps a start is equivalent to a lock committed just before it. A start committed before the lock reads the status is always seen. No lifecycle lock was changed (G-1 stays open). Unlock still grants no publication exemption: the engine is unchanged (C-1).
+
+**Tests.** `packages/persistence/src/oncf05e-h1.int.test.ts`:
+- every C-2 case, with snapshots proving that refusals write nothing;
+- two races (move vs move, lock vs move) held behind a database barrier: a third connection holds the advisory lock until `pg_locks` shows both writers waiting;
+- the legacy route, with and without an open draft;
+- the G-7 matrix over all six contest states;
+- a start committed while a lock command waits.
+
+The HTTP contract is asserted in `apps/api/src/oncf05e-c.int.test.ts`. Existing callers now state their expectation.

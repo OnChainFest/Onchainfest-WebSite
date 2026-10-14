@@ -431,7 +431,8 @@ try {
     call(
       'POST',
       `/v1/contests/${semi.contestId}/schedule`,
-      { ...orgH, ...idem() },
+      // ONCF-05E-H-1: a first assignment states that the contest had none.
+      { ...orgH, ...idem(), 'if-none-match': '*' },
       {
         scheduledStart: '2027-04-05T10:00:00-06:00',
         courtLabel: 'Court 1',

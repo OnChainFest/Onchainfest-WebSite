@@ -185,6 +185,35 @@ function stale(reason: string, message: string): DomainError {
   return new DomainError(DomainErrorCode.CONCURRENCY_CONFLICT, message, { reason });
 }
 
+/**
+ * ADR-0070 §9 (amended, ONCF-05E-H-1): every manual edit states the contest's last fact the client
+ * saw in the draft — an assignment fact id (a removal fact counts) — or `null` for an explicit
+ * "none". Required: an omitted expectation is refused, never read as "whatever is current".
+ */
+function expectedLastFact(value: string | null | undefined): string | null {
+  if (value === undefined)
+    throw new DomainError(
+      DomainErrorCode.INVALID_INPUT,
+      "a manual schedule edit must state the contest's last fact in the draft, or none",
+      { reason: 'PRECONDITION_REQUIRED' },
+    );
+  if (value !== null && !UUID.test(value))
+    throw new DomainError(
+      DomainErrorCode.INVALID_INPUT,
+      'the expected last fact must be an assignment fact id',
+    );
+  return value;
+}
+
+/** The optimistic-concurrency check: the stated last fact must be the contest's current one. */
+function requireLastFact(expected: string | null, current: string | null): void {
+  if (expected !== current)
+    throw stale(
+      'LAST_FACT_STALE',
+      "the contest's assignment changed since it was read; read it again before editing",
+    );
+}
+
 /** The proposal request parameters (ADR-0075 § 4): the only client values a proposal reads. */
 interface ProposalScope {
   readonly eventIds?: readonly string[];
@@ -1474,13 +1503,27 @@ export class ScheduleStore {
     return rows[0]?.timezone ?? 'UTC';
   }
 
+  /**
+   * The contest's current fact id in the draft, or null when it has none. Read only after `draft()`
+   * took the competition-schedule lock, so a concurrent edit of the same draft has either committed
+   * (and is seen) or waits for this transaction (ADR-0070 §9 amendment).
+   */
+  private async lastFactId(ctx: TxContext, versionId: string, contestId: string) {
+    if (!UUID.test(contestId))
+      throw new DomainError(DomainErrorCode.NOT_FOUND, 'contest not found');
+    return (await this.fact(ctx, versionId, contestId))?.id ?? null;
+  }
+
   async setAssignment(input: {
     actorAccountId: string;
     versionId: string;
     contestId: string;
     assignment: AssignmentInput;
+    /** The contest's last fact in the draft, or null for none (ADR-0070 §9 amendment). */
+    expectedLastFactId: string | null;
     idempotencyKey: string;
   }) {
+    const expected = expectedLastFact(input.expectedLastFactId);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{ assignmentId: string; versionId: string }>(ctx, {
         command: 'SetScheduleAssignment',
@@ -1490,10 +1533,12 @@ export class ScheduleStore {
           versionId: input.versionId,
           contestId: input.contestId,
           assignment: { ...input.assignment, startsAt: String(input.assignment.startsAt) },
+          expectedLastFactId: expected,
         },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       const v = await this.draft(ctx, input.actorAccountId, input.versionId);
+      requireLastFact(expected, await this.lastFactId(ctx, v.version_id, input.contestId));
       const r = await this.setAssignmentTx(
         ctx,
         v,
@@ -1513,18 +1558,27 @@ export class ScheduleStore {
     versionId: string;
     contestId: string;
     reason: string;
+    /** The contest's last fact in the draft, or null for none (ADR-0070 §9 amendment). */
+    expectedLastFactId: string | null;
     idempotencyKey: string;
   }) {
     const reason = text(input.reason, 500, 'reason');
+    const expected = expectedLastFact(input.expectedLastFactId);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{ assignmentId: string }>(ctx, {
         command: 'RemoveScheduleAssignment',
         actorAccountId: input.actorAccountId,
         idempotencyKey: input.idempotencyKey,
-        params: { versionId: input.versionId, contestId: input.contestId, reason },
+        params: {
+          versionId: input.versionId,
+          contestId: input.contestId,
+          reason,
+          expectedLastFactId: expected,
+        },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       const v = await this.draft(ctx, input.actorAccountId, input.versionId);
+      requireLastFact(expected, await this.lastFactId(ctx, v.version_id, input.contestId));
       const before = await this.fact(ctx, v.version_id, input.contestId);
       if (before === undefined || before.removed)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'the contest has no assignment here');
@@ -1569,13 +1623,19 @@ export class ScheduleStore {
     });
   }
 
-  /** Lock (reason optional) or unlock (reason required) a draft assignment. */
+  /**
+   * Lock (reason optional) or unlock (reason required) a draft assignment. Only for a PLANNED or
+   * SCHEDULED contest (ADR-0070 §8 amendment): its status is re-read inside this transaction, so a
+   * start, completion, cancellation or void committed before it is always refused.
+   */
   async setLock(input: {
     actorAccountId: string;
     versionId: string;
     contestId: string;
     locked: boolean;
     reason?: string | null;
+    /** The contest's last fact in the draft, or null for none (ADR-0070 §9 amendment). */
+    expectedLastFactId: string | null;
     idempotencyKey: string;
   }) {
     const reason =
@@ -1586,15 +1646,29 @@ export class ScheduleStore {
       throw new DomainError(DomainErrorCode.INVALID_INPUT, 'unlocking needs a reason', {
         reason: 'REASON_REQUIRED',
       });
+    const expected = expectedLastFact(input.expectedLastFactId);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{ assignmentId: string }>(ctx, {
         command: input.locked ? 'LockScheduleAssignment' : 'UnlockScheduleAssignment',
         actorAccountId: input.actorAccountId,
         idempotencyKey: input.idempotencyKey,
-        params: { versionId: input.versionId, contestId: input.contestId, reason },
+        params: {
+          versionId: input.versionId,
+          contestId: input.contestId,
+          reason,
+          expectedLastFactId: expected,
+        },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       const v = await this.draft(ctx, input.actorAccountId, input.versionId);
+      requireLastFact(expected, await this.lastFactId(ctx, v.version_id, input.contestId));
+      const c = await this.contest(ctx, v.competition_id, input.contestId);
+      if (!EDITABLE_CONTEST.includes(c.status))
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          `a ${c.status} contest cannot be ${input.locked ? 'locked' : 'unlocked'}`,
+          { reason: 'CONTEST_STARTED_OR_CLOSED' },
+        );
       const before = await this.fact(ctx, v.version_id, input.contestId);
       if (before === undefined || before.removed)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'the contest has no assignment here');
@@ -1863,6 +1937,10 @@ export class ScheduleStore {
    * from the published version when none is open — and never publishes. Moving an existing
    * assignment needs a reason. The contest becomes SCHEDULED only when a version containing it is
    * published.
+   *
+   * The stated last fact (ADR-0070 §9 amendment) is the contest's current fact in the open draft.
+   * When this command opens the draft itself, the client could only have seen the PUBLISHED
+   * version, so the expectation is the published fact its CARRIED copy replaces, or none.
    */
   async scheduleContest(input: {
     actorAccountId: string;
@@ -1874,8 +1952,10 @@ export class ScheduleStore {
     locationLabel?: string | null;
     courtLabel?: string | null;
     reason?: string | null;
+    expectedLastFactId: string | null;
     idempotencyKey: string;
   }) {
+    const expected = expectedLastFact(input.expectedLastFactId);
     return this.tx(async (ctx) => {
       const idem = await identityIdempotency<{
         contestId: string;
@@ -1898,6 +1978,7 @@ export class ScheduleStore {
           location: input.locationLabel ?? undefined,
           court: input.courtLabel ?? undefined,
           reason: input.reason ?? undefined,
+          expectedLastFactId: expected,
         },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
@@ -1911,10 +1992,16 @@ export class ScheduleStore {
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'contest not found');
       await this.competition(ctx, input.actorAccountId, competitionId, 'COMP_MANAGE_SCHEDULE');
       await lockKeys(ctx, `competition-schedule:${competitionId}`);
+      const existing = (await this.currentOf(ctx, competitionId, 'DRAFT'))?.version_id;
       const open =
-        (await this.currentOf(ctx, competitionId, 'DRAFT'))?.version_id ??
-        (await this.openDraftTx(ctx, competitionId, input.actorAccountId)).versionId;
+        existing ?? (await this.openDraftTx(ctx, competitionId, input.actorAccountId)).versionId;
       const v = await this.draft(ctx, input.actorAccountId, open);
+      // A draft opened by this command holds only CARRIED copies; each replaces its published fact.
+      const current = await this.fact(ctx, v.version_id, input.contestId);
+      requireLastFact(
+        expected,
+        existing === undefined ? (current?.replaces_assignment_id ?? null) : (current?.id ?? null),
+      );
       const r = await this.setAssignmentTx(ctx, v, input.actorAccountId, input.contestId, {
         startsAt: input.scheduledStart,
         expectedEnd: input.scheduledEnd ?? null,

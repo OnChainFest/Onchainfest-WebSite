@@ -13,6 +13,7 @@ import {
   seedTestCatalog,
   uniqueSlug,
   type TestCatalog,
+  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -1116,6 +1117,7 @@ describe('participants, contests and lineups', () => {
       contestId: semi1!.id,
       scheduledStart: '2027-03-01T15:00:00Z',
       courtLabel: 'Court 1',
+      expectedLastFactId: await lastScheduleFact(api, semi1!.id),
       idempotencyKey: k(),
     });
     // ONCF-05E-C: the route edits the draft; the contest is SCHEDULED once the draft is published.
@@ -1125,6 +1127,7 @@ describe('participants, contests and lineups', () => {
         actorAccountId: w.ownerAccountId,
         contestId: semi1!.id,
         scheduledStart: '2027-03-01 15:00',
+        expectedLastFactId: await lastScheduleFact(api, semi1!.id),
         idempotencyKey: k(),
       }),
       DomainErrorCode.INVALID_INPUT,
@@ -1135,6 +1138,7 @@ describe('participants, contests and lineups', () => {
         actorAccountId: stranger.accountId,
         contestId: semi1!.id,
         scheduledStart: '2027-03-01T16:00:00Z',
+        expectedLastFactId: await lastScheduleFact(api, semi1!.id),
         idempotencyKey: k(),
       }),
       DomainErrorCode.FORBIDDEN,
@@ -1151,6 +1155,7 @@ describe('participants, contests and lineups', () => {
       actorAccountId: w.ownerAccountId,
       contestId: final!.id,
       scheduledStart: '2027-03-02T15:00:00Z',
+      expectedLastFactId: await lastScheduleFact(api, final!.id),
       idempotencyKey: k(),
     });
     await publishSchedule(api, w.ownerAccountId, w.competitionId);
@@ -1195,6 +1200,7 @@ describe('participants, contests and lineups', () => {
       actorAccountId: w.ownerAccountId,
       contestId: c[0]!.id,
       scheduledStart: '2027-03-01T15:00:00Z',
+      expectedLastFactId: await lastScheduleFact(api, c[0]!.id),
       idempotencyKey: k(),
     });
     await publishSchedule(api, w.ownerAccountId, w.competitionId);

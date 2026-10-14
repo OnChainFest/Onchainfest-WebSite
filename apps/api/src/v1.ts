@@ -158,6 +158,9 @@ export function errorBody(err: DomainError): {
     // ONCF-05E-F (ADR-0076 C4): the two proposal-commit refusals a client must tell apart from
     // every other 409 of its code. Exactly these fixed values; no other 409 reason is exposed.
     (err.code === 'CONCURRENCY_CONFLICT' && reason === 'PROPOSAL_STALE') ||
+    // ONCF-05E-H-1 (ADR-0070 §9 amendment): a stale manual schedule edit, machine-readable and
+    // distinct from BASE_VERSION_STALE and REPORT_STALE.
+    (err.code === 'CONCURRENCY_CONFLICT' && reason === 'LAST_FACT_STALE') ||
     (err.code === 'INVALID_TRANSITION' && reason === 'PROPOSAL_NOT_COMMITTABLE');
   // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
   const rawIssues = err.code === 'INVALID_INPUT' ? err.details.issues : undefined;
