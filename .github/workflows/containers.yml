@@ -27,7 +27,10 @@ jobs:
       - name: Refuses to start without production configuration (fail closed)
         run: |
           set -uo pipefail
+          # The non-zero exit is the expected outcome; capture it instead of letting bash -e abort.
+          set +e
           out=$(docker run --rm "onchainfest-${{ matrix.target }}:ci" 2>&1); status=$?
+          set -e
           echo "$out" | tail -5
           if [ "$status" -eq 0 ]; then echo "::error::the image started without configuration"; exit 1; fi
           echo "$out" | grep -Eq 'must be set in production|configuration refused'
