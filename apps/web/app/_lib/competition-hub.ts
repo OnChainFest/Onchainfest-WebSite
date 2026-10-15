@@ -1,9 +1,10 @@
+import type { ResourceSummary } from './resources';
 import { reviewChecklist } from './tournament-builder';
 import type { EventStatus, ManagedCompetition } from './tournaments';
 
 /**
  * ONCF-L1 Competition Hub: the organizer's view of where a tournament stands, derived only from
- * GET /v1/competitions/:id/manage (and the staff list when it loads). Stages whose web surface
+ * GET /v1/competitions/:id/manage (and the staff and resource lists when they load). Stages whose web surface
  * does not exist yet are reported as such — never as done — and carry no link.
  */
 
@@ -36,13 +37,14 @@ const FIELD_LOCKED: readonly EventStatus[] = ['FIELD_LOCKED', 'IN_PROGRESS', 'CO
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Later slices (resources, schedule, operations/results) have API support but no web surface. */
+/** Later slices (schedule, operations/results) have API support but no web surface. */
 const PLANNED = 'Not in the web app yet';
 
 export function hubStages(
   data: ManagedCompetition,
   base: string,
   staffCount: number | null,
+  resources: ResourceSummary | null,
 ): HubStage[] {
   const c = data.competition;
   const live = data.events.filter((e) => e.status !== 'CANCELLED');
@@ -99,7 +101,7 @@ export function hubStages(
             href: only !== undefined ? `${base}/categories/${only.id}/structure` : '#categories',
           }),
     },
-    { key: 'resources', label: 'Resources', state: 'planned', detail: PLANNED },
+    resourceStage(resources, `${base}/resources`),
     { key: 'schedule', label: 'Schedule', state: 'planned', detail: PLANNED },
     { key: 'operations', label: 'Operations & results', state: 'planned', detail: PLANNED },
     {
@@ -131,6 +133,29 @@ export function hubStages(
   ];
 }
 
+/**
+ * ONCF-L2: resources are ready when every active one has declared hours and each category has a
+ * resource of a type its discipline uses. That is resource readiness only — never a claim that the
+ * tournament can be scheduled (dates and scheduling profiles are separate prerequisites).
+ */
+function resourceStage(r: ResourceSummary | null, href: string): HubStage {
+  const stage = { key: 'resources', label: 'Resources', href };
+  if (r === null) return { ...stage, state: 'todo', detail: 'Can’t be loaded right now' };
+  const missing = r.missing.map((m) => m.category).join(', ');
+  if (r.active === 0)
+    return {
+      ...stage,
+      state: r.missing.length > 0 ? 'attention' : 'todo',
+      detail: r.missing.length > 0 ? `None yet · needed for ${missing}` : 'None yet',
+    };
+  const parts = [`${r.active} active`];
+  if (r.needHours.length > 0) parts.push(`${r.needHours.length} without hours`);
+  if (r.missing.length > 0) parts.push(`none for ${missing}`);
+  return r.needHours.length > 0 || r.missing.length > 0
+    ? { ...stage, state: 'attention', detail: parts.join(' · ') }
+    : { ...stage, state: 'ready', detail: `${parts[0] as string} · all have declared hours` };
+}
+
 export interface NextAction {
   readonly label: string;
   readonly detail: string;
@@ -141,7 +166,11 @@ export interface NextAction {
  * The single most useful next step, from stored state and the caller's own permissions. Advice
  * only: the destination page and the API still decide what is possible.
  */
-export function nextAction(data: ManagedCompetition, base: string): NextAction {
+export function nextAction(
+  data: ManagedCompetition,
+  base: string,
+  resources: ResourceSummary | null = null,
+): NextAction {
   const c = data.competition;
   const perms = data.access.permissions;
   const live = data.events.filter((e) => e.status !== 'CANCELLED');
@@ -197,8 +226,24 @@ export function nextAction(data: ManagedCompetition, base: string): NextAction {
       detail: 'Then seed it and generate the structure.',
       href: `${base}/categories/${toLock.id}/structure`,
     };
+  if (
+    resources !== null &&
+    perms.includes('COMP_EDIT') &&
+    (resources.active === 0 || resources.needHours.length > 0 || resources.missing.length > 0)
+  )
+    return resources.active === 0 || resources.needHours.length === 0
+      ? {
+          label: 'Add your resources',
+          detail: 'The courts, lanes or courses matches will use, with their hours.',
+          href: `${base}/resources`,
+        }
+      : {
+          label: 'Declare resource hours',
+          detail: `Scheduling won’t use ${resources.needHours.join(', ')} until hours are declared.`,
+          href: `${base}/resources`,
+        };
   return {
     label: 'Structure is set',
-    detail: 'Resources, scheduling and match operations come to the web app in a later release.',
+    detail: 'Scheduling and match operations come to the web app in a later release.',
   };
 }

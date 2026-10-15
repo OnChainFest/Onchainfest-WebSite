@@ -79,6 +79,39 @@ export const ERROR_MESSAGES = {
     'That person or staff assignment no longer exists. The list shows who is current.',
   staff_already_removed: 'That staff assignment has already ended.',
   staff_invalid: 'Choose a person from the list and one of the roles shown.',
+  resource_not_permitted: 'Only a tournament owner or admin can change resources and their hours.',
+  resource_duplicate_label:
+    'Another active resource of this tournament already has that name. Choose a different one.',
+  resource_not_found: 'That resource no longer exists. The list shows what is current.',
+  resource_transition:
+    'That change isn’t possible now: the resource is already in that state, or the tournament has ended.',
+  resource_invalid:
+    'Check the resource details: capacity is a whole number from 1 to 100,000, and advanced keys use lowercase letters, numbers and hyphens.',
+  resource_label: 'Give the resource a name of up to 80 characters, e.g. “Court 1”.',
+  resource_attribute: 'Check the resource details: use one of the values offered for each field.',
+  resource_timezone: 'Pick a timezone from the list, or leave it empty to use the tournament’s.',
+  resource_type: 'Choose one of the resource types offered for this tournament.',
+  availability_not_permitted:
+    'Only a tournament owner or admin can change resource hours and closures.',
+  availability_duplicate: 'Those hours are already declared. Nothing was added.',
+  availability_not_found: 'Those hours no longer exist. The list shows what is current.',
+  availability_transition:
+    'That change isn’t possible now: those hours were already removed, or the tournament has ended.',
+  availability_invalid: 'Check the hours: use the dates and times offered by the form.',
+  availability_weekday: 'Choose at least one day of the week.',
+  availability_time: 'Enter times as HH:MM, e.g. 08:00.',
+  availability_window_empty: 'Opening and closing times can’t be the same.',
+  availability_dates: 'The “until” date must be on or after the “from” date.',
+  availability_period_order: 'The end of the period must be after its start.',
+  availability_time_skipped:
+    'That time doesn’t exist on that date: clocks move forward then. Choose a time outside the change.',
+  availability_time_ambiguous:
+    'That time happens twice on that date because clocks move back. Choose a time outside the repeated hour.',
+  availability_partial:
+    'Some days were added and some weren’t. The hours below show what is in place — submit again to add the rest.',
+  availability_replace_partial:
+    'The old hours were removed, but the new ones couldn’t be added. Add them again below.',
+  form_resubmitted: 'That form was already sent with other values. Reload the page and try again.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -131,6 +164,13 @@ export const NOTICE_MESSAGES = {
   attributes_saved: 'Entry details saved.',
   staff_added: 'Staff member added. Their access applies straight away.',
   staff_removed: 'Staff member removed. Their access through this role has ended.',
+  resource_created: 'Resource added. Declare its hours so scheduling can use it.',
+  resource_updated: 'Resource details saved.',
+  resource_retired: 'Resource retired. Scheduling won’t use it.',
+  resource_reactivated: 'Resource reactivated.',
+  availability_added: 'Hours saved.',
+  availability_removed: 'Removed. It no longer applies.',
+  availability_replaced: 'Hours changed.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

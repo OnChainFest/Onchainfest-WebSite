@@ -3227,3 +3227,464 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ── Resources & availability (ONCF-L2) ─────────────────────────────── */
+.oc-app .res-summary {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 2rem;
+  padding: 1.2rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  background: var(--ink-2);
+}
+.oc-app .res-summary[data-state='ready'] {
+  border-left-color: var(--green);
+}
+.oc-app .res-summary > strong {
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.oc-app .res-summary > p {
+  margin: 0;
+}
+.oc-app .res-counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.oc-app .res-counts strong {
+  color: var(--white);
+  font-size: 1rem;
+  margin-right: 0.2rem;
+}
+.oc-app .res-counts li[data-warn='true'] strong {
+  color: var(--gold);
+}
+.oc-app .res-problems {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .res-layer {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 2.25rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px dashed var(--line-strong);
+}
+.oc-app .res-layer p {
+  margin: 0;
+}
+.oc-app .res-group {
+  margin: 1rem 0 1.5rem;
+}
+.oc-app .res-group > h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.oc-app .res-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.oc-app .res-list > li {
+  outline: 1px solid var(--line);
+  background: var(--ink-2);
+  min-width: 0;
+}
+.oc-app .res-list > li[data-readiness='no-hours'] {
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+.oc-app .res-item > summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+}
+.oc-app .res-item > summary::-webkit-details-marker {
+  display: none;
+}
+.oc-app .res-item > summary:hover,
+.oc-app .res-item[open] > summary {
+  background: var(--ink-3);
+}
+.oc-app .res-item-id {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.oc-app .res-item-hours {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.oc-app .res-ready {
+  --tone: var(--faint);
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  justify-self: end;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  color: var(--tone);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.oc-app .res-ready[data-readiness='ready'] {
+  --tone: var(--green);
+}
+.oc-app .res-ready[data-readiness='no-hours'] {
+  --tone: var(--gold);
+}
+.oc-app .res-item-body {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0.25rem 1rem 1.25rem;
+  min-width: 0;
+}
+.oc-app .res-warn {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-left: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  font-size: 0.88rem;
+}
+/* Overrides the global two-column `.oc-app dl` layout: label over value, in a wrapping grid. */
+.oc-app .res-facts-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+}
+.oc-app .res-facts-list dt {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.oc-app .res-facts-list dd {
+  margin: 0.2rem 0 0;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.oc-app .res-hours {
+  display: grid;
+  gap: 1rem;
+}
+.oc-app .res-hours-group {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.oc-app .res-hours h5,
+.oc-app .res-preview h5,
+.oc-app .res-forms h5 {
+  margin: 0;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.oc-app .res-hours-group > p {
+  margin: 0;
+}
+.oc-app .res-week {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.3rem;
+  margin: 0;
+}
+.oc-app .res-week > div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.oc-app .res-week dt {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.oc-app .res-week dd {
+  margin: 0;
+  font-size: 0.92rem;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.oc-app .res-dated,
+.oc-app .res-facts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.oc-app .res-dated > li,
+.oc-app .res-facts li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.oc-app .res-closed {
+  color: var(--danger);
+  font-weight: 650;
+}
+.oc-app .res-dated .chip {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+.oc-app .res-facts > summary,
+.oc-app .res-advanced > summary,
+.oc-app .res-retired > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.oc-app .res-confirm {
+  display: grid;
+  gap: 0.5rem;
+  width: min(100%, 320px);
+  padding: 0.75rem;
+  border: 1px solid var(--line-strong);
+  background: var(--ink);
+}
+.oc-app .res-confirm .field {
+  margin-bottom: 0;
+}
+.oc-app .res-window {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+}
+.oc-app .res-window > small,
+.oc-app .res-window > .res-check {
+  grid-column: 1 / -1;
+}
+.oc-app .res-window .field {
+  margin-bottom: 0;
+}
+.oc-app .res-check {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+.oc-app .res-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.oc-app .res-days > legend {
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+}
+.oc-app .res-day {
+  position: relative;
+}
+.oc-app .res-day input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+.oc-app .res-day span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+.oc-app .res-day input:checked + span {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  color: var(--white);
+}
+.oc-app .res-day input:focus-visible + span {
+  box-shadow: 0 0 0 2px var(--cyan);
+}
+.oc-app .res-preview {
+  display: grid;
+  gap: 0.5rem;
+}
+.oc-app .res-days-preview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+}
+.oc-app .res-days-preview li {
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+  padding: 0.55rem 0.5rem;
+  outline: 1px solid var(--line);
+  background: color-mix(in srgb, var(--green) 7%, var(--ink));
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .res-days-preview li[data-open='false'] {
+  background: var(--ink);
+  color: var(--faint);
+}
+.oc-app .res-days-preview .mono {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.oc-app .res-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.oc-app .res-add-hours,
+.oc-app .res-edit {
+  min-width: 0;
+}
+.oc-app .res-add-hours[open],
+.oc-app .res-edit[open] {
+  flex-basis: 100%;
+}
+.oc-app .res-add-hours > summary,
+.oc-app .res-edit > summary {
+  list-style: none;
+}
+.oc-app .res-add-hours > summary::-webkit-details-marker,
+.oc-app .res-edit > summary::-webkit-details-marker {
+  display: none;
+}
+.oc-app .res-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.oc-app .res-forms > form,
+.oc-app .res-edit > form {
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  background: var(--ink);
+}
+.oc-app .res-edit > form {
+  margin-top: 0.75rem;
+}
+.oc-app .res-forms .field,
+.oc-app .res-form .field {
+  margin-bottom: 0;
+}
+.oc-app .res-forms p {
+  margin: 0;
+}
+.oc-app .res-attrs {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.oc-app .res-advanced {
+  display: grid;
+  gap: 0.75rem;
+}
+.oc-app .res-advanced[open] {
+  padding: 0.75rem;
+  border: 1px dashed var(--line);
+}
+.oc-app .res-retired {
+  margin-top: 2rem;
+}
+.oc-app .res-retired > summary {
+  padding: 0.5rem 0;
+  font-weight: 650;
+}
+.oc-app .res-retired .res-list > li {
+  opacity: 0.75;
+}
+.oc-app .res-type-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.oc-app .res-type-pick .chip {
+  font-size: 0.7rem;
+}
+.oc-app .res-add,
+.oc-app .res-add .field,
+.oc-app .res-add input,
+.oc-app .res-add select {
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .oc-app .res-days-preview {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .oc-app .res-item > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .oc-app .res-item-hours {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+@media (max-width: 520px) {
+  .oc-app .res-days-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .oc-app .res-week > div {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+  .oc-app .res-window,
+  .oc-app .res-forms .field-row,
+  .oc-app .res-form .field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .oc-app .res-confirm {
+    width: 100%;
+  }
+  .oc-app .res-item-body {
+    padding: 0.25rem 0.75rem 1rem;
+  }
+}
+@media (max-width: 420px) {
+  .oc-app .res-item > summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .oc-app .res-ready {
+    justify-self: start;
+  }
+  .oc-app .res-days-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .oc-app .res-days-preview li {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+}

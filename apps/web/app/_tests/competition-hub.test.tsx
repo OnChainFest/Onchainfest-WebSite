@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // fake platform API. The API stays the authority: these tests prove the web layer reflects
 // GET /v1/competitions/:id/manage and /staff, offers staff changes only with COMP_MANAGE_STAFF,
 // sends the canonical commands and never links to workflow stages that have no web surface yet.
+// ONCF-L2: the Resources stage is linked and reflects resources, declared hours and the catalog.
 
 const h = vi.hoisted(() => ({
   auth: { getClaims: vi.fn(), getSession: vi.fn() },
@@ -196,16 +197,78 @@ let routes: Record<string, (c: Call) => Response> = {};
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 const err = (status: number, code: string) => json(status, { error: { code } });
 
+const COURT_1 = '99999999-9999-4999-8999-999999999991';
+const COURT_2 = '99999999-9999-4999-8999-999999999992';
+function court(id: string, label: string, status = 'ACTIVE') {
+  return {
+    resourceId: id,
+    competitionId: COMP,
+    typeCode: 'PADEL_COURT',
+    revision: 1,
+    label,
+    attributes: {},
+    capacity: 1,
+    occupancyMode: 'EXCLUSIVE',
+    occupancy: 'EXCLUSIVE',
+    exclusivityKeys: [],
+    venueOrganizationId: null,
+    locationLabel: null,
+    timezone: null,
+    status,
+    updatedAt: '2026-10-08T00:00:00.000Z',
+  };
+}
+const weekly = (resourceId: string | null, n: string) => ({
+  availabilityId: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${n}`,
+  scope: resourceId === null ? 'COMPETITION' : 'RESOURCE',
+  resourceId,
+  kind: 'WEEKLY',
+  weekday: 6,
+  start: '08:00',
+  end: '20:00',
+  recordedAt: '2026-10-08T00:00:00.000Z',
+});
+const CATALOG = {
+  disciplineVersions: [
+    {
+      disciplineVersionId: 'dv',
+      sport: { code: 'padel', name: 'Padel' },
+      discipline: { code: 'padel.doubles', name: 'Padel doubles' },
+      version: 1,
+      specHash: 'h',
+      participantKinds: ['TEAM'],
+      lineupSize: { min: 2, max: 2 },
+      allowedContestTypes: ['MATCH'],
+      compatibleFormatVersionIds: ['fv'],
+      capabilities: {
+        contestTypes: ['MATCH'],
+        participantKinds: ['TEAM'],
+        rulesetFamilies: [],
+        partitionKinds: [],
+        startMethods: [],
+        multiRound: true,
+        resourceTypes: ['PADEL_COURT'],
+        entryAttributes: [],
+      },
+    },
+  ],
+  formatVersions: [],
+};
+
 function platform(
   o: {
     detail?: ReturnType<typeof managed> | null;
     staff?: unknown[] | null;
     roster?: unknown[] | null;
+    resources?: unknown[] | null;
+    facts?: unknown[] | null;
   } = {},
 ) {
   const detail = o.detail === undefined ? managed() : o.detail;
   const staff = o.staff === undefined ? STAFF : o.staff;
   const roster = o.roster === undefined ? ROSTER : o.roster;
+  const resources = o.resources === undefined ? [] : o.resources;
+  const facts = o.facts === undefined ? [] : o.facts;
   routes = {
     'GET /v1/me': () =>
       json(200, {
@@ -237,6 +300,11 @@ function platform(
       detail === null ? json(503, {}) : json(200, detail),
     [`GET /v1/competitions/${COMP}/staff`]: () =>
       staff === null ? json(503, {}) : json(200, { items: staff }),
+    [`GET /v1/competitions/${COMP}/resources`]: () =>
+      resources === null ? json(503, {}) : json(200, { items: resources }),
+    [`GET /v1/competitions/${COMP}/availability`]: () =>
+      facts === null ? json(503, {}) : json(200, { items: facts }),
+    'GET /v1/catalog': () => json(200, CATALOG),
     [`GET /v1/competitions/${COMP}/registrations`]: () =>
       json(200, {
         items: [],
@@ -319,7 +387,7 @@ describe('Competition Hub', () => {
     expect(out).toMatch(/Your role<\/span><span>Owner</);
   });
 
-  it('shows each workflow stage from real data, and future stages as not available', async () => {
+  it('shows each workflow stage from real data, and unbuilt stages as not available', async () => {
     platform();
     const out = html(await Hub({ ...pc(), ...sp() }));
     expect(stage(out, 'categories')?.[1]).toBe('ready');
@@ -330,7 +398,11 @@ describe('Competition Hub', () => {
     expect(stage(out, 'structure')?.[2]).toContain(`href="${BASE}/categories/${EVENT}/structure"`);
     expect(stage(out, 'staff')?.[2]).toContain('2 people assigned');
     expect(stage(out, 'public')?.[2]).toContain('Available after publishing');
-    for (const k of ['resources', 'schedule', 'operations']) {
+    // ONCF-L2: no resources yet, and the padel category needs a padel court.
+    expect(stage(out, 'resources')?.[1]).toBe('attention');
+    expect(stage(out, 'resources')?.[2]).toContain('None yet · needed for Men Open');
+    expect(stage(out, 'resources')?.[2]).toContain(`href="${BASE}/resources"`);
+    for (const k of ['schedule', 'operations']) {
       expect(stage(out, k)?.[1]).toBe('planned');
       expect(stage(out, k)?.[2]).toContain('Not available yet');
       expect(stage(out, k)?.[2]).not.toContain('href=');
@@ -387,9 +459,14 @@ describe('Competition Hub', () => {
 
     platform({
       detail: managed({ status: 'ACTIVE', events: [event({ status: 'IN_PROGRESS' })] }),
+      resources: [court(COURT_1, 'Court 1')],
+      facts: [weekly(null, '01')],
     });
     out = html(await Hub({ ...pc(), ...sp() }));
     expect(out).toContain('Structure is set');
+    expect(out).toContain(
+      'Scheduling and match operations come to the web app in a later release.',
+    );
     expect(out).not.toMatch(/Structure is set.*Go →/);
   });
 
@@ -413,8 +490,9 @@ describe('Competition Hub', () => {
       html(await Hub({ ...pc(), ...sp() })),
       html(await Staff({ ...pc(), ...sp() })),
     ]) {
-      expect(out).not.toMatch(/href="[^"]*\/(resources|schedule|operations|results)["/?#]/);
-      expect(out).toMatch(/aria-disabled="true" data-key="resources"/);
+      expect(out).not.toMatch(/href="[^"]*\/(schedule|operations|results)["/?#]/);
+      expect(out).toContain(`href="${BASE}/resources" data-key="resources"`);
+      expect(out).not.toMatch(/aria-disabled="true" data-key="resources"/);
       expect(out).toMatch(/aria-disabled="true" data-key="schedule"/);
       expect(out).toMatch(/aria-disabled="true" data-key="operations"/);
     }
@@ -445,6 +523,99 @@ describe('Competition Hub', () => {
     platform();
     const out = html(await Registrations({ ...pc(), ...sp() }));
     expect(out).toMatch(/data-key="registrations" aria-current="page"/);
+  });
+});
+
+// ───────────────────────────── hub · resources (ONCF-L2) ─────────────────────────────
+
+describe('Competition Hub resources stage', () => {
+  const live = () => managed({ status: 'ACTIVE', events: [event({ status: 'IN_PROGRESS' })] });
+
+  it('is ready only when every active resource has declared hours (resource or tournament-wide)', async () => {
+    platform({
+      resources: [court(COURT_1, 'Court 1'), court(COURT_2, 'Court 2', 'RETIRED')],
+      facts: [weekly(COURT_1, '01')],
+    });
+    let out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('ready');
+    expect(stage(out, 'resources')?.[2]).toContain('1 active · all have declared hours');
+
+    // Tournament-wide hours declare time for every resource.
+    platform({
+      resources: [court(COURT_1, 'Court 1'), court(COURT_2, 'Court 2')],
+      facts: [weekly(null, '01')],
+    });
+    out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('ready');
+    expect(stage(out, 'resources')?.[2]).toContain('2 active');
+  });
+
+  it('flags resources without declared hours and points the next step at them', async () => {
+    platform({
+      detail: live(),
+      resources: [court(COURT_1, 'Court 1'), court(COURT_2, 'Court 2')],
+      facts: [weekly(COURT_1, '01')],
+    });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('attention');
+    expect(stage(out, 'resources')?.[2]).toContain('2 active · 1 without hours');
+    expect(out).toContain('Declare resource hours');
+    expect(out).toContain('Scheduling won’t use Court 2 until hours are declared.');
+    expect(out).toContain(`class="btn btn-cyan btn-sm" href="${BASE}/resources">Go`);
+  });
+
+  it('a closure or blackout alone declares no hours', async () => {
+    platform({
+      resources: [court(COURT_1, 'Court 1')],
+      facts: [
+        {
+          availabilityId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa09',
+          scope: 'RESOURCE',
+          resourceId: COURT_1,
+          kind: 'DATE_CLOSED',
+          date: '2026-11-15',
+          recordedAt: '2026-10-08T00:00:00.000Z',
+        },
+      ],
+    });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('attention');
+    expect(stage(out, 'resources')?.[2]).toContain('1 without hours');
+  });
+
+  it('names categories without a resource of a type their sport uses', async () => {
+    platform({
+      detail: live(),
+      resources: [{ ...court(COURT_1, 'Centre court'), typeCode: 'TENNIS_COURT' }],
+      facts: [weekly(null, '01')],
+    });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('attention');
+    expect(stage(out, 'resources')?.[2]).toContain('none for Men Open');
+    expect(out).toContain('Add your resources');
+  });
+
+  it('a view-only role sees the stage but gets no resource next step', async () => {
+    platform({
+      detail: managed({
+        status: 'ACTIVE',
+        events: [event({ status: 'IN_PROGRESS' })],
+        permissions: ['COMP_VIEW_PRIVATE', 'COMP_MANAGE_SCHEDULE', 'COMP_MANAGE_LINEUPS'],
+        staffRoles: ['SCHEDULER'],
+      }),
+    });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('attention');
+    expect(out).toContain('Structure is set');
+    expect(out).not.toContain('Add your resources');
+  });
+
+  it('still renders, linked, when resources cannot be loaded', async () => {
+    platform({ resources: null });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'resources')?.[1]).toBe('todo');
+    expect(stage(out, 'resources')?.[2]).toContain('Can’t be loaded right now');
+    expect(stage(out, 'resources')?.[2]).toContain(`href="${BASE}/resources"`);
   });
 });
 
