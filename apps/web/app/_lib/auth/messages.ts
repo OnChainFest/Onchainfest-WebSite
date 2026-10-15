@@ -112,6 +112,23 @@ export const ERROR_MESSAGES = {
   availability_replace_partial:
     'The old hours were removed, but the new ones couldn’t be added. Add them again below.',
   form_resubmitted: 'That form was already sent with other values. Reload the page and try again.',
+  schedule_not_permitted: 'Only a tournament owner, admin or scheduler can change the schedule.',
+  schedule_not_found: 'That schedule version no longer exists. Reload the page.',
+  schedule_invalid: 'That request isn’t valid. Reload the page and try again.',
+  schedule_transition:
+    'The schedule can’t change in its current state. The tournament may have ended, or the draft was already published or discarded.',
+  schedule_draft_exists: 'A draft is already open. Continue with it below.',
+  schedule_proposal_stale:
+    'Something changed since this proposal was generated (courts, hours, results or the draft). Generate it again and review the new one.',
+  schedule_not_committable:
+    'This proposal can’t be added: not every match fits, or the draft is no longer open. Generate it again.',
+  schedule_report_stale:
+    'The schedule or its inputs changed since you reviewed it. Review the conflicts again, then publish.',
+  schedule_publish_blocked:
+    'The draft can’t be published while it has conflicts that must be fixed, or it is no longer open.',
+  schedule_acknowledge_required: 'Confirm that you have reviewed the warnings before publishing.',
+  schedule_acknowledge_mismatch:
+    'The warnings changed since you reviewed them. Review them again, then publish.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -171,6 +188,10 @@ export const NOTICE_MESSAGES = {
   availability_added: 'Hours saved.',
   availability_removed: 'Removed. It no longer applies.',
   availability_replaced: 'Hours changed.',
+  schedule_draft_opened: 'Draft opened. The published schedule stays as it is until you publish.',
+  schedule_committed: 'Proposal added to the draft. Check it below, then publish.',
+  schedule_published: 'Schedule published. It is now the official schedule.',
+  schedule_discarded: 'Draft discarded. Nothing in it was published.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

@@ -118,6 +118,8 @@ export interface CatalogDisciplineVersion {
   entryAttributes?: EntryAttributeSpec[];
   /** ONCF-05C: published ruleset versions whose family this discipline provides. */
   compatibleRulesetVersionIds?: string[];
+  /** ONCF-05E-B: published scheduling profiles whose every court type this discipline declares. */
+  compatibleSchedulingProfileVersionIds?: string[];
 }
 
 /** ONCF-05C: a published ruleset or classification template version, with its basis. */
@@ -161,6 +163,24 @@ export interface Catalog {
   classificationTemplateVersions?: CatalogScoringVersion[];
   /** ONCF-05D: how classified entrants fill next-stage slots. */
   advancementPolicyVersions?: CatalogScoringVersion[];
+  /** ONCF-05E-B: published scheduling profiles (match duration and courts per contest). */
+  schedulingProfileVersions?: CatalogSchedulingProfile[];
+}
+
+/** ONCF-05E-B: a published SchedulingProfile version (catalog data; organizers only choose it). */
+export interface CatalogSchedulingProfile {
+  versionId: string;
+  code: string;
+  name: string;
+  version: number;
+  basis: CatalogScoringVersion['basis'];
+  spec: {
+    requirements: {
+      resourceType: string;
+      expectedDurationSeconds: number;
+      changeoverSeconds: number;
+    }[];
+  };
 }
 
 export function managedCompetitions(
