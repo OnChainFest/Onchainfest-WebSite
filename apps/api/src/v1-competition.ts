@@ -101,8 +101,11 @@ function withFactTag<T extends { assignmentId: string }>(reply: FastifyReply, r:
 export function registerCompetitionV1(
   t: V1Toolkit,
   deps: CompetitionV1Deps & {
-    /** ONCF-04: names registrations by the ONCF-02 roster rule (PUBLIC/AUTHENTICATED profiles). */
-    readonly identity: Pick<IdentityStore, 'visibleAthletes'>;
+    /**
+     * ONCF-04: names registrations (and ONCF-L1 staff) by the ONCF-02 roster rule
+     * (PUBLIC/AUTHENTICATED profiles).
+     */
+    readonly identity: Pick<IdentityStore, 'visibleAthletes' | 'visibleAthletesForPersons'>;
   },
 ): void {
   const { route, requireAuth, operator, key } = t;
@@ -572,6 +575,25 @@ export function registerCompetitionV1(
         reason: body<{ reason: string }>(request).reason,
       });
       return { competitionId, status: 'CANCELLED' };
+    },
+  );
+
+  // ONCF-L1: the competition's ACTIVE explicit staff (COMP_VIEW_PRIVATE), named like the roster.
+  route(
+    'GET',
+    '/v1/competitions/:competitionId/staff',
+    'COMP_STAFF',
+    { params: idParams('competitionId') },
+    async (request) => {
+      const ctx = requireAuth(request);
+      const items = await deps.competitions.competitionStaff({
+        actorAccountId: ctx.accountId,
+        competitionId: params<{ competitionId: string }>(request).competitionId,
+      });
+      const athletes = await deps.identity.visibleAthletesForPersons([
+        ...new Set(items.map((s) => s.personId)),
+      ]);
+      return { items: items.map((s) => ({ ...s, athlete: athletes.get(s.personId) ?? null })) };
     },
   );
 

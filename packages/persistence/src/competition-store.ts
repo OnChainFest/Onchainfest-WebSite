@@ -264,6 +264,14 @@ export interface ManagedCompetition {
   readonly access: { readonly staffRoles: StaffRole[]; readonly permissions: CompPermission[] };
 }
 
+/** ONCF-L1: one ACTIVE explicit competition staff assignment (never public). */
+export interface CompetitionStaffEntry {
+  readonly staffId: string;
+  readonly personId: string;
+  readonly role: StaffRole;
+  readonly since: string;
+}
+
 /** ONCF-04: one registration with its event and competition context (never public). */
 export interface RegistrationEntry {
   readonly id: string;
@@ -834,6 +842,38 @@ export class CompetitionStore {
         targetType: 'COMPETITION',
         targetId: c.id,
       });
+    });
+  }
+
+  /**
+   * ONCF-L1: the competition's ACTIVE explicit staff assignments, oldest first. Requires
+   * COMP_VIEW_PRIVATE. Organizer-organization OWNER/ADMIN act as competition OWNER/ADMIN without a
+   * row here, so they are not listed. Ended assignments stay in the history but are not returned.
+   */
+  competitionStaff(input: {
+    actorAccountId: string;
+    competitionId: string;
+  }): Promise<CompetitionStaffEntry[]> {
+    return this.tx(async (ctx) => {
+      const c = await loadCompetition(ctx, input.competitionId);
+      await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_VIEW_PRIVATE');
+      const { rows } = await sql<{
+        id: string;
+        person_id: string;
+        staff_role: StaffRole;
+        recorded_at: Date;
+      }>`
+        SELECT s.id, s.person_id, s.staff_role, s.recorded_at
+        FROM competition.competition_staff s
+        JOIN competition.v_staff_current v ON v.staff_id = s.id
+        WHERE s.competition_id = ${c.id} AND v.status = 'ACTIVE'
+        ORDER BY s.recorded_at, s.id`.execute(ctx.trx);
+      return rows.map((r) => ({
+        staffId: r.id,
+        personId: r.person_id,
+        role: r.staff_role,
+        since: r.recorded_at.toISOString(),
+      }));
     });
   }
 

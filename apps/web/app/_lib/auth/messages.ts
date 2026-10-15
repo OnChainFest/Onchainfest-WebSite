@@ -73,6 +73,12 @@ export const ERROR_MESSAGES = {
     'That athlete can’t be added to this team — they may already be on it or their profile isn’t active.',
   attribute_invalid: 'Check the values: use the format shown for each field.',
   attributes_frozen: 'Entry values are frozen once the organizer locks the field.',
+  staff_not_permitted: 'Only a tournament owner can add or remove its staff.',
+  staff_duplicate: 'That person already has this role in the tournament.',
+  staff_not_found:
+    'That person or staff assignment no longer exists. The list shows who is current.',
+  staff_already_removed: 'That staff assignment has already ended.',
+  staff_invalid: 'Choose a person from the list and one of the roles shown.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -123,6 +129,8 @@ export const NOTICE_MESSAGES = {
   membership_accepted: 'You’ve joined the team.',
   membership_declined: 'Invitation declined.',
   attributes_saved: 'Entry details saved.',
+  staff_added: 'Staff member added. Their access applies straight away.',
+  staff_removed: 'Staff member removed. Their access through this role has ended.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;
