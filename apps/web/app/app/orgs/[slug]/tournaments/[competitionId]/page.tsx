@@ -7,6 +7,7 @@ import {
   competitionResources,
   resourceSummary,
 } from '../../../../../_lib/resources';
+import { currentVersions, scheduleVersions } from '../../../../../_lib/schedule';
 import { one, type SearchParams } from '../../../../../_lib/search-params';
 import {
   COMPETITION_COMMANDS,
@@ -73,12 +74,14 @@ export default async function TournamentBuilderPage({
   const { competition: c, events, access } = t.data;
   const p = c.profile;
   const base = `${hub}/${c.id}`;
-  const [staff, resources, facts, catalog] = await Promise.all([
+  const [staff, resources, facts, catalog, versions] = await Promise.all([
     competitionStaff(org.ctx.accessToken, c.id),
     competitionResources(org.ctx.accessToken, c.id),
     competitionAvailability(org.ctx.accessToken, c.id),
     tournamentCatalog(),
+    scheduleVersions(org.ctx.accessToken, c.id),
   ]);
+  const scheduleState = versions.kind === 'ok' ? currentVersions(versions.data.items) : null;
   const resourceState =
     resources.kind === 'ok' && facts.kind === 'ok'
       ? resourceSummary(
@@ -92,8 +95,9 @@ export default async function TournamentBuilderPage({
     base,
     staff.kind === 'ok' ? staff.data.items.length : null,
     resourceState,
+    scheduleState,
   );
-  const next = nextAction(t.data, base, resourceState);
+  const next = nextAction(t.data, base, resourceState, scheduleState);
   const yourRoles = access.staffRoles.filter(isStaffRole).map((r) => STAFF_ROLE_LABEL[r]);
   const perms = access.permissions;
   const canEdit = perms.includes('COMP_EDIT');

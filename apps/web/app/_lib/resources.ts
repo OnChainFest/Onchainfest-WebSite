@@ -377,6 +377,9 @@ function dateFmt(date: string, year = false): string {
 /** "Sat 24 Oct 2026" for a local date. */
 export const dateText = (date: string) => dateFmt(date, true);
 
+/** "Sat 24 Oct" for a local date. */
+export const shortDateText = (date: string) => dateFmt(date);
+
 export interface WeeklyRow {
   readonly days: string;
   readonly windows: readonly string[];

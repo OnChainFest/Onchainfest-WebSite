@@ -17,11 +17,13 @@ import {
   type FieldParticipant,
   type PlanPreview,
 } from '../../../../../../../../_lib/structure';
+import { profileLines } from '../../../../../../../../_lib/schedule';
 import { tournamentFor } from '../../../../../../../../_lib/tournament-context';
 import { catalogDiscipline, tournamentCatalog } from '../../../../../../../../_lib/tournaments';
 import {
   basisLabel,
   compatibleRulesets,
+  compatibleSchedulingProfiles,
   decidedByLabel,
   eventScoring,
   stageClassification,
@@ -337,6 +339,11 @@ export default async function StructurePage({
               catalog.kind === 'ok' ? templatesFor(catalog.data, family) : []
             }
             policies={catalog.kind === 'ok' ? (catalog.data.advancementPolicyVersions ?? []) : []}
+            profiles={
+              catalog.kind === 'ok'
+                ? compatibleSchedulingProfiles(catalog.data, discipline?.disciplineVersionId)
+                : []
+            }
             canPin={
               !(scoringPin.kind === 'ok' && scoringPin.data.frozen) && perms.includes('COMP_EDIT')
             }
@@ -603,6 +610,7 @@ function ScoringPanel({
   rulesets,
   templates,
   policies,
+  profiles,
   canPin,
   hidden,
 }: {
@@ -614,6 +622,7 @@ function ScoringPanel({
   rulesets: ReturnType<typeof compatibleRulesets>;
   templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
   policies: ReturnType<typeof templatesFor>;
+  profiles: ReturnType<typeof compatibleSchedulingProfiles>;
   canPin: boolean;
   hidden: ReactNode;
 }) {
@@ -653,16 +662,23 @@ function ScoringPanel({
               <span className="muted">None — next-stage slots can’t be resolved</span>
             )}
           </dd>
-          {pinned.schedulingProfile ? (
-            <>
-              <dt>Scheduling profile</dt>
-              <dd>
+          <dt>Scheduling profile</dt>
+          <dd>
+            {pinned.schedulingProfile ? (
+              <>
                 {pinned.schedulingProfile.name}{' '}
                 <span className="mono muted">v{pinned.schedulingProfile.version}</span>
+                {profileLines(pinned.schedulingProfile).map((l) => (
+                  <div key={l} className="muted small">
+                    {l}
+                  </div>
+                ))}
                 <div className="muted small">{basisLabel(pinned.schedulingProfile)}</div>
-              </dd>
-            </>
-          ) : null}
+              </>
+            ) : (
+              <span className="muted">None — matches can’t be scheduled</span>
+            )}
+          </dd>
         </dl>
       ) : (
         <p className="muted small">
@@ -673,11 +689,14 @@ function ScoringPanel({
         <form action={pinScoringAction} className="tb-form">
           {hidden}
           <input type="hidden" name="key" value={`oc-scoring-${randomUUID()}`} />
-          <input
-            type="hidden"
-            name="schedulingProfileVersionId"
-            value={pinned?.schedulingProfile?.versionId ?? ''}
-          />
+          {profiles.length === 0 ? (
+            // No compatible profile to choose: the pinned one (if any) is carried over unchanged.
+            <input
+              type="hidden"
+              name="schedulingProfileVersionId"
+              value={pinned?.schedulingProfile?.versionId ?? ''}
+            />
+          ) : null}
           <label>
             Ruleset
             <select
@@ -727,6 +746,26 @@ function ScoringPanel({
               ))}
             </select>
           </label>
+          {profiles.length > 0 ? (
+            <label>
+              Scheduling profile
+              <select
+                name="schedulingProfileVersionId"
+                defaultValue={pinned?.schedulingProfile?.versionId ?? ''}
+              >
+                <option value="">None (matches can’t be scheduled)</option>
+                {profiles.map((p) => (
+                  <option key={p.versionId} value={p.versionId}>
+                    {p.name} (v{p.version}) · {profileLines(p).join('; ')}
+                  </option>
+                ))}
+              </select>
+              <span className="muted small">
+                How long matches last and which courts they use. It can’t be changed once the field
+                is locked.
+              </span>
+            </label>
+          ) : null}
           <SubmitButton pending="Saving" className="btn btn-ghost btn-sm">
             {pinned === null ? 'Set scoring' : 'Change scoring'}
           </SubmitButton>

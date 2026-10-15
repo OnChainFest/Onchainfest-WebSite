@@ -3688,3 +3688,488 @@
     grid-template-columns: 6rem minmax(0, 1fr);
   }
 }
+
+/* ── Scheduling workspace (ONCF-L3) ───────────────────────────────────── */
+/* A grid item sizes to its widest child by default: the court lanes scroll inside instead. */
+.oc-app .sch-main {
+  min-width: 0;
+}
+.oc-app .sch-readiness h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.oc-app .sch-readiness[data-state='blocked'] {
+  border-left-color: var(--danger);
+}
+.oc-app .sch-cats {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 0.75rem;
+}
+.oc-app .sch-cats > li {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  min-width: 0;
+}
+.oc-app .sch-cat-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+}
+.oc-app .sch-checks > li {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-mark {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--green);
+}
+.oc-app .sch-checks > li[data-state='todo'] .sch-mark {
+  color: var(--gold);
+}
+.oc-app .sch-checks > li[data-state='blocked'] .sch-mark {
+  color: var(--danger);
+}
+.oc-app .sch-chip {
+  --tone: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  color: var(--tone);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.oc-app .sch-chip[data-state='complete'],
+.oc-app .sch-chip[data-state='official'] {
+  --tone: var(--green);
+}
+.oc-app .sch-chip[data-state='incomplete'],
+.oc-app .sch-chip[data-state='warning'] {
+  --tone: var(--gold);
+}
+.oc-app .sch-chip[data-state='blocked'],
+.oc-app .sch-chip[data-state='conflict'] {
+  --tone: var(--danger);
+}
+.oc-app .sch-chip[data-state='proposed'] {
+  --tone: var(--violet);
+  border-style: dashed;
+}
+.oc-app .sch-chip[data-state='draft'] {
+  --tone: var(--cyan);
+  border-style: dashed;
+}
+.oc-app .sch-state-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 2rem;
+  outline: 1px solid var(--line);
+  background: var(--line);
+}
+.oc-app .sch-state-panel > div {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-state-panel > div > span {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.oc-app .sch-state-panel > div[data-kind='published'] {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+.oc-app .sch-state-panel > div[data-kind='draft'] {
+  box-shadow: inset 3px 0 0 var(--cyan);
+}
+.oc-app .sch-proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+  padding: 1.1rem 1.2rem 1.3rem;
+  border: 1px dashed color-mix(in srgb, var(--violet) 70%, transparent);
+  background: color-mix(in srgb, var(--violet) 6%, var(--ink-2));
+  min-width: 0;
+}
+.oc-app .sch-verdict {
+  --tone: var(--gold);
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem 1rem;
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 8%, transparent);
+  margin: 0 0 1rem;
+}
+.oc-app .sch-verdict[data-tone='ok'] {
+  --tone: var(--green);
+}
+.oc-app .sch-verdict[data-tone='bad'] {
+  --tone: var(--danger);
+}
+.oc-app .sch-proposal .sch-verdict {
+  margin: 0;
+}
+.oc-app .sch-conflicts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+.oc-app .sch-issues {
+  --tone: var(--danger);
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 7%, transparent);
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-issues[data-severity='SOFT'] {
+  --tone: var(--gold);
+}
+.oc-app .sch-issues h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+.oc-app .sch-issues ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+}
+.oc-app .sch-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line);
+}
+.oc-app .sch-tabs a {
+  padding: 0.35rem 0.8rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.oc-app .sch-tabs a[aria-current='page'] {
+  background: var(--ink-3);
+  color: var(--white);
+}
+.oc-app .sch-day {
+  margin: 0 0 1.5rem;
+}
+.oc-app .sch-day > h4,
+.oc-app .sch-lanes-day > h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+}
+.oc-app .sch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.oc-app .sch-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+.oc-app .sch-table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-table td:first-child {
+  white-space: nowrap;
+}
+.oc-app .sch-table tr[data-state='conflict'] td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+.oc-app .sch-table tr[data-state='warning'] td:first-child {
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+.oc-app .sch-table tr[data-state='proposed'] td:first-child {
+  box-shadow: inset 3px 0 0 var(--violet);
+}
+.oc-app .sch-table td .sch-chip {
+  margin-left: 0;
+}
+.oc-app .sch-lanes-wrap {
+  margin: 0 0 1.5rem;
+}
+.oc-app .sch-lanes-day {
+  margin: 0 0 1rem;
+}
+.oc-app .sch-lanes-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+}
+.oc-app .sch-lanes {
+  min-width: max(100%, calc(var(--span) * 4.5rem + 8rem));
+  display: grid;
+  padding: 0.4rem 0.6rem 0.6rem;
+}
+.oc-app .sch-lane {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  min-height: 2.2rem;
+}
+.oc-app .sch-lane-label {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-track {
+  position: relative;
+  height: 1.9rem;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    rgba(255, 255, 255, 0.05) 6px 8px
+  );
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .sch-track[data-hours='unknown'] {
+  background: transparent;
+}
+.oc-app .sch-hours {
+  min-height: 1.4rem;
+}
+.oc-app .sch-hours .sch-track {
+  height: 1.2rem;
+  background: none;
+  border: 0;
+}
+.oc-app .sch-hour {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  color: var(--faint);
+}
+.oc-app .sch-open {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--green) 9%, var(--ink-2));
+}
+.oc-app .sch-block {
+  --tone: var(--cyan);
+  position: absolute;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  padding: 0 0.35rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.66rem;
+  line-height: 1.5rem;
+  color: var(--white);
+  border: 1px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 26%, var(--ink));
+}
+.oc-app .sch-block[data-state='official'] {
+  --tone: var(--green);
+}
+.oc-app .sch-block[data-state='proposed'] {
+  --tone: var(--violet);
+  border-style: dashed;
+}
+.oc-app .sch-block[data-state='conflict'] {
+  --tone: var(--danger);
+  border-width: 2px;
+}
+.oc-app .sch-block[data-state='warning'] {
+  --tone: var(--gold);
+}
+.oc-app .sch-free {
+  position: absolute;
+  right: 0.4rem;
+  top: 0.45rem;
+  font-size: 0.6rem;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+.oc-app .sch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  align-items: center;
+  margin: 0.25rem 0 0;
+}
+.oc-app .sch-key {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.6rem;
+  border: 1px solid var(--line-strong);
+}
+.oc-app .sch-key[data-key='open'] {
+  background: color-mix(in srgb, var(--green) 14%, var(--ink-2));
+}
+.oc-app .sch-key[data-key='closed'] {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 2px,
+    rgba(255, 255, 255, 0.25) 2px 3px
+  );
+}
+.oc-app .sch-key[data-key='block'] {
+  background: color-mix(in srgb, var(--cyan) 30%, var(--ink));
+  border-color: var(--cyan);
+}
+.oc-app .sch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin: 0.5rem 0 2rem;
+}
+.oc-app .sch-actions > details[open] {
+  flex: 1 1 100%;
+}
+.oc-app .sch-blocked {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 2px solid var(--danger);
+}
+.oc-app .sch-commit {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+.oc-app .sch-commit p,
+.oc-app .sch-publish p {
+  margin: 0;
+}
+.oc-app .sch-unscheduled {
+  margin: 2rem 0 0;
+}
+.oc-app .sch-match-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.oc-app .sch-match-list > li {
+  padding: 0.55rem 0.8rem;
+  outline: 1px solid var(--line);
+  background: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.oc-app .sch-steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.55rem;
+}
+.oc-app .sch-steps li > span {
+  display: block;
+}
+@media (max-width: 900px) {
+  .oc-app .sch-lane {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .oc-app .sch-state-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* A court timeline at phone width is a miniature nobody can read: phones get the agenda. */
+  .oc-app .sch-lanes-wrap {
+    display: none;
+  }
+  .oc-app .sch-table thead {
+    display: none;
+  }
+  .oc-app .sch-table,
+  .oc-app .sch-table tbody,
+  .oc-app .sch-table tr,
+  .oc-app .sch-table td {
+    display: block;
+    width: 100%;
+  }
+  .oc-app .sch-table tr {
+    padding: 0.6rem 0.75rem;
+    margin: 0 0 0.5rem;
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .oc-app .sch-table tr[data-state='conflict'] {
+    border-left: 3px solid var(--danger);
+  }
+  .oc-app .sch-table tr[data-state='warning'] {
+    border-left: 3px solid var(--gold);
+  }
+  .oc-app .sch-table tr[data-state='proposed'] {
+    border-left: 3px dashed var(--violet);
+  }
+  .oc-app .sch-table td {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.5rem;
+    justify-items: start;
+    padding: 0.2rem 0;
+    border: 0;
+  }
+  .oc-app .sch-table td:first-child {
+    box-shadow: none !important;
+  }
+  .oc-app .sch-table td::before {
+    content: attr(data-label);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+    padding-top: 0.2rem;
+  }
+}
+@media (max-width: 420px) {
+  .oc-app .sch-proposal {
+    padding: 0.9rem 0.8rem 1rem;
+  }
+  .oc-app .sch-table td {
+    grid-template-columns: 3.6rem minmax(0, 1fr);
+  }
+}

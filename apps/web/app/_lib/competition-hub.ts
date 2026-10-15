@@ -1,4 +1,5 @@
 import type { ResourceSummary } from './resources';
+import { SCHEDULABLE, type ScheduleSummary } from './schedule';
 import { reviewChecklist } from './tournament-builder';
 import type { EventStatus, ManagedCompetition } from './tournaments';
 
@@ -37,7 +38,7 @@ const FIELD_LOCKED: readonly EventStatus[] = ['FIELD_LOCKED', 'IN_PROGRESS', 'CO
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Later slices (schedule, operations/results) have API support but no web surface. */
+/** Later slices (operations/results) have API support but no web surface. */
 const PLANNED = 'Not in the web app yet';
 
 export function hubStages(
@@ -45,6 +46,7 @@ export function hubStages(
   base: string,
   staffCount: number | null,
   resources: ResourceSummary | null,
+  schedule: ScheduleSummary | null,
 ): HubStage[] {
   const c = data.competition;
   const live = data.events.filter((e) => e.status !== 'CANCELLED');
@@ -102,7 +104,7 @@ export function hubStages(
           }),
     },
     resourceStage(resources, `${base}/resources`),
-    { key: 'schedule', label: 'Schedule', state: 'planned', detail: PLANNED },
+    scheduleStage(data, schedule, `${base}/schedule`),
     { key: 'operations', label: 'Operations & results', state: 'planned', detail: PLANNED },
     {
       key: 'staff',
@@ -156,6 +158,35 @@ function resourceStage(r: ResourceSummary | null, href: string): HubStage {
     : { ...stage, state: 'ready', detail: `${parts[0] as string} · all have declared hours` };
 }
 
+/**
+ * ONCF-L3: where the schedule stands — the official (published) version and any open draft. A
+ * published schedule is the official one; it never claims every match has a time.
+ */
+function scheduleStage(
+  data: ManagedCompetition,
+  s: ScheduleSummary | null,
+  href: string,
+): HubStage {
+  const stage = { key: 'schedule', label: 'Schedule', href };
+  if (s === null) return { ...stage, state: 'todo', detail: 'Can’t be loaded right now' };
+  if (s.published !== null)
+    return s.draft !== null
+      ? {
+          ...stage,
+          state: 'progress',
+          detail: `Version ${s.published.versionNumber} published · draft open`,
+        }
+      : { ...stage, state: 'ready', detail: `Published · version ${s.published.versionNumber}` };
+  if (s.draft !== null) return { ...stage, state: 'progress', detail: 'Draft · not published' };
+  return {
+    ...stage,
+    state: 'todo',
+    detail: data.events.some((e) => SCHEDULABLE.has(e.status))
+      ? 'Not started'
+      : 'After a field is locked',
+  };
+}
+
 export interface NextAction {
   readonly label: string;
   readonly detail: string;
@@ -170,6 +201,7 @@ export function nextAction(
   data: ManagedCompetition,
   base: string,
   resources: ResourceSummary | null = null,
+  schedule: ScheduleSummary | null = null,
 ): NextAction {
   const c = data.competition;
   const perms = data.access.permissions;
@@ -242,8 +274,32 @@ export function nextAction(
           detail: `Scheduling won’t use ${resources.needHours.join(', ')} until hours are declared.`,
           href: `${base}/resources`,
         };
+  if (
+    schedule !== null &&
+    perms.includes('COMP_MANAGE_SCHEDULE') &&
+    live.some((e) => SCHEDULABLE.has(e.status))
+  ) {
+    if (schedule.draft !== null)
+      return {
+        label: 'Finish the draft schedule',
+        detail: 'Review its conflicts and publish it to make it official.',
+        href: `${base}/schedule`,
+      };
+    if (schedule.published === null)
+      return {
+        label: 'Build the schedule',
+        detail: 'Generate a proposal, review it, then commit and publish it.',
+        href: `${base}/schedule`,
+      };
+  }
+  if (schedule !== null && schedule.published !== null)
+    return {
+      label: 'Schedule published',
+      detail: 'Match operations and results come to the web app in a later release.',
+      href: `${base}/schedule`,
+    };
   return {
     label: 'Structure is set',
-    detail: 'Scheduling and match operations come to the web app in a later release.',
+    detail: 'Next comes the schedule. Match operations come to the web app in a later release.',
   };
 }

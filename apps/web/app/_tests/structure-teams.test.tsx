@@ -787,6 +787,130 @@ describe('organizer structure page', () => {
   });
 });
 
+// ONCF-L3: the scheduling profile is chosen with the scoring, before the field is locked.
+describe('scheduling profile choice', () => {
+  const RS = 'abababab-abab-4bab-8bab-000000000001';
+  const PROF = 'abababab-abab-4bab-8bab-000000000002';
+  const OTHER = 'abababab-abab-4bab-8bab-000000000003';
+  const basis = { kind: 'COMMON_PRACTICE', note: 'club play' };
+  const profile = (versionId: string, name: string, resourceType: string) => ({
+    versionId,
+    code: name.toLowerCase().replace(/ /g, '-'),
+    name,
+    version: 1,
+    basis,
+    spec: {
+      requirements: [{ resourceType, expectedDurationSeconds: 1800, changeoverSeconds: 300 }],
+    },
+  });
+  function withScoring(o: { frozen: boolean; pinned: ReturnType<typeof profile> | null }) {
+    // Scoring (and so the profile) is pinned with COMP_EDIT.
+    routes[`GET /v1/competitions/${COMP}/manage`] = () =>
+      json(
+        200,
+        managed('REGISTRATION_CLOSED', ['COMP_VIEW_PRIVATE', 'COMP_EDIT', 'COMP_LOCK_FIELD']),
+      );
+    const c = catalog();
+    routes['GET /v1/catalog'] = () =>
+      json(200, {
+        ...c,
+        disciplineVersions: c.disciplineVersions.map((d) => ({
+          ...d,
+          compatibleRulesetVersionIds: [RS],
+          compatibleSchedulingProfileVersionIds: [PROF],
+        })),
+        rulesetVersions: [
+          {
+            versionId: RS,
+            code: 'swim',
+            name: 'Swim timing',
+            version: 1,
+            family: 'TIMED',
+            specHash: 'h',
+            basis,
+          },
+        ],
+        schedulingProfileVersions: [
+          profile(PROF, 'Pool heats', 'POOL'),
+          profile(OTHER, 'Tennis match', 'TENNIS_COURT'),
+        ],
+      });
+    routes[`GET /v1/events/${EVENT}/scoring`] = () =>
+      json(200, {
+        eventId: EVENT,
+        pinned: true,
+        frozen: o.frozen,
+        ruleset: {
+          versionId: RS,
+          code: 'swim',
+          name: 'Swim timing',
+          version: 1,
+          family: 'TIMED',
+          specHash: 'h',
+          basis,
+          spec: {},
+        },
+        classificationTemplate: null,
+        advancementPolicy: null,
+        schedulingProfile: o.pinned,
+      });
+  }
+
+  it('offers only the compatible profiles while the field is open, and explains the cut-off', async () => {
+    withScoring({ frozen: false, pinned: null });
+    const page = html(await Structure(cat()));
+    expect(page).toContain('<dt>Scheduling profile</dt>');
+    expect(page).toContain('None — matches can’t be scheduled');
+    expect(page).toContain('name="schedulingProfileVersionId"');
+    expect(page).toContain(
+      `<option value="${PROF}">Pool heats (v1) · Pool · 30 min matches + 5 min changeover</option>`,
+    );
+    expect(page).not.toContain(`value="${OTHER}"`);
+    expect(page).toContain('It can’t be changed once the field is locked.');
+  });
+
+  it('shows the pinned profile read-only once frozen', async () => {
+    withScoring({ frozen: true, pinned: profile(PROF, 'Pool heats', 'POOL') });
+    const page = html(await Structure(cat()));
+    expect(page).toContain('Pool heats');
+    expect(page).toContain('Pool · 30 min matches + 5 min changeover');
+    expect(page).not.toContain('name="schedulingProfileVersionId"');
+  });
+
+  it('pins the chosen profile with the scoring, and None unpins it', async () => {
+    routes[`PUT /v1/events/${EVENT}/scoring`] = () => json(200, { eventId: EVENT });
+    expect(
+      await outcome(() =>
+        structureActions.pinScoringAction(
+          form({ ...base, rulesetVersionId: RS, schedulingProfileVersionId: PROF }),
+        ),
+      ),
+    ).toBe(`${STRUCT}?notice=scoring_pinned`);
+    expect(writes()[0]).toMatchObject({
+      method: 'PUT',
+      path: `/v1/events/${EVENT}/scoring`,
+      key: 'oc-key-12345678',
+      body: { rulesetVersionId: RS, schedulingProfileVersionId: PROF },
+    });
+    calls = [];
+    await outcome(() =>
+      structureActions.pinScoringAction(
+        form({ ...base, rulesetVersionId: RS, schedulingProfileVersionId: '' }),
+      ),
+    );
+    expect(writes()[0]?.body).toEqual({ rulesetVersionId: RS });
+    calls = [];
+    expect(
+      await outcome(() =>
+        structureActions.pinScoringAction(
+          form({ ...base, rulesetVersionId: RS, schedulingProfileVersionId: 'x' }),
+        ),
+      ),
+    ).toBe(`${STRUCT}?error=scoring_invalid`);
+    expect(writes()).toEqual([]);
+  });
+});
+
 describe('structure actions', () => {
   it('locks with the form’s idempotency key; a roster problem maps to field_incomplete', async () => {
     expect(await outcome(() => structureActions.lockFieldAction(form(base)))).toBe(

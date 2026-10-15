@@ -228,6 +228,16 @@ const weekly = (resourceId: string | null, n: string) => ({
   end: '20:00',
   recordedAt: '2026-10-08T00:00:00.000Z',
 });
+const version = (n: number, status: string) => ({
+  versionId: `bbbbbbbb-bbbb-4bbb-8bbb-${String(n).padStart(12, '0')}`,
+  competitionId: COMP,
+  versionNumber: n,
+  baseVersionId: null,
+  status,
+  createdByAccountId: null,
+  createdAt: '2026-10-10T00:00:00.000Z',
+  statusChangedAt: '2026-10-10T00:00:00.000Z',
+});
 const CATALOG = {
   disciplineVersions: [
     {
@@ -262,6 +272,7 @@ function platform(
     roster?: unknown[] | null;
     resources?: unknown[] | null;
     facts?: unknown[] | null;
+    versions?: unknown[] | null;
   } = {},
 ) {
   const detail = o.detail === undefined ? managed() : o.detail;
@@ -269,6 +280,7 @@ function platform(
   const roster = o.roster === undefined ? ROSTER : o.roster;
   const resources = o.resources === undefined ? [] : o.resources;
   const facts = o.facts === undefined ? [] : o.facts;
+  const versions = o.versions === undefined ? [] : o.versions;
   routes = {
     'GET /v1/me': () =>
       json(200, {
@@ -305,6 +317,8 @@ function platform(
     [`GET /v1/competitions/${COMP}/availability`]: () =>
       facts === null ? json(503, {}) : json(200, { items: facts }),
     'GET /v1/catalog': () => json(200, CATALOG),
+    [`GET /v1/competitions/${COMP}/schedule/versions`]: () =>
+      versions === null ? json(503, {}) : json(200, { items: versions }),
     [`GET /v1/competitions/${COMP}/registrations`]: () =>
       json(200, {
         items: [],
@@ -402,11 +416,13 @@ describe('Competition Hub', () => {
     expect(stage(out, 'resources')?.[1]).toBe('attention');
     expect(stage(out, 'resources')?.[2]).toContain('None yet · needed for Men Open');
     expect(stage(out, 'resources')?.[2]).toContain(`href="${BASE}/resources"`);
-    for (const k of ['schedule', 'operations']) {
-      expect(stage(out, k)?.[1]).toBe('planned');
-      expect(stage(out, k)?.[2]).toContain('Not available yet');
-      expect(stage(out, k)?.[2]).not.toContain('href=');
-    }
+    // ONCF-L3: the schedule stage is real and linked; nothing can be scheduled before field lock.
+    expect(stage(out, 'schedule')?.[1]).toBe('todo');
+    expect(stage(out, 'schedule')?.[2]).toContain('After a field is locked');
+    expect(stage(out, 'schedule')?.[2]).toContain(`href="${BASE}/schedule"`);
+    expect(stage(out, 'operations')?.[1]).toBe('planned');
+    expect(stage(out, 'operations')?.[2]).toContain('Not available yet');
+    expect(stage(out, 'operations')?.[2]).not.toContain('href=');
   });
 
   it('reflects open, closed and locked categories after publication', async () => {
@@ -463,11 +479,18 @@ describe('Competition Hub', () => {
       facts: [weekly(null, '01')],
     });
     out = html(await Hub({ ...pc(), ...sp() }));
-    expect(out).toContain('Structure is set');
-    expect(out).toContain(
-      'Scheduling and match operations come to the web app in a later release.',
-    );
-    expect(out).not.toMatch(/Structure is set.*Go →/);
+    expect(out).toMatch(/Build the schedule.*href="[^"]*\/schedule"[^>]*>Go/);
+    expect(out).toContain('Generate a proposal, review it, then commit and publish it.');
+
+    platform({
+      detail: managed({ status: 'ACTIVE', events: [event({ status: 'IN_PROGRESS' })] }),
+      resources: [court(COURT_1, 'Court 1')],
+      facts: [weekly(null, '01')],
+      versions: [version(1, 'PUBLISHED')],
+    });
+    out = html(await Hub({ ...pc(), ...sp() }));
+    expect(out).toContain('Schedule published');
+    expect(out).toContain('Match operations and results come to the web app in a later release.');
   });
 
   it('keeps the existing builder navigation and adds the tournament nav', async () => {
@@ -490,10 +513,12 @@ describe('Competition Hub', () => {
       html(await Hub({ ...pc(), ...sp() })),
       html(await Staff({ ...pc(), ...sp() })),
     ]) {
-      expect(out).not.toMatch(/href="[^"]*\/(schedule|operations|results)["/?#]/);
+      expect(out).not.toMatch(/href="[^"]*\/(operations|results)["/?#]/);
       expect(out).toContain(`href="${BASE}/resources" data-key="resources"`);
       expect(out).not.toMatch(/aria-disabled="true" data-key="resources"/);
-      expect(out).toMatch(/aria-disabled="true" data-key="schedule"/);
+      // ONCF-L3: the schedule has its page now.
+      expect(out).toContain(`href="${BASE}/schedule" data-key="schedule"`);
+      expect(out).not.toMatch(/aria-disabled="true" data-key="schedule"/);
       expect(out).toMatch(/aria-disabled="true" data-key="operations"/);
     }
   });
@@ -606,7 +631,8 @@ describe('Competition Hub resources stage', () => {
     });
     const out = html(await Hub({ ...pc(), ...sp() }));
     expect(stage(out, 'resources')?.[1]).toBe('attention');
-    expect(out).toContain('Structure is set');
+    // A scheduler can't add courts; its own next step is the schedule (which lists what's missing).
+    expect(out).toContain('Build the schedule');
     expect(out).not.toContain('Add your resources');
   });
 
@@ -616,6 +642,72 @@ describe('Competition Hub resources stage', () => {
     expect(stage(out, 'resources')?.[1]).toBe('todo');
     expect(stage(out, 'resources')?.[2]).toContain('Can’t be loaded right now');
     expect(stage(out, 'resources')?.[2]).toContain(`href="${BASE}/resources"`);
+  });
+});
+
+// ───────────────────────────── schedule stage (ONCF-L3) ─────────────────────────────
+
+describe('Competition Hub schedule stage', () => {
+  const locked = () => managed({ status: 'ACTIVE', events: [event({ status: 'FIELD_LOCKED' })] });
+  const ready = { resources: [court(COURT_1, 'Court 1')], facts: [weekly(null, '01')] };
+
+  it('is not started, linked, once a field is locked and nothing is scheduled', async () => {
+    platform({ detail: locked(), ...ready });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[1]).toBe('todo');
+    expect(stage(out, 'schedule')?.[2]).toContain('Not started');
+    expect(stage(out, 'schedule')?.[2]).toContain(`href="${BASE}/schedule"`);
+    expect(out).toContain('Build the schedule');
+  });
+
+  it('shows a private draft as in progress and asks to finish it', async () => {
+    platform({ detail: locked(), ...ready, versions: [version(1, 'DRAFT')] });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[1]).toBe('progress');
+    expect(stage(out, 'schedule')?.[2]).toContain('Draft · not published');
+    expect(out).toContain('Finish the draft schedule');
+    expect(out).toContain('Review its conflicts and publish it to make it official.');
+  });
+
+  it('is ready once published, and says when a new draft is open', async () => {
+    platform({ detail: locked(), ...ready, versions: [version(1, 'PUBLISHED')] });
+    let out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[1]).toBe('ready');
+    expect(stage(out, 'schedule')?.[2]).toContain('Published · version 1');
+
+    platform({
+      detail: locked(),
+      ...ready,
+      versions: [version(2, 'DRAFT'), version(1, 'PUBLISHED')],
+    });
+    out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[1]).toBe('progress');
+    expect(stage(out, 'schedule')?.[2]).toContain('Version 1 published · draft open');
+  });
+
+  it('never asks a role without schedule permission to build it', async () => {
+    platform({
+      detail: managed({
+        status: 'ACTIVE',
+        events: [event({ status: 'FIELD_LOCKED' })],
+        permissions: ['COMP_VIEW_PRIVATE', 'COMP_OPEN_REGISTRATION', 'COMP_MANAGE_REGISTRATIONS'],
+        staffRoles: ['REGISTRATION_MANAGER'],
+      }),
+      ...ready,
+    });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[2]).toContain(`href="${BASE}/schedule"`);
+    expect(out).not.toContain('Build the schedule');
+    expect(out).toContain('Structure is set');
+  });
+
+  it('still renders, linked, when the schedule cannot be loaded', async () => {
+    platform({ detail: locked(), ...ready, versions: null });
+    const out = html(await Hub({ ...pc(), ...sp() }));
+    expect(stage(out, 'schedule')?.[1]).toBe('todo');
+    expect(stage(out, 'schedule')?.[2]).toContain('Can’t be loaded right now');
+    expect(stage(out, 'schedule')?.[2]).toContain(`href="${BASE}/schedule"`);
+    expect(out).not.toContain('Build the schedule');
   });
 });
 

@@ -1,5 +1,5 @@
 import { apiRequest, type ApiResult } from './platform';
-import type { Catalog, CatalogScoringVersion } from './tournaments';
+import type { Catalog, CatalogSchedulingProfile, CatalogScoringVersion } from './tournaments';
 
 /**
  * ONCF-05C organizer scoring: which ruleset (how one contest is decided) and which classification
@@ -16,13 +16,14 @@ export interface EventScoring {
   classificationTemplate?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
   /** ONCF-05D. */
   advancementPolicy?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
-  /** ONCF-05E-B: the pinned SchedulingProfile version (selection arrives with the scheduling UI). */
+  /** ONCF-05E-B: the pinned SchedulingProfile version (chosen with the scoring, before field lock). */
   schedulingProfile?: {
     versionId: string;
     code: string;
     name: string;
     version: number;
     basis: CatalogScoringVersion['basis'];
+    spec?: CatalogSchedulingProfile['spec'];
   } | null;
 }
 
@@ -73,6 +74,19 @@ export function compatibleRulesets(
   const d = catalog.disciplineVersions.find((x) => x.disciplineVersionId === disciplineVersionId);
   const ok = new Set(d?.compatibleRulesetVersionIds ?? []);
   return (catalog.rulesetVersions ?? []).filter((r) => ok.has(r.versionId));
+}
+
+/**
+ * ONCF-05E-B: the scheduling profiles this discipline version can be scheduled under (the catalog's
+ * own compatibility: every court type the profile needs is one the discipline declares).
+ */
+export function compatibleSchedulingProfiles(
+  catalog: Catalog,
+  disciplineVersionId: string | undefined,
+): CatalogSchedulingProfile[] {
+  const d = catalog.disciplineVersions.find((x) => x.disciplineVersionId === disciplineVersionId);
+  const ok = new Set(d?.compatibleSchedulingProfileVersionIds ?? []);
+  return (catalog.schedulingProfileVersions ?? []).filter((p) => ok.has(p.versionId));
 }
 
 /** Templates that fit a ruleset family (STANDINGS ↔ head-to-head, METRIC ↔ field). */
