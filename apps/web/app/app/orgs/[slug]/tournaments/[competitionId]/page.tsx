@@ -1,6 +1,12 @@
 import { notFound } from 'next/navigation';
 import { hubStages, nextAction } from '../../../../../_lib/competition-hub';
 import { orgContext } from '../../../../../_lib/org-context';
+import {
+  categoryResourceTypes,
+  competitionAvailability,
+  competitionResources,
+  resourceSummary,
+} from '../../../../../_lib/resources';
 import { one, type SearchParams } from '../../../../../_lib/search-params';
 import {
   COMPETITION_COMMANDS,
@@ -15,7 +21,7 @@ import {
 } from '../../../../../_lib/tournament-builder';
 import { competitionStaff, isStaffRole, STAFF_ROLE_LABEL } from '../../../../../_lib/staff';
 import { tournamentFor } from '../../../../../_lib/tournament-context';
-import type { ManagedEvent } from '../../../../../_lib/tournaments';
+import { tournamentCatalog, type ManagedEvent } from '../../../../../_lib/tournaments';
 import {
   CompetitionNav,
   NextActionPanel,
@@ -40,7 +46,8 @@ export const metadata = { title: 'Tournament hub · OnChainFest' };
  * The Competition Hub (ONCF-L1) for one tournament: identity, workflow status, the next step and
  * the Tournament Builder. Everything it offers comes from GET /v1/competitions/:id/manage:
  * `editable` decides which edits appear, `nextStatuses` (with the caller's competition
- * permissions) decides which lifecycle buttons appear. The staff count is optional context.
+ * permissions) decides which lifecycle buttons appear. The staff count and the resource readiness
+ * (ONCF-L2: resources, their declared hours and the catalog's resource types) are optional context.
  */
 export default async function TournamentBuilderPage({
   params,
@@ -66,9 +73,27 @@ export default async function TournamentBuilderPage({
   const { competition: c, events, access } = t.data;
   const p = c.profile;
   const base = `${hub}/${c.id}`;
-  const staff = await competitionStaff(org.ctx.accessToken, c.id);
-  const stages = hubStages(t.data, base, staff.kind === 'ok' ? staff.data.items.length : null);
-  const next = nextAction(t.data, base);
+  const [staff, resources, facts, catalog] = await Promise.all([
+    competitionStaff(org.ctx.accessToken, c.id),
+    competitionResources(org.ctx.accessToken, c.id),
+    competitionAvailability(org.ctx.accessToken, c.id),
+    tournamentCatalog(),
+  ]);
+  const resourceState =
+    resources.kind === 'ok' && facts.kind === 'ok'
+      ? resourceSummary(
+          resources.data.items,
+          facts.data.items,
+          categoryResourceTypes(events, catalog.kind === 'ok' ? catalog.data : null),
+        )
+      : null;
+  const stages = hubStages(
+    t.data,
+    base,
+    staff.kind === 'ok' ? staff.data.items.length : null,
+    resourceState,
+  );
+  const next = nextAction(t.data, base, resourceState);
   const yourRoles = access.staffRoles.filter(isStaffRole).map((r) => STAFF_ROLE_LABEL[r]);
   const perms = access.permissions;
   const canEdit = perms.includes('COMP_EDIT');
