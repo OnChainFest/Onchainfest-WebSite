@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { hubStages, nextAction } from '../../../../../_lib/competition-hub';
 import { orgContext } from '../../../../../_lib/org-context';
 import { one, type SearchParams } from '../../../../../_lib/search-params';
 import {
@@ -12,8 +13,14 @@ import {
   offeredTransitions,
   reviewChecklist,
 } from '../../../../../_lib/tournament-builder';
+import { competitionStaff, isStaffRole, STAFF_ROLE_LABEL } from '../../../../../_lib/staff';
 import { tournamentFor } from '../../../../../_lib/tournament-context';
 import type { ManagedEvent } from '../../../../../_lib/tournaments';
+import {
+  CompetitionNav,
+  NextActionPanel,
+  StageGrid,
+} from '../../../../../_product/competition-hub-ui';
 import { Flash } from '../../../../../_product/flash';
 import { SubmitButton } from '../../../../../_product/submit-button';
 import {
@@ -27,12 +34,13 @@ import {
 } from '../../../../../_product/tournament-ui';
 import { tournamentTransitionAction } from '../actions';
 
-export const metadata = { title: 'Tournament builder · OnChainFest' };
+export const metadata = { title: 'Tournament hub · OnChainFest' };
 
 /**
- * The Tournament Builder for one tournament. Everything it offers comes from
- * GET /v1/competitions/:id/manage: `editable` decides which edits appear, `nextStatuses` (with the
- * caller's competition permissions) decides which lifecycle buttons appear.
+ * The Competition Hub (ONCF-L1) for one tournament: identity, workflow status, the next step and
+ * the Tournament Builder. Everything it offers comes from GET /v1/competitions/:id/manage:
+ * `editable` decides which edits appear, `nextStatuses` (with the caller's competition
+ * permissions) decides which lifecycle buttons appear. The staff count is optional context.
  */
 export default async function TournamentBuilderPage({
   params,
@@ -58,6 +66,10 @@ export default async function TournamentBuilderPage({
   const { competition: c, events, access } = t.data;
   const p = c.profile;
   const base = `${hub}/${c.id}`;
+  const staff = await competitionStaff(org.ctx.accessToken, c.id);
+  const stages = hubStages(t.data, base, staff.kind === 'ok' ? staff.data.items.length : null);
+  const next = nextAction(t.data, base);
+  const yourRoles = access.staffRoles.filter(isStaffRole).map((r) => STAFF_ROLE_LABEL[r]);
   const perms = access.permissions;
   const canEdit = perms.includes('COMP_EDIT');
   const transitions = offeredTransitions(c.nextStatuses, COMPETITION_COMMANDS, perms);
@@ -83,6 +95,7 @@ export default async function TournamentBuilderPage({
         <div className="tb-hero-body">
           <h2 className="tb-hero-title">{p.name}</h2>
           <div className="tb-facts">
+            <Fact label="Organizer">{org.ctx.membership.displayName}</Fact>
             <Fact label="Dates">{when ?? 'Not set'}</Fact>
             <Fact label="Venue">
               {[p.locationLabel, p.regionCode].filter(Boolean).join(' · ') || 'Not set'}
@@ -93,6 +106,7 @@ export default async function TournamentBuilderPage({
               <wbr />
               {c.slug}
             </Fact>
+            <Fact label="Your role">{yourRoles.join(' · ') || 'View only'}</Fact>
           </div>
           <div className="tb-hero-actions">
             {c.editable.profile && canEdit ? (
@@ -113,6 +127,13 @@ export default async function TournamentBuilderPage({
           </div>
         </div>
       </header>
+
+      <CompetitionNav data={t.data} base={base} current="overview" />
+
+      <div className="hub-overview">
+        <NextActionPanel next={next} />
+        <StageGrid stages={stages} />
+      </div>
 
       {c.status === 'DRAFT' ? <BuilderRail steps={builderSteps(t.data, base)} /> : null}
 

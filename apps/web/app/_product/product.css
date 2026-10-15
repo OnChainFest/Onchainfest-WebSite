@@ -3077,3 +3077,153 @@
 .oc-app .pg-history li[data-status='INVALIDATED'] {
   opacity: 0.65;
 }
+
+/* ── Competition Hub & staff (ONCF-L1) ─────────────────────────────── */
+.oc-app .cn {
+  margin: 0 0 1.75rem;
+  border-bottom: 1px solid var(--line);
+}
+.oc-app .cn a[aria-current='page'] {
+  color: var(--white);
+  border-color: var(--brand);
+}
+.oc-app .cn-off {
+  padding: 0.85rem 0;
+  color: var(--faint);
+  white-space: nowrap;
+  font-size: 0.92rem;
+  cursor: default;
+}
+.oc-app .cn-off small {
+  margin-left: 0.25rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+.oc-app .hub-overview {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+.oc-app .hub-next {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  justify-items: start;
+  padding: 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  background: color-mix(in srgb, var(--brand) 8%, var(--ink-2));
+}
+.oc-app .hub-next > strong {
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .hub-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1px;
+}
+/* Cell outlines draw the 1px grid lines, so a part-filled last row leaves no grey block. */
+.oc-app .hub-stages li {
+  outline: 1px solid var(--line);
+  background: var(--ink-2);
+  min-width: 0;
+}
+.oc-app .hub-stages li > a,
+.oc-app .hub-stages li > div {
+  display: grid;
+  gap: 0.4rem;
+  height: 100%;
+  padding: 0.9rem 1rem;
+  overflow-wrap: anywhere;
+}
+.oc-app .hub-stages li > a:hover {
+  background: var(--ink-3);
+}
+.oc-app .hub-stages li[data-state='planned'] {
+  background: var(--ink);
+  color: var(--faint);
+}
+.oc-app .hub-stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.oc-app .hub-state {
+  --tone: var(--faint);
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  color: var(--tone);
+  white-space: nowrap;
+}
+.oc-app .hub-state[data-state='ready'] {
+  --tone: var(--green);
+}
+.oc-app .hub-state[data-state='open'] {
+  --tone: var(--cyan);
+}
+.oc-app .hub-state[data-state='progress'] {
+  --tone: var(--violet);
+}
+.oc-app .hub-state[data-state='attention'] {
+  --tone: var(--gold);
+}
+.oc-app .hub-state[data-state='todo'] {
+  --tone: var(--muted);
+}
+.oc-app .staff-list li {
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 1.4fr) minmax(110px, auto) auto;
+}
+.oc-app .staff-sub {
+  margin-top: 2rem;
+}
+.oc-app .staff-confirm {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 280px;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+}
+/* One column: overrides the global two-column `.oc-app dl` layout. */
+.oc-app .staff-roles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.8rem;
+  margin: 0;
+}
+.oc-app .staff-roles dd {
+  margin: 0.2rem 0 0;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+/* Long member names and role descriptions in the pickers must not widen the side column. */
+.oc-app .staff-add,
+.oc-app .staff-add .field,
+.oc-app .staff-add select {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .oc-app .hub-overview {
+    grid-template-columns: 1fr;
+  }
+  .oc-app .staff-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .oc-app .staff-list li > .muted {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 520px) {
+  .oc-app .hub-stages {
+    grid-template-columns: 1fr 1fr;
+  }
+}

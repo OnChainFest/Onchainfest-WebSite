@@ -32,7 +32,7 @@ const auth = (subject: string) => ({
 });
 
 async function call(
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   url: string,
   headers: Record<string, string> = {},
   payload?: unknown,
@@ -323,6 +323,77 @@ describe('GET /v1/competitions/:id/manage', () => {
     const pub = await call('GET', `/v1/competitions/${published.slug}`);
     expect(pub.status).toBe(200);
     expect(pub.body?.competition.status).toBe('PUBLISHED');
+  });
+});
+
+describe('GET /v1/competitions/:id/staff (ONCF-L1)', () => {
+  let comp: { id: string; slug: string };
+  beforeAll(async () => {
+    comp = await competition(orgA);
+  }, 60_000);
+
+  const assign = (h: Record<string, string>, personId: string, role: string) =>
+    call('POST', `/v1/competitions/${comp.id}/staff`, { ...h, ...idem() }, { personId, role });
+
+  it('lists ACTIVE assignments oldest first, named by the roster rule; ended ones drop out', async () => {
+    const empty = await call('GET', `/v1/competitions/${comp.id}/staff`, orgA.owner.h);
+    expect(empty.status, empty.text).toBe(200);
+    expect(empty.body).toEqual({ items: [] });
+
+    const named = await member(orgA, 'MEMBER');
+    const anonymous = await person('bare');
+    const a = await assign(orgA.owner.h, named.personId, 'REGISTRATION_MANAGER');
+    expect(a.status, a.text).toBe(201);
+    const b = await assign(orgA.owner.h, anonymous.personId, 'SCHEDULER');
+    expect(b.status, b.text).toBe(201);
+
+    const r = await call('GET', `/v1/competitions/${comp.id}/staff`, orgA.owner.h);
+    expect(r.status).toBe(200);
+    expect(r.body?.items).toEqual([
+      {
+        staffId: a.body?.staffId,
+        personId: named.personId,
+        role: 'REGISTRATION_MANAGER',
+        since: expect.any(String),
+        athlete: { slug: expect.any(String), displayName: 'Member MEMBER' },
+      },
+      {
+        staffId: b.body?.staffId,
+        personId: anonymous.personId,
+        role: 'SCHEDULER',
+        since: expect.any(String),
+        athlete: null,
+      },
+    ]);
+
+    // Any competition staff may read the team (COMP_VIEW_PRIVATE)…
+    const asStaff = await call('GET', `/v1/competitions/${comp.id}/staff`, named.h);
+    expect(asStaff.status).toBe(200);
+    expect((asStaff.body?.items as Json[]).length).toBe(2);
+
+    const end = await call('DELETE', `/v1/competition-staff/${b.body?.staffId}`, orgA.owner.h);
+    expect(end.status, end.text).toBe(204);
+    const after = await call('GET', `/v1/competitions/${comp.id}/staff`, orgA.owner.h);
+    expect((after.body?.items as Json[]).map((i) => i.staffId)).toEqual([a.body?.staffId]);
+  });
+
+  it('an organization ADMIN can read the staff list but not change it (COMP_MANAGE_STAFF)', async () => {
+    const admin = await member(orgA, 'ADMIN');
+    const target = await person('target');
+    expect((await call('GET', `/v1/competitions/${comp.id}/staff`, admin.h)).status).toBe(200);
+    expect((await assign(admin.h, target.personId, 'SCHEDULER')).status).toBe(403);
+  });
+
+  it('refuses plain members, other organizations and strangers; 401 anonymous, 404 unknown', async () => {
+    const plain = await member(orgA, 'STAFF');
+    const stranger = await person('stranger3');
+    for (const h of [plain.h, orgB.owner.h, stranger.h]) {
+      const r = await call('GET', `/v1/competitions/${comp.id}/staff`, h);
+      expect(r.status).toBe(403);
+      expect(r.text).not.toContain('personId');
+    }
+    expect((await call('GET', `/v1/competitions/${comp.id}/staff`)).status).toBe(401);
+    expect((await call('GET', `/v1/competitions/${newId()}/staff`, orgA.owner.h)).status).toBe(404);
   });
 });
 

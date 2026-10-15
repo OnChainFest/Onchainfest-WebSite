@@ -13,6 +13,7 @@ import { one, type SearchParams } from '../../../../../../_lib/search-params';
 import { dateTime } from '../../../../../../_lib/tournament-builder';
 import { tournamentFor } from '../../../../../../_lib/tournament-context';
 import type { ManagedEvent } from '../../../../../../_lib/tournaments';
+import { CompetitionNav } from '../../../../../../_product/competition-hub-ui';
 import { Flash } from '../../../../../../_product/flash';
 import {
   DecisionForms,
@@ -90,6 +91,7 @@ export default async function RegistrationsHubPage({
         <span>Registrations</span>
       </nav>
       <Flash error={one(query.error)} notice={one(query.notice)} />
+      <CompetitionNav data={t.data} base={base} current="registrations" />
 
       <header className="rg-console-head">
         <div>

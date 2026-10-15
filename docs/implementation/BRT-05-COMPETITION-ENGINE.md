@@ -253,6 +253,7 @@ Command-style endpoints; there is no status PATCH. Creating commands take `Idemp
 | `GET /v1/competitions/:competitionId/permissions` | AUTHENTICATED |
 | `PUT /v1/competitions/:competitionId/{profile,slug}` | COMP_STAFF |
 | `POST /v1/competitions/:competitionId/{publish,activate,complete,cancel}` | COMP_STAFF |
+| `GET /v1/competitions/:competitionId/staff` (ONCF-L1, ACTIVE assignments) | COMP_STAFF |
 | `POST /v1/competitions/:competitionId/staff`, `DELETE /v1/competition-staff/:staffId` | COMP_STAFF |
 | `POST /v1/competitions/:competitionId/events`, `PUT /v1/events/:eventId/settings` | COMP_STAFF |
 | `POST /v1/events/:eventId/{open-registration,close-registration,start,complete,cancel,lock-field,seed,generate-plan}` | COMP_STAFF |

@@ -31,7 +31,7 @@ export type ApiResult<T> =
 
 export async function apiRequest<T>(
   token: string,
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: { body?: unknown; idempotencyKey?: string } = {},
 ): Promise<ApiResult<T>> {
@@ -62,6 +62,8 @@ export async function apiRequest<T>(
     }
     return { kind: 'error', status: res.status, code };
   }
+  // A 204 (e.g. DELETE /v1/competition-staff/:id) carries no body.
+  if (res.status === 204) return { kind: 'ok', status: 204, data: null as T };
   try {
     return { kind: 'ok', status: res.status, data: (await res.json()) as T };
   } catch {
