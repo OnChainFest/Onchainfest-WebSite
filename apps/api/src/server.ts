@@ -92,12 +92,37 @@ export interface ApiOptions {
    * one, conflict-sensitive result actions fail closed (BRT-03R) — there is no permissive default.
    */
   readonly resultConflictChecker?: ConflictOfInterestChecker;
+  /**
+   * ADR-0077 §2.5: answer result conflict-of-interest questions from the database
+   * (`competition-participation/1`), per action. The production composition enables it; an explicit
+   * `resultConflictChecker` takes precedence.
+   */
+  readonly resultParticipationIndex?: boolean;
+  /** LAUNCH-02: send Strict-Transport-Security (production, behind TLS termination). */
+  readonly hsts?: boolean;
   readonly logger?: boolean;
   /** Destination for the (redacted) logger; enables logging. Used by tests to inspect log output. */
   readonly logStream?: { write(line: string): void };
 }
 
 export type ApiServer = FastifyInstance & { readonly v1Routes: readonly RouteInfo[] };
+
+/**
+ * LAUNCH-02 · Baseline security headers for every API response. The API serves JSON to server-side
+ * callers only (apps/web's server components and actions), so nothing may frame, embed or script it.
+ * Route-specific values, such as the evidence download's sandbox CSP, are kept: a header is added
+ * only when the route did not set one. No CORS headers are ever sent, because browsers never call
+ * the API directly and a cross-origin browser request is refused by default.
+ */
+export const API_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'content-security-policy':
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-resource-policy': 'same-origin',
+};
+export const API_HSTS_HEADER = 'max-age=31536000; includeSubDomains';
 
 /**
  * API: health/readiness plus the /v1 identity, passport, organization (BRT-04), catalog and
@@ -167,6 +192,13 @@ export function buildServer(options: ApiOptions): ApiServer {
     return reply.code(500).send({ error: { code: 'INTERNAL', message: 'internal error' } });
   });
 
+  app.addHook('onSend', async (_request, reply, payload) => {
+    for (const [name, value] of Object.entries(API_SECURITY_HEADERS))
+      if (!reply.hasHeader(name)) reply.header(name, value);
+    if (options.hsts === true) reply.header('strict-transport-security', API_HSTS_HEADER);
+    return payload;
+  });
+
   app.get('/health', async () => ({
     status: 'ok',
     service: 'bragging-rights-api',
@@ -185,9 +217,15 @@ export function buildServer(options: ApiOptions): ApiServer {
       });
       if (pending.length > 0)
         return reply.code(503).send({ status: 'not_ready', reason: 'pending_migrations', pending });
-      return { status: 'ready' };
     } catch {
       return reply.code(503).send({ status: 'not_ready', reason: 'database_unavailable' });
+    }
+    // LAUNCH-02: the vault login is a separate credential; a broken one must not report ready.
+    try {
+      if (options.vaultDb !== undefined) await sql`SELECT 1`.execute(options.vaultDb);
+      return { status: 'ready' };
+    } catch {
+      return reply.code(503).send({ status: 'not_ready', reason: 'vault_database_unavailable' });
     }
   });
 
@@ -211,13 +249,12 @@ export function buildServer(options: ApiOptions): ApiServer {
       advancement,
       resources: new ResourceStore(options.db),
       schedule: new ScheduleStore(options.db),
-      results: new ContestResultService(
-        options.db,
-        scoring,
-        options.resultConflictChecker === undefined
+      results: new ContestResultService(options.db, scoring, {
+        ...(options.resultConflictChecker === undefined
           ? {}
-          : { conflictChecker: options.resultConflictChecker },
-      ),
+          : { conflictChecker: options.resultConflictChecker }),
+        participationIndex: options.resultParticipationIndex === true,
+      }),
     },
     ...(privateData === undefined ? {} : { privateData }),
     evidence: {

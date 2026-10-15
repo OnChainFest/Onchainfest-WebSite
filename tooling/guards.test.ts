@@ -15,6 +15,7 @@ const guard = (name: string) => join(repo, 'tooling', `check-no-manual-${name}.m
 const RANKING = guard('ranking');
 const ACHIEVEMENT = guard('achievement');
 const RECORD = guard('record');
+const AUTHORITY = guard('authority');
 const roots: string[] = [];
 
 function run(script: string, root?: string) {
@@ -405,6 +406,76 @@ describe('check-no-manual-record (BRT-10 refinements)', () => {
     ],
   ] as const)('flags %s', (_what, files, offender) => {
     const r = run(RECORD, tree(files));
+    expect(r.status).toBe(1);
+    expect(r.out).toMatch(offender);
+  });
+});
+
+describe('check-no-manual-authority (LAUNCH-02, ADR-0077)', () => {
+  it('passes on the real repository', () => {
+    const r = run(AUTHORITY);
+    expect(r.out).toContain('authority guard:');
+    expect(r.status).toBe(0);
+  }, 60_000);
+
+  it('does not flag the authority writers, the operator command, demos, comments or tests', () => {
+    const r = run(
+      AUTHORITY,
+      tree({
+        [`${P}/authority-store.ts`]: real(`${P}/authority-store.ts`),
+        [`${P}/result-authority.ts`]: real(`${P}/result-authority.ts`),
+        [`${P}/cli/result-authority.ts`]: real(`${P}/cli/result-authority.ts`),
+        'apps/api/src/cli/demo-competition.ts': real('apps/api/src/cli/demo-competition.ts'),
+        'apps/api/src/notes.ts':
+          '// never call authority.issueGrant( from a route\nexport const ok = 1;',
+        'apps/api/src/x.int.test.ts': 'await new AuthorityStore(db).issueGrant(g);',
+      }),
+    );
+    expect(r.out).toContain('authority guard:');
+    expect(r.status).toBe(0);
+  });
+
+  it.each([
+    [
+      'grant issuance from a request handler',
+      { 'apps/api/src/v1-x.ts': 'await authority.issueGrant({ grantorPrincipalId });' },
+      /v1-x\.ts:1 authority issuance in application code/,
+    ],
+    [
+      'an AuthorityStore built by the API',
+      { 'apps/api/src/server-x.ts': 'const a = new AuthorityStore(options.db);' },
+      /server-x\.ts:1 authority issuance in application code/,
+    ],
+    [
+      'trust-anchor recognition from the worker',
+      { 'apps/worker/src/x.ts': 'await store.recognizeTrustAnchor(input);' },
+      /x\.ts:1 authority issuance in application code/,
+    ],
+    [
+      'a grant endpoint',
+      {
+        'apps/api/src/v1-x.ts':
+          "route(app, 'POST', '/v1/competitions/:id/grants', 'AUTHENTICATED');",
+      },
+      /v1-x\.ts:1 HTTP route exposing authority grants or anchors/,
+    ],
+    [
+      'a raw grant insert',
+      { [`${P}/x.ts`]: 'await sql`INSERT INTO authority.authority_grant (id) VALUES (${id})`;' },
+      /x\.ts:1 raw write into authority\.\* outside the authority writers/,
+    ],
+    [
+      'a Kysely anchor insert',
+      { [`${P}/x.ts`]: "await trx.insertInto('authority.trust_anchor').values(row).execute();" },
+      /x\.ts:1 raw write into authority\.\* outside the authority writers/,
+    ],
+    [
+      'the governance service used outside its command',
+      { [`${P}/competition-store.ts`]: 'await new ResultAuthorityGovernance(db).grant(x);' },
+      /competition-store\.ts:1 ResultAuthorityGovernance outside the operator command/,
+    ],
+  ] as const)('flags %s', (_what, files, offender) => {
+    const r = run(AUTHORITY, tree(files));
     expect(r.status).toBe(1);
     expect(r.out).toMatch(offender);
   });

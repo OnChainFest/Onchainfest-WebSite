@@ -48,7 +48,7 @@ correction (atomic): T7 current → SUPERSEDED  +  T2/T3 new version → PROVISI
   | T5 declare official | `DECLARE_OFFICIAL` |
   | Correction | `CORRECT_RESULT` + `ACCEPT_RESULT` |
 
-  A competition role grants none of these.
+  A competition role grants none of these. In production the grants come only from the operator's governance act ([ADR-0077](../adr/ADR-0077-governance-issued-competition-result-authority.md), LAUNCH-02).
 - **Over the API:**
   - The caller must be competition staff.
   - Actions run as the caller's own PERSON principal, derived server-side.

@@ -4,14 +4,16 @@ import {
   AchievementService,
   consumeOutbox,
   createDb,
-  databaseUrls,
+  databaseReadiness,
   RANKING_WORKER_CONSUMER,
   RankingWorkerService,
   rankingWorkerDatabaseUrl,
   RecordService,
   recordWorkerDatabaseUrl,
   runOneJob,
+  workerDatabaseUrl,
 } from '@br/persistence';
+import { assertRequiredConsumers, type WorkerConsumerState } from './config';
 
 /**
  * Worker: polls the transactional outbox and claims background jobs. No external brokers.
@@ -42,12 +44,19 @@ import {
  *                          No qualification / prize / trophy consumer exists (QUALIFIED is not wired).
  *
  *   --once   process one polling round and exit (used by the demos / CI smoke test)
+ *   --check  LAUNCH-02 preflight: validate configuration, reach the database with the worker login,
+ *            refuse pending migrations, print the consumer table as JSON and exit (0 ready, 1 not)
+ *
+ * BR_WORKER_REQUIRED_CONSUMERS (comma-separated) makes the named consumers mandatory: the worker
+ * refuses to start (and --check fails) when one of them is disabled.
  */
 const CONSUMER = 'dev.event-log';
 const ACHIEVEMENT_CONSUMER = 'achievements.derive';
 const workerId = `worker-${newId()}`;
 const once = process.argv.includes('--once');
-const db = createDb(databaseUrls().worker, { max: 3 });
+const check = process.argv.includes('--check');
+// LAUNCH-02: only the worker login is resolved (production requires BR_WORKER_DATABASE_URL alone).
+const db = createDb(workerDatabaseUrl(), { max: 3 });
 const achievementUrl = achievementWorkerDatabaseUrl();
 const achievementDb =
   achievementUrl === undefined ? undefined : createDb(achievementUrl, { max: 3 });
@@ -60,6 +69,54 @@ const records = recordDb === undefined ? undefined : new RecordService(recordDb)
 const rankingUrl = rankingWorkerDatabaseUrl();
 const rankingDb = rankingUrl === undefined ? undefined : createDb(rankingUrl, { max: 3 });
 const rankings = rankingDb === undefined ? undefined : new RankingWorkerService(rankingDb);
+
+const consumers: WorkerConsumerState[] = [
+  { name: CONSUMER, enabled: true },
+  achievements === undefined
+    ? {
+        name: ACHIEVEMENT_CONSUMER,
+        enabled: false,
+        disabledReason: 'BR_ACHIEVEMENT_WORKER_DATABASE_URL not set',
+      }
+    : { name: ACHIEVEMENT_CONSUMER, enabled: true },
+  records === undefined
+    ? {
+        name: RECORD_CONSUMER,
+        enabled: false,
+        disabledReason: 'BR_RECORD_WORKER_DATABASE_URL not set',
+      }
+    : { name: RECORD_CONSUMER, enabled: true },
+  rankings === undefined
+    ? {
+        name: RANKING_WORKER_CONSUMER,
+        enabled: false,
+        disabledReason: 'BR_RANKING_WORKER_DATABASE_URL not set',
+      }
+    : { name: RANKING_WORKER_CONSUMER, enabled: true },
+];
+
+async function destroyPools() {
+  await Promise.all([
+    db.destroy(),
+    achievementDb?.destroy(),
+    recordDb?.destroy(),
+    rankingDb?.destroy(),
+  ]);
+}
+
+try {
+  assertRequiredConsumers(consumers, process.env.BR_WORKER_REQUIRED_CONSUMERS);
+} catch (err) {
+  await destroyPools();
+  throw err;
+}
+
+if (check) {
+  const readiness = await databaseReadiness(db);
+  console.log(JSON.stringify({ ...readiness, consumers }));
+  await destroyPools();
+  process.exit(readiness.status === 'ready' ? 0 : 1);
+}
 
 async function round(): Promise<{
   events: number;
@@ -143,10 +200,5 @@ try {
     if (!once && !stopping) await new Promise((resolve) => setTimeout(resolve, 1000));
   } while (!once && !stopping);
 } finally {
-  await Promise.all([
-    db.destroy(),
-    achievementDb?.destroy(),
-    recordDb?.destroy(),
-    rankingDb?.destroy(),
-  ]);
+  await destroyPools();
 }

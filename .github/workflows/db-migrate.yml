@@ -1,0 +1,57 @@
+name: db-migrate
+
+# LAUNCH-02 · Apply database migrations (and optionally provision the canonical sport catalog) to a
+# staging or production database. Manual only (workflow_dispatch), one run per environment at a
+# time. Credentials come from the GitHub Environment named by the input. They are never stored in
+# the repository. Required environment secrets (docs/operations/LAUNCH-02-PRODUCTION-RUNBOOK.md):
+#   BR_OWNER_DATABASE_URL                     migrations (br_owner login)
+#   BR_OPERATOR_DATABASE_URL                  catalog provisioning only (br_operator_app login)
+#   BR_CATALOG_OPERATOR_ACCOUNT_ID            catalog provisioning only (an existing account id)
+# Migrations are forward-only and must be expand-only so the running API stays compatible; run
+# this BEFORE deploying an API/worker version that ships new migrations (its /ready gates on them).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        required: true
+      provision_catalog:
+        description: Also provision the canonical sport catalog (idempotent)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: migrate (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations (owner login only)
+        env:
+          BR_OWNER_DATABASE_URL: ${{ secrets.BR_OWNER_DATABASE_URL }}
+        run: pnpm db:migrate
+      - name: Provision the canonical sport catalog
+        if: ${{ inputs.provision_catalog }}
+        env:
+          BR_OPERATOR_DATABASE_URL: ${{ secrets.BR_OPERATOR_DATABASE_URL }}
+          BR_CATALOG_OPERATOR_ACCOUNT_ID: ${{ secrets.BR_CATALOG_OPERATOR_ACCOUNT_ID }}
+        run: pnpm db:catalog:provision

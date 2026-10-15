@@ -9,7 +9,13 @@ export * from './authority-store';
 export * from './result-ledger';
 export * from './projections';
 export * from './worker-queue';
-export { migrate, listMigrations, pendingMigrations, MIGRATIONS_DIR } from './migrate';
+export {
+  migrate,
+  listMigrations,
+  pendingMigrations,
+  databaseReadiness,
+  MIGRATIONS_DIR,
+} from './migrate';
 export { bootstrapDatabase, resetDatabase } from './bootstrap';
 export * from './identity-support';
 export * from './identity-store';
@@ -23,6 +29,8 @@ export * from './competition-structure-store';
 export * from './scoring-store';
 export * from './advancement-store';
 export * from './contest-results';
+export * from './competition-participation';
+export * from './result-authority';
 export * from './resource-store';
 export * from './team-store';
 export * from './competition-projection';

@@ -5,13 +5,15 @@ import {
   type PiiCipher,
 } from '@br/identity';
 import { developmentEvidenceBlobStore } from '@br/evidence';
-import { createDb, databaseUrls } from '@br/persistence';
+import { apiDatabaseUrl, createDb, vaultDatabaseUrl } from '@br/persistence';
+import { loadApiRuntimeConfig } from './config';
 import { buildServer } from './server';
 
-const production = process.env.NODE_ENV === 'production';
-const urls = databaseUrls();
-const db = createDb(urls.api, { max: 5 });
-const vaultDb = createDb(urls.vault, { max: 2 });
+// LAUNCH-02: validate the whole runtime configuration before opening any connection (fail closed).
+const config = loadApiRuntimeConfig();
+const production = config.production;
+const db = createDb(apiDatabaseUrl(), { max: 5 });
+const vaultDb = createDb(vaultDatabaseUrl(), { max: 2 });
 // BRT-05R: the operator (catalog-writer) connection is opt-in, even in development: only an
 // explicitly configured BR_OPERATOR_DATABASE_URL enables INTERNAL catalog mutation.
 const operatorUrl = process.env.BR_OPERATOR_DATABASE_URL;
@@ -49,7 +51,7 @@ if (!production && (process.env.BR_VAULT_DEV_KEY ?? '') !== '')
 // so production evidence ingestion fails closed (503). Development uses the encrypted filesystem
 // store only when BR_EVIDENCE_DEV_DIR and BR_EVIDENCE_DEV_KEY are both set explicitly.
 const evidenceBlobStore = production ? undefined : developmentEvidenceBlobStore();
-const signatureAudience = process.env.BR_SIGNATURE_AUDIENCE;
+const signatureAudience = config.signatureAudience;
 
 const devAuth = !production && process.env.BR_DEV_AUTH === '1';
 const app = buildServer({
@@ -61,14 +63,16 @@ const app = buildServer({
   ...(recordOperatorDb === undefined ? {} : { recordOperatorDb }),
   ...(piiCipher === undefined ? {} : { piiCipher }),
   ...(evidenceBlobStore === undefined ? {} : { evidenceBlobStore }),
-  ...(signatureAudience === undefined || signatureAudience === '' ? {} : { signatureAudience }),
+  ...(signatureAudience === undefined ? {} : { signatureAudience }),
+  // ADR-0077 §2.5: result conflict-of-interest questions are answered from database participation.
+  resultParticipationIndex: true,
+  hsts: production,
   // The test wallet verifier (TEST_VERIFIED only) is available with development auth only.
   walletVerifiers: devAuth
     ? [eip155EoaPersonalSignVerifier, createTestWalletVerifier()]
     : [eip155EoaPersonalSignVerifier],
   logger: true,
 });
-const port = Number(process.env.PORT ?? 4000);
 
 const shutdown = async () => {
   await app.close();
@@ -85,4 +89,4 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-await app.listen({ host: process.env.HOST ?? '127.0.0.1', port });
+await app.listen({ host: config.host, port: config.port });
