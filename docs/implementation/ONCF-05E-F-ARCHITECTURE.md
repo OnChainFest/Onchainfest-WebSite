@@ -1122,7 +1122,7 @@ No new error code was added. `LAST_FACT_STALE` (H-1, a stale manual edit) and `I
 - Advisory locks occupy PostgreSQL's shared lock table. A publication or a cascade takes one lock per candidate contest. The first publication of a very large competition is the largest case, bounded by `max_locks_per_transaction` × connections.
 - Readers that write no status are not serialized with lifecycle writes. These are the publication report's view of `SCHEDULED` contests, `setLock`'s G-7 check, and the move refusal `CONTEST_STARTED_OR_CLOSED`. Their windows remain as documented (§ 39, § 51.5, § 58).
 - Event creation is not serialized with competition cancellation: `createEvent` checks the competition status without `competition:<id>`, so an event created concurrently with the cancellation can stay `DRAFT` in a cancelled competition. No status fact follows a terminal one; the new event simply has no `CANCELLED` fact. Unchanged by H-2.
-- Observed, not fixed (pre-existing, outside G-1): `refreshEventReadModels` deletes and re-inserts an event's read-model rows. Two transactions that refresh the same event at the same moment can therefore fail one of them with a unique violation on `event_summary_pkey`, which `inTransaction` does not retry. The failed transaction rolls back whole, so no lifecycle state is lost. Before H-2, the pinned start vs competition-cancellation test hit exactly this, and so did five of the eight § 59.1 tests with the category-level change removed. After H-2, writers of the same contest, and a competition cancellation and the writers of its events, no longer overlap; writers of different contests of one event still can. A separate follow-up slice addresses it.
+- Observed, not fixed (pre-existing, outside G-1): `refreshEventReadModels` deletes and re-inserts an event's read-model rows. Two transactions that refresh the same event at the same moment can therefore fail one of them with a unique violation on `event_summary_pkey`, which `inTransaction` does not retry. The failed transaction rolls back whole, so no lifecycle state is lost. Before H-2, the pinned start vs competition-cancellation test hit exactly this, and so did five of the eight § 59.1 tests with the category-level change removed. After H-2, writers of the same contest, and a competition cancellation and the writers of its events, no longer overlap; writers of different contests of one event still can. Fixed by ONCF-05E-R1 (§ 60).
 
 **Tests.** `packages/persistence/src/oncf05e-h2.int.test.ts`:
 
@@ -1147,3 +1147,19 @@ The same invariant one level up: **no status fact is appended after a terminal s
 - **Why the candidate read is safe:** a terminal event is never re-opened, so an event that is terminal when read stays terminal; the re-read is restricted to the locked events.
 - **Advancement:** commit, override and revoke take `event-structure` and re-read the event status under it (`ACTIVE_EVENT`), so they now wait for a competition cancellation and then refuse.
 - Only `CANCELLED` writes event facts; the other competition transitions are unchanged. No new lock key, helper, error code, route or migration.
+
+# Part VI — ONCF-05E-R1: event read-model refresh concurrency
+
+## 60. Serialized refresh of one event's read models
+
+**Race.** `refreshEventReadModels` deletes an event's `competition_read` rows (`event_summary` first) and re-inserts them from canonical facts, under READ COMMITTED. Writers of different contests of one event take different `contest:<id>` locks, so both reach the refresh. The second blocks on the first's delete of the `event_summary` row; when the first commits, that row is gone, the second's delete (whose snapshot predates the commit) skips it, and its insert hits the first's re-inserted row: unique violation on `event_summary_pkey`, not retryable, HTTP 500.
+
+**Fix.** The refresh first takes `event-read-model:<event id>` (advisory, held to commit). Each statement of a waiting refresh then starts after the earlier refresh committed, so its deletes remove that refresh's rows and its inserts read its facts. The full rebuild skips the lock: its `TRUNCATE` already holds the read tables exclusively.
+
+**Invariant.** For one event, concurrent refreshes run one after the other; none fails because another materialized the same rows. The last refresh to commit sees every fact committed before it and its own, so the read models equal a recomputation from canonical facts; no stale snapshot overwrites newer rows. The refresh stays in the lifecycle transaction (fact, read models, audit and outbox commit or roll back together).
+
+**Lock order.** idempotency → competition → event (`event-capacity`, `event-structure`) / schedule → `contest:<id>` → `event-read-model:<id>`. It is a leaf: nothing is locked after it except further read-model locks of a multi-event refresh, which `refreshCompetitionEvents` and publication take in event-id order. It stands exactly where the refresh already row-locked the event's `event_summary` row, so it adds no wait that did not exist.
+
+**Unchanged.** Schema, migrations, routes, responses, permissions, lifecycle rules, audit and outbox; no retry was added.
+
+**Tests.** `packages/persistence/src/oncf05e-r1.int.test.ts`: a third connection holds the event's `event_summary` row `FOR UPDATE` until every writer is blocked (`pg_locks`), i.e. has written its status fact and reached the refresh. Two starts of different contests, and start, start and cancel, all succeed. The test then checks there is one summary row, every contest card shows its contest's current fact, and a recomputation from canonical facts changes nothing. Without the lock, the trailing writers fail on `event_summary_pkey`.
