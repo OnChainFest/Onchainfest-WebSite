@@ -48,6 +48,7 @@ import {
   currentStatus,
   loadCompetition,
   loadEvent,
+  lockContestLifecycles,
   optionalText,
   requireCompPermission,
   text,
@@ -1226,7 +1227,7 @@ export class StructureStore {
     reason?: string,
   ): Promise<void> {
     return this.tx(async (ctx) => {
-      await lockKeys(ctx, `contest:${contestId}`);
+      await lockContestLifecycles(ctx, [contestId]);
       const c = await this.loadContest(ctx, contestId);
       const e = await loadEvent(ctx, c.eventId);
       const permission =

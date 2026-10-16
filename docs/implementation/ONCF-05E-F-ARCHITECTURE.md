@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** Implementation: ONCF-05E-F-1, F-2 and F-3 merged; ONCF-05E-F-4 (tests / hardening) implemented (§ 30). ONCF-05E-F-5 Operations API audit: Part II (§§ 31–48). ONCF-05E-F-6 Operations API contract resolution: Part III (§§ 49–57). ONCF-05E-H-1 manual-edit hardening (C-2, G-7) implemented: Part IV (§ 58) |
+| Status | **Readiness audit (ONCF-05E-F-0). Unblocked: gap F-G1 (§ 26) resolved by [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) — FROZEN.** Implementation: ONCF-05E-F-1, F-2 and F-3 merged; ONCF-05E-F-4 (tests / hardening) implemented (§ 30). ONCF-05E-F-5 Operations API audit: Part II (§§ 31–48). ONCF-05E-F-6 Operations API contract resolution: Part III (§§ 49–57). ONCF-05E-H-1 manual-edit hardening (C-2, G-7) implemented: Part IV (§ 58). ONCF-05E-H-2 lifecycle writer serialization (G-1) implemented: Part V (§ 59) |
 | Baseline | `b93d57c` on `main` (PR #14, ONCF-05E-E-2 read-only preview merged) |
 | Contract | ADR-0066–0075 (**unchanged** through F-5; ONCF-05E-F-6 amends ADR-0066 §7, ADR-0070 §§ 8–9 and ADR-0074 D12, Part III) · [ADR-0076](../adr/ADR-0076-proposal-commit-eligibility.md) (commit eligibility, new) · [ONCF-05E architecture](./ONCF-05E-ARCHITECTURE.md) · [ONCF-05E-E architecture](./ONCF-05E-E-ARCHITECTURE.md) §§ 25–27, 34, 35 |
 | Migration | None required (§ 21) |
@@ -947,7 +947,7 @@ None of these is a contract question. Each is an implementation or test gap unde
 
 | Finding | Status | Governing contract |
 |---|---|---|
-| G-1 lifecycle writers not mutually serialized | **STILL OPEN.** High severity, unverified. Not addressed in F-6: no code, test, lock or transaction change | BRT-05 § 8 (terminal is terminal); ADR-0066 §7.1 (concurrent row) |
+| G-1 lifecycle writers not mutually serialized | **STILL OPEN.** High severity, unverified. Not addressed in F-6: no code, test, lock or transaction change. **[H-2] REPRODUCED AND IMPLEMENTED** (§ 59) | BRT-05 § 8 (terminal is terminal); ADR-0066 §7.1 (concurrent row) |
 | G-2 / A-1 start guard before authorization | **STILL OPEN** | ADR-0070 §11 / BRT-05 § 10 |
 | G-3, G-4 test gaps | **STILL OPEN** | Part II § 36 |
 | G-6 refusal reasons not exposed by `errorBody` | **STILL OPEN.** Not decided by F-6. The new C-2 refusal must be machine-readable (ADR-0070 §9 amendment); whether existing codes gain an exposed reason is a separate API decision | ADR-0076 C4 is precedent for commit only |
@@ -998,7 +998,7 @@ The grouping into slices is a recommendation.
 | # | Work | Contract | Readiness | Notes |
 |---|---|---|---|---|
 | H-1 | **Manual-edit hardening**: optimistic concurrency on set/move, remove, lock, unlock and the legacy route (C-2); lock and unlock refused for started or closed contests (G-7) | ADR-0070 §§ 8–9 amendments | **Ready** | Breaking request change on five routes; field shape chosen by the slice. Tests: stale refusal writes nothing; replay vs new key; per-contest granularity; `CONTEST_STARTED_OR_CLOSED` on lock and unlock. **[H-1] IMPLEMENTED** (§ 58) |
-| H-2 | **Lifecycle serialization (G-1)**: test-first, a deterministic two-connection reproduction (publish vs cancel; start vs event cancel), then one serialization covering every `contest_status_change` writer | BRT-05 § 8; ADR-0066 §7.1 | **Ready** (the mechanism is an implementation choice) | Separate slice. F-6 made no lock or transaction change. Should precede or accompany H-3's containing-state checks, because those read statuses that can race |
+| H-2 | **Lifecycle serialization (G-1)**: test-first, a deterministic two-connection reproduction (publish vs cancel; start vs event cancel), then one serialization covering every `contest_status_change` writer | BRT-05 § 8; ADR-0066 §7.1 | **Ready** (the mechanism is an implementation choice) | Separate slice. F-6 made no lock or transaction change. Should precede or accompany H-3's containing-state checks, because those read statuses that can race. **[H-2] IMPLEMENTED** (§ 59) |
 | H-3 | **Lifecycle command hardening**: `Idempotency-Key` on start, complete, cancel and void (G-5); containing-state enforcement for the decided cells (G-9); reason copied into the audit (G-10) | ADR-0066 §§ 7.1–7.3 | **Partly ready** (U-1 and U-2 cells excluded) | Request contract gains a required header. Audit details change; outbox payloads do not |
 | H-4 | **Start authorization order (G-2 / A-1)** | Existing permissions | **Ready** | No contract change. A replay (H-3) must come before the guard |
 | H-5 | **Operations API tests (G-3, G-4)**, including void, every invalid source state, the authorization matrix, audit and outbox assertions, route inventories, the G-8 discard-and-reopen recovery and the C-1 unlocked-then-settled case | Part II § 36 + § 51 | **Ready** | Can be split across H-1 to H-4 |
@@ -1062,3 +1062,88 @@ The grouping into slices is a recommendation.
 - a start committed while a lock command waits.
 
 The HTTP contract is asserted in `apps/api/src/oncf05e-c.int.test.ts`. Existing callers now state their expectation.
+
+---
+
+# Part V — ONCF-05E-H-2: lifecycle writer serialization
+
+## 59. Implementation of G-1
+
+| | |
+|---|---|
+| Status | **IMPLEMENTED.** G-1 (BRT-05 § 8; ADR-0066 §7.1, "concurrent commands on one contest"), extended to category (event) status facts under competition cancellation (§ 59.1). No ADR changed; no migration; no route, request, response or error-code change |
+| Not in this slice | Lifecycle `Idempotency-Key`, G-5, G-9, G-10 (H-3); start authorization order A-1 (H-4); the observations at the end of this section |
+
+**G-1 reproduced first.** Before the fix, `oncf05e-h2.int.test.ts` pinned the § 39 interleaving. A third connection held an uncommitted `contest_schedule` row, which paused publication after it had read contest X as `PLANNED`. A cancel of X then committed at once, and the publication resumed. X's history was `PLANNED → CANCELLED → SCHEDULED`: a terminal status followed by a non-terminal one. The contest commands among themselves were already serialized (`contest:<id>` and a re-read). The two writers that skipped that lock were publication and the cancellation cascade.
+
+**One lock discipline for every status writer.** The serialization point is `lockContestLifecycles` (`competition-support.ts`). It takes `pg_advisory_xact_lock(hashtextextended('contest:<id>', 0))` for each contest, in one `lockKeys` call, so in key order. This is the key the contest commands already used. The lock is transaction-scoped: it is released only at commit or rollback.
+
+| Writer | Transition | Before H-2 | After H-2 |
+|---|---|---|---|
+| Start, complete, cancel, void (`setContestStatus`) | BRT-05 § 8 | `contest:<id>`, then re-read | Unchanged; the same key, through the helper |
+| Publication (`ScheduleStore.publish`) | `PLANNED` → `SCHEDULED` | Schedule lock only | After `draft()` (schedule lock, draft re-read): the lock of every contest of the version that is `PLANNED`. The projection loop re-reads each status under it |
+| Event or competition cancellation (`cancelEventFacts`) | `PLANNED`/`SCHEDULED` → `CANCELLED` | Event or competition locks only | One batch for every `PLANNED`/`SCHEDULED` contest of the cancelled events (all events, for a competition), then a re-read restricted to those contests |
+| Plan generation (v1 and v2), dynamic materialization | Initial `PLANNED` | — | Unchanged. The contest row is created in the same transaction and is invisible to every other writer until it commits, so there is no prior state to race |
+
+**Order inside the transaction** (READ COMMITTED, as § 12 requires for the same reason; every statement after a lock sees the commits of earlier holders):
+
+1. the idempotency lock, where the command has one;
+2. the command's container lock: `competition-schedule:<id>`, `event-capacity`/`event-structure:<id>` or `competition:<id>`;
+3. the candidate read (publication and cascade only);
+4. `contest:<id>` for every candidate, in one batch;
+5. the status re-read and the transition check (`canTransition`, or the writer's own status filter);
+6. the status fact, the read models, the outbox event and the audit row;
+7. commit, which releases every lock.
+
+**Why the candidate read is safe.** `PLANNED` is the initial state only, and `SCHEDULED` is entered only from `PLANNED`. So a contest that is outside a writer's candidate set when it is read can never come back into it. Each writer locks a superset of the contests it will write, and decides on a status read taken under the lock. Event cancellation also holds `event-structure`, which plan generation and materialization take, so no contest of that event is created meanwhile. Competition cancellation now holds it too (§ 59.1), so its cascade sees every contest committed before it and no contest is materialized after it. The cascade reads its candidates once, after the event locks, instead of once per event.
+
+**Granularity: one contest.** Writers for the same contest serialize. Writers for different contests do not: a test holds one contest's lock while another contest of the same event starts. Publication and the cascade lock many contests, but only those they may transition, not the competition or the event.
+
+**Lock order and deadlocks.** Global order: `competition:<id>`, then event locks (`event-capacity`/`event-structure:<id>`), then contest locks. Only competition status commands take `competition:<id>`, and nothing takes it after an event lock. Container locks come before contest locks, and every transaction takes its contest locks in a single sorted batch. No transaction takes an advisory lock while it holds a contest lock: `setContestStatus` takes nothing after it. So advisory locks cannot form a cycle. A publication and a cascade with overlapping sets take the shared keys in the same global order. The schedule commands of H-1 take only the schedule lock, before any contest lock, and the contest commands never take the schedule lock.
+
+**Race outcomes.** The loser always decides on the winner's committed state.
+
+| Race | Outcome |
+|---|---|
+| Two contest commands on one contest | Exactly the outcome of one serial order. The refused writer gets the existing `INVALID_TRANSITION` "cannot move a *winner's state* contest to *target*" (409), and writes nothing. Some pairs are valid in both orders: start then void, complete then void |
+| Publication vs cancel | Publication first: `PLANNED → SCHEDULED → CANCELLED`. Cancel first: publication writes no status fact for the contest (it is no longer `PLANNED`). Its report may differ from the validated one, which gives the existing `REPORT_STALE` refusal. `CANCELLED` is never followed by `SCHEDULED` |
+| Start vs event or competition cancellation | Start first: the cascade re-reads `IN_PROGRESS` and leaves the contest alone (BRT-05 § 2). Cascade first: start is refused, "cannot move a CANCELLED contest to IN_PROGRESS" |
+| Competition cancellation vs category start, completion or cancellation (§ 59.1) | Category command first: the cascade re-reads the event under its locks; a started category is cancelled (`IN_PROGRESS → CANCELLED`), a `COMPLETED` or `CANCELLED` one is left alone. Cancellation first: the category command is refused, "cannot move a CANCELLED event to *target*" |
+| Competition cancellation vs a 05D cut commit (§ 59.1) | Commit first: the cascade sees the materialized contests and cancels them. Cancellation first: the commit is refused, "advancement is closed for a CANCELLED event", and creates nothing |
+
+No new error code was added. `LAST_FACT_STALE` (H-1, a stale manual edit) and `INVALID_TRANSITION` (H-2, a lost lifecycle race) stay distinct.
+
+**Effects.** Each successful transition still writes exactly one status fact, its `contest.*` audit row and its outbox event, all in the same transaction as the fact. A refused writer rolls back everything. The cascade's contest facts carry no per-contest audit or outbox, as before.
+
+**Unchanged.** Permissions, the reason requirement, the start preconditions and guard, the state machine, routes and responses, proposal generation and commit, the conflict engine and the scheduler. Lock and unlock (§ 58 G-7), manual moves and proposal commit write no status fact and take no contest lock.
+
+**Limits, not claimed.**
+
+- Advisory locks occupy PostgreSQL's shared lock table. A publication or a cascade takes one lock per candidate contest. The first publication of a very large competition is the largest case, bounded by `max_locks_per_transaction` × connections.
+- Readers that write no status are not serialized with lifecycle writes. These are the publication report's view of `SCHEDULED` contests, `setLock`'s G-7 check, and the move refusal `CONTEST_STARTED_OR_CLOSED`. Their windows remain as documented (§ 39, § 51.5, § 58).
+- Event creation is not serialized with competition cancellation: `createEvent` checks the competition status without `competition:<id>`, so an event created concurrently with the cancellation can stay `DRAFT` in a cancelled competition. No status fact follows a terminal one; the new event simply has no `CANCELLED` fact. Unchanged by H-2.
+- Observed, not fixed (pre-existing, outside G-1): `refreshEventReadModels` deletes and re-inserts an event's read-model rows. Two transactions that refresh the same event at the same moment can therefore fail one of them with a unique violation on `event_summary_pkey`, which `inTransaction` does not retry. The failed transaction rolls back whole, so no lifecycle state is lost. Before H-2, the pinned start vs competition-cancellation test hit exactly this, and so did five of the eight § 59.1 tests with the category-level change removed. After H-2, writers of the same contest, and a competition cancellation and the writers of its events, no longer overlap; writers of different contests of one event still can. A separate follow-up slice addresses it.
+
+**Tests.** `packages/persistence/src/oncf05e-h2.int.test.ts`:
+
+- each command alone: one fact, one audit row, one outbox event (A–D, N–P);
+- nine contest-command races (start, complete, cancel and void, same and mixed: E–M). Each is held behind a database barrier: a third connection holds `contest:<id>` until both writers are blocked (`pg_locks`). The test then checks that the observed outcome, refusal messages and final state are those of one of the two serial orders, and that only winners wrote facts, audit and outbox (Q, R);
+- per-contest granularity (W); the state machine, `FORBIDDEN` and the reason requirement still refuse, and the refusals write nothing (S–U);
+- the two § 39 interleavings, each paused deterministically between the writer's status read and its write: publication vs cancel, and start vs competition cancellation. Both fail before H-2;
+- publication vs cancel and start vs event cancellation behind the barrier, accepting either winner;
+- every recorded history is checked as a path of `ContestLifecycle`;
+- § 59.1: competition cancellation vs category start (A1, A2), completion (B1, B2), cancellation (C1, C2) and a 05D cut commit that materializes contests (D1, D2), each pinned in both orders by a table lock held on a third connection. Event, competition and contest histories are checked as paths of their state machines, and no contest of a cancelled event is left `PLANNED` or `SCHEDULED`. With the § 59.1 change removed all eight fail: C1, C2 and D2 commit an invalid state (`CANCELLED → CANCELLED`; a second cancellation accepted; contests materialized in a cancelled event), and A1, A2, B1, B2 and D1 overlap on one event and lose a writer to the `event_summary_pkey` collision above.
+
+## 59.1 Category-level serialization
+
+The same invariant one level up: **no status fact is appended after a terminal state because of a concurrent writer**, for events (BRT-05 § 3) as for contests.
+
+| Writer of event status facts | Locks |
+|---|---|
+| Event commands: open/close registration, start, complete, cancel (`setEventStatus`); field lock | `event-capacity:<id>`, `event-structure:<id>` (unchanged) |
+| Competition cancellation (`setCompetitionStatus`, the cascade) | `competition:<id>`; **new:** then `event-capacity` and `event-structure` of every non-terminal event, in one sorted batch, followed by a re-read of those events under the locks |
+
+- **Before:** the cascade held only `competition:<id>` and read event statuses unlocked; an event command held only its event locks and read the competition unlocked. Each could decide on a state the other was about to change (`CANCELLED → IN_PROGRESS`, `COMPLETED → CANCELLED`, `CANCELLED → CANCELLED`), and a 05D commit holding `event-structure` could materialize contests in an event being cancelled.
+- **Why the candidate read is safe:** a terminal event is never re-opened, so an event that is terminal when read stays terminal; the re-read is restricted to the locked events.
+- **Advancement:** commit, override and revoke take `event-structure` and re-read the event status under it (`ACTIVE_EVENT`), so they now wait for a competition cancellation and then refuse.
+- Only `CANCELLED` writes event facts; the other competition transitions are unchanged. No new lock key, helper, error code, route or migration.

@@ -37,6 +37,7 @@ import {
   instantOrThrow,
   loadCompetition,
   loadEvent,
+  lockContestLifecycles,
   optionalText,
   requireCompPermission,
   text,
@@ -1743,6 +1744,19 @@ export class ScheduleStore {
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
       const v = await this.draft(ctx, input.actorAccountId, input.versionId);
+      // G-1: the lifecycle lock of every contest this publication may move PLANNED → SCHEDULED,
+      // taken before its status is read again. PLANNED is never re-entered, so a contest that is
+      // not PLANNED now is never written here; the loop below re-reads each status under the lock.
+      const { rows: planned } = await sql<{ contest_id: string }>`
+        SELECT a.contest_id FROM competition.v_schedule_assignment_current a
+        JOIN competition.v_contest_current cc ON cc.contest_id = a.contest_id
+        WHERE a.version_id = ${v.version_id} AND NOT a.removed AND cc.status = 'PLANNED'`.execute(
+        ctx.trx,
+      );
+      await lockContestLifecycles(
+        ctx,
+        planned.map((r) => r.contest_id),
+      );
       const current = await this.currentOf(ctx, v.competition_id, 'PUBLISHED');
       const currentId = current?.version_id ?? null;
       if (input.baseVersionId !== v.base_version_id || input.baseVersionId !== currentId)

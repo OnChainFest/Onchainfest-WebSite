@@ -39,6 +39,7 @@ import {
   instantOrThrow,
   loadCompetition,
   loadEvent,
+  lockContestLifecycles,
   optionalText,
   requireCompPermission,
   slugOrThrow,
@@ -714,7 +715,22 @@ export class CompetitionStore {
       const { rows: events } = await sql<{ id: string; status: EventStatus }>`
         SELECT e.id, s.status FROM competition.event e JOIN competition.v_event_current s ON s.event_id = e.id
         WHERE e.competition_id = ${c.id} ORDER BY e.id`.execute(ctx.trx);
-      const open = events.filter((e) => !isTerminal(EventLifecycle, e.status));
+      let open = events.filter((e) => !isTerminal(EventLifecycle, e.status));
+      if (to === 'CANCELLED') {
+        // ONCF-05E-H-2: the cascade writes event facts, so it takes each open event's lifecycle
+        // locks (those of setEventStatus, which also cover plan generation and advancement) in one
+        // batch, then re-reads those events under them. A terminal event is never re-opened, so
+        // the candidates are complete. Lock order: competition, events, contests.
+        const candidates = open.map((e) => e.id);
+        await lockKeys(
+          ctx,
+          ...candidates.flatMap((id) => [`event-capacity:${id}`, `event-structure:${id}`]),
+        );
+        const { rows: now } = await sql<{ id: string; status: EventStatus }>`
+          SELECT e.id, s.status FROM competition.event e JOIN competition.v_event_current s ON s.event_id = e.id
+          WHERE e.id = ANY(${candidates}::uuid[]) ORDER BY e.id`.execute(ctx.trx);
+        open = now.filter((e) => !isTerminal(EventLifecycle, e.status));
+      }
       if (to === 'COMPLETED' && open.length > 0) {
         throw new DomainError(
           DomainErrorCode.INVALID_TRANSITION,
@@ -725,9 +741,13 @@ export class CompetitionStore {
         VALUES (${newId()}, ${c.id}, ${to}, ${reason ?? null}, ${actor}, ${ctx.txTime})`.execute(
         ctx.trx,
       );
-      if (to === 'CANCELLED') {
-        for (const e of open) await cancelEventFacts(ctx, e.id, actor, 'competition cancelled');
-      }
+      if (to === 'CANCELLED')
+        await cancelEventFacts(
+          ctx,
+          open.map((e) => e.id),
+          actor,
+          'competition cancelled',
+        );
       await refreshCompetitionCard(ctx, c.id);
       await refreshCompetitionEvents(ctx, c.id);
       await emitEvent(ctx, {
@@ -1461,7 +1481,8 @@ export class CompetitionStore {
             'the event plan must be generated before the event starts',
           );
       }
-      if (to === 'CANCELLED') await cancelEventFacts(ctx, e.id, actor, reason ?? 'event cancelled');
+      if (to === 'CANCELLED')
+        await cancelEventFacts(ctx, [e.id], actor, reason ?? 'event cancelled');
       else {
         await sql`INSERT INTO competition.event_status_change (id, event_id, status, reason, actor_account_id, recorded_at)
           VALUES (${newId()}, ${e.id}, ${to}, ${reason ?? null}, ${actor}, ${ctx.txTime})`.execute(
@@ -2061,10 +2082,32 @@ export class CompetitionStore {
   }
 }
 
-/** Appends CANCELLED to an event and to its non-terminal contests (history is never deleted). */
+/**
+ * Appends CANCELLED to events and to their non-terminal contests (history is never deleted).
+ * G-1: the lifecycle locks of every PLANNED or SCHEDULED contest of the events are taken once,
+ * before the statuses are re-read under them; a contest a lifecycle command has meanwhile moved
+ * past SCHEDULED is left alone. Neither status is ever re-entered, so the candidates are complete.
+ */
 async function cancelEventFacts(
   ctx: TxContext,
+  eventIds: readonly string[],
+  actor: string,
+  reason: string,
+): Promise<void> {
+  const { rows: candidates } = await sql<{ contest_id: string }>`
+    SELECT c.id AS contest_id FROM competition.contest c JOIN competition.v_contest_current s ON s.contest_id = c.id
+    WHERE c.event_id = ANY(${eventIds}::uuid[]) AND s.status IN ('PLANNED', 'SCHEDULED')`.execute(
+    ctx.trx,
+  );
+  const locked = candidates.map((r) => r.contest_id);
+  await lockContestLifecycles(ctx, locked);
+  for (const eventId of eventIds) await cancelLockedEventFacts(ctx, eventId, locked, actor, reason);
+}
+
+async function cancelLockedEventFacts(
+  ctx: TxContext,
   eventId: string,
+  locked: readonly string[],
   actor: string,
   reason: string,
 ): Promise<void> {
@@ -2074,9 +2117,8 @@ async function cancelEventFacts(
   );
   const { rows } = await sql<{ contest_id: string }>`
     SELECT c.id AS contest_id FROM competition.contest c JOIN competition.v_contest_current s ON s.contest_id = c.id
-    WHERE c.event_id = ${eventId} AND s.status IN ('PLANNED', 'SCHEDULED') ORDER BY c.sequence`.execute(
-    ctx.trx,
-  );
+    WHERE c.event_id = ${eventId} AND c.id = ANY(${locked}::uuid[]) AND s.status IN ('PLANNED', 'SCHEDULED')
+    ORDER BY c.sequence`.execute(ctx.trx);
   for (const r of rows) {
     await sql`INSERT INTO competition.contest_status_change (id, contest_id, status, reason, actor_account_id, recorded_at)
       VALUES (${newId()}, ${r.contest_id}, 'CANCELLED', ${reason}, ${actor}, ${ctx.txTime})`.execute(
