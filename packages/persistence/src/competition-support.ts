@@ -9,7 +9,7 @@ import {
 import { DomainError, DomainErrorCode } from '@br/domain';
 import { hasControlCharacters, normalizeSlug } from '@br/identity';
 import { sql } from 'kysely';
-import { activeOrgRoles, loadControlFacts, recordAudit } from './identity-support';
+import { activeOrgRoles, loadControlFacts, lockKeys, recordAudit } from './identity-support';
 import type { TxContext } from './tx';
 
 // ───────────────────────────── input safety ─────────────────────────────
@@ -231,6 +231,20 @@ export async function requireCompPermission(
     });
     throw new DomainError(DomainErrorCode.FORBIDDEN, 'not permitted');
   }
+}
+
+/**
+ * ONCF-05E-H-2 (G-1): the one serialization point of contest status facts. Every writer of a status
+ * fact for an existing contest — the contest commands, publication and the cancellation cascade —
+ * takes `contest:<id>` for each contest it may transition, in one call (so in key order), and only
+ * then reads the status it validates. Lock order: idempotency, then any competition, event or
+ * schedule lock, then these; nothing is locked after them.
+ */
+export async function lockContestLifecycles(
+  ctx: TxContext,
+  contestIds: readonly string[],
+): Promise<void> {
+  await lockKeys(ctx, ...contestIds.map((id) => `contest:${id}`));
 }
 
 /** Throws INVALID_TRANSITION with a stable message. */
