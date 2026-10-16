@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import type { Db } from './db';
+import { lockKeys } from './identity-support';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 /**
@@ -31,7 +32,22 @@ export async function refreshCompetitionCard(ctx: TxContext, competitionId: stri
   );
 }
 
+/**
+ * ONCF-05E-R1: refreshes of one event are serialized by its `event-read-model:<id>` lock, held to
+ * commit. Under READ COMMITTED each statement below then runs after every earlier refresh of the
+ * event has committed, so the deletes see (and remove) its rows and the inserts read its facts: the
+ * last refresh to commit reflects every committed fact. Without it, a refresh that waited on
+ * another's delete skipped that refresh's re-inserted row and failed on `event_summary_pkey`.
+ * It is a leaf lock — taken after any idempotency, competition, event, schedule or contest lock —
+ * and stands where the refresh already row-locked the event's `event_summary` row.
+ */
 export async function refreshEventReadModels(ctx: TxContext, eventId: string): Promise<void> {
+  await lockKeys(ctx, `event-read-model:${eventId}`);
+  await writeEventReadModels(ctx, eventId);
+}
+
+/** The refresh itself; callers other than the full rebuild (which holds the tables) lock first. */
+async function writeEventReadModels(ctx: TxContext, eventId: string): Promise<void> {
   for (const t of ['event_summary', 'event_slug', 'event_entry', 'round_card', 'contest_card']) {
     await sql`DELETE FROM ${sql.raw(`competition_read.${t}`)} WHERE event_id = ${eventId}`.execute(
       ctx.trx,
@@ -178,7 +194,8 @@ export function rebuildCompetitionReadModels(
     const { rows: events } = await sql<{
       id: string;
     }>`SELECT id FROM competition.event ORDER BY id`.execute(ctx.trx);
-    for (const e of events) await refreshEventReadModels(ctx, e.id);
+    // TRUNCATE holds the read tables exclusively until commit: no refresh can interleave.
+    for (const e of events) await writeEventReadModels(ctx, e.id);
     return { competitions: comps.length, events: events.length };
   });
 }
