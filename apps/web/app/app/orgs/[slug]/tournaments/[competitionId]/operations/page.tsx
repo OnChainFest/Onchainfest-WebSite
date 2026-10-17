@@ -12,6 +12,7 @@ import {
 } from '../../../../../../_lib/operations';
 import { orgContext } from '../../../../../../_lib/org-context';
 import { competitionResources } from '../../../../../../_lib/resources';
+import { eventOutcome } from '../../../../../../_lib/results-api';
 import {
   currentVersions,
   eventBracket,
@@ -82,7 +83,7 @@ export default async function TournamentOperationsPage({
   const roles = access.staffRoles.filter(isStaffRole).map((r) => STAFF_ROLE_LABEL[r]);
   const running = events.filter((e) => OPERATIONAL.has(e.status));
 
-  const [staff, versions, resources, structures] = await Promise.all([
+  const [staff, versions, resources, structures, outcomes] = await Promise.all([
     competitionStaff(token, c.id),
     scheduleVersions(token, c.id),
     competitionResources(token, c.id),
@@ -98,6 +99,15 @@ export default async function TournamentOperationsPage({
           field: f.kind === 'ok' ? f.data.items : [],
         };
       }),
+    ),
+    // ONCF-L6: whether each category in play can be completed (its outcome settled).
+    Promise.all(
+      running
+        .filter((e) => e.status === 'IN_PROGRESS')
+        .map(async (e) => {
+          const o = await eventOutcome(token, e.id);
+          return [e.id, o.kind === 'ok' ? o.data : null] as const;
+        }),
     ),
   ]);
   const published = versions.kind === 'ok' ? currentVersions(versions.data.items).published : null;
@@ -117,7 +127,7 @@ export default async function TournamentOperationsPage({
       .map((s) => s.event.id),
   );
   const day = board(matches);
-  const cats = categoryOps(t.data, base, matches, planned);
+  const cats = categoryOps(t.data, base, matches, planned, new Map(outcomes));
   const tournament = competitionOps(t.data);
   const items = attention(t.data, cats, day, now);
   const closed = c.status === 'COMPLETED' || c.status === 'CANCELLED';

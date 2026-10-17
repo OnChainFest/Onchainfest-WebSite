@@ -2,6 +2,7 @@ import type { AuthNoticeCode } from './auth/messages';
 import type { Contest, StructureRound } from './competition';
 import { partitionLabel } from './competition';
 import { sideText, timeText, type Assignment } from './schedule';
+import { outcomeReasonLabel, type StaffOutcome } from './results';
 import type { FieldParticipant } from './structure';
 import { instantToZoned } from './tournament-builder';
 import type {
@@ -67,7 +68,7 @@ export const OPERATIONS = {
     permission: 'COMP_EDIT',
     label: 'Complete tournament',
     consequence:
-      'Closes the tournament for good: nothing in it can start or change afterwards. Completing it doesn’t make any result official.',
+      'Closes the tournament for good: nothing in it can start or change afterwards. Its completed categories keep their final outcome, declared by the organizer.',
     reason: false,
     final: true,
     tone: 'neutral',
@@ -106,7 +107,7 @@ export const OPERATIONS = {
     permission: 'COMP_EDIT',
     label: 'Complete category',
     consequence:
-      'Closes the category: none of its matches can start afterwards. Completing it doesn’t make any result official.',
+      'Settles the category: its official results become its final outcome and standings, and they are frozen — nothing can be entered, accepted or corrected afterwards.',
     reason: false,
     final: true,
     tone: 'neutral',
@@ -419,11 +420,29 @@ export interface CategoryOps {
 
 const TERMINAL_MATCH = new Set(['COMPLETED', 'CANCELLED', 'VOID']);
 
+/**
+ * ONCF-L6: why a category can't be completed yet, from the API's readiness (null: it can, or it
+ * isn't known — the API decides either way).
+ */
+export function completionBlock(o: StaffOutcome | null | undefined): string | null {
+  if (o === null || o === undefined || o.readiness.ready) return null;
+  const r = o.readiness;
+  if (r.contestsOpen.length > 0)
+    return `${r.contestsOpen.length} ${r.contestsOpen.length === 1 ? 'match is' : 'matches are'} still open — finish ${r.contestsOpen.length === 1 ? 'it' : 'them'}, or cancel what won’t be played`;
+  if (r.resultsNotOfficial.length > 0)
+    return `${r.resultsNotOfficial.length} finished ${r.resultsNotOfficial.length === 1 ? 'match needs' : 'matches need'} an official result`;
+  const why = o.outcome.reasons.find(
+    (x) => !['TIE_UNBROKEN_LOT', 'GROUPS_NO_CHAMPION'].includes(x.code),
+  );
+  return why === undefined ? 'Its outcome isn’t decided yet' : outcomeReasonLabel(why.code);
+}
+
 export function categoryOps(
   data: ManagedCompetition,
   base: string,
   matches: readonly OpsMatch[],
   planned: ReadonlySet<string>,
+  outcomes: ReadonlyMap<string, StaffOutcome | null> = new Map(),
 ): CategoryOps[] {
   const perms = data.access.permissions;
   return data.events
@@ -455,6 +474,17 @@ export function categoryOps(
           blocked = { label: start.label, ...reason };
         }
       }
+      // ONCF-L6 (ADR-0078): completion settles the outcome; say what still blocks it.
+      const complete = operations.find((o) => o.command === 'complete');
+      const notReady = complete === undefined ? null : completionBlock(outcomes.get(event.id));
+      if (complete !== undefined && notReady !== null) {
+        operations = operations.filter((o) => o !== complete);
+        blocked = {
+          label: complete.label,
+          reason: notReady,
+          href: `${base}/results#res-outcome`,
+        };
+      }
       return { event, matches: counts, operations, blocked };
     });
 }
@@ -475,6 +505,13 @@ export function competitionOps(data: ManagedCompetition) {
     blocked = {
       label: complete.label,
       reason: `${open.length} ${open.length === 1 ? 'category is' : 'categories are'} still open — complete or cancel ${open.length === 1 ? 'it' : 'them'} first`,
+    };
+  } else if (complete !== undefined && !data.events.some((e) => e.status === 'COMPLETED')) {
+    // ONCF-L6 (ADR-0078 §2.4): nothing was played to completion — cancel it instead.
+    operations = operations.filter((o) => o !== complete);
+    blocked = {
+      label: complete.label,
+      reason: 'No category was completed — if nothing was played, cancel the tournament instead',
     };
   }
   return { operations, blocked };
@@ -590,6 +627,24 @@ export function attention(
       detail: `${m.waiting?.text ?? ''}. Decide whether to cancel it.`,
       href: `#m-${m.contestId}`,
     });
+  // ONCF-L6: every match is done, but the outcome isn't settled yet (results to declare).
+  for (const x of cats) {
+    const b = x.blocked;
+    if (
+      b !== null &&
+      x.event.status === 'IN_PROGRESS' &&
+      x.matches.total > 0 &&
+      x.matches.open === 0 &&
+      b.label === operationOf('category', 'complete')?.label
+    )
+      items.push({
+        key: `settle-${x.event.id}`,
+        tone: 'warn',
+        label: `${x.event.settings.name}: every match is done`,
+        detail: `${b.reason}.`,
+        href: b.href ?? `#cat-${x.event.id}`,
+      });
+  }
   for (const x of cats)
     if (
       x.event.status === 'IN_PROGRESS' &&
@@ -601,12 +656,12 @@ export function attention(
         key: `complete-${x.event.id}`,
         tone: 'go',
         label: `${x.event.settings.name}: every match is done`,
-        detail: 'Complete the category to close it.',
+        detail: 'Its results are official: complete the category to settle its outcome.',
         href: `#cat-${x.event.id}`,
       });
   if (
     c.status === 'ACTIVE' &&
-    data.events.length > 0 &&
+    data.events.some((e) => e.status === 'COMPLETED') &&
     data.events.every((e) => TERMINAL_EVENT.has(e.status)) &&
     offered('competition', c.nextStatuses, perms).some((o) => o.command === 'complete')
   )

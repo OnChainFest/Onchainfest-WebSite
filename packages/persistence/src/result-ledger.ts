@@ -182,6 +182,13 @@ export interface ResultScopeValidator {
     scopeTargetId: string,
     scope: AuthorityScope,
   ): Promise<void>;
+  /**
+   * ONCF-L6 results freeze (ADR-0078 §2.2): refuses any write to a Result whose target is closed
+   * (INVALID_TRANSITION, `RESULTS_FROZEN`). Called inside the command's br_results transaction,
+   * after its idempotency replay and before its stream head, so the check and the write are one
+   * transaction and a replay of an earlier success still answers.
+   */
+  assertMutable(ctx: TxContext, scopeType: ResultScopeType, scopeTargetId: string): Promise<void>;
 }
 
 /**
@@ -250,6 +257,13 @@ export class ResultLedger {
       r.scope_type as ResultScopeType,
       r.scope_target_id,
       scope,
+    );
+    // ONCF-L6: every write path (submit T2, accept / reject / declare-official T3–T5, correct T7)
+    // validates its scope here, after its idempotency replay and before its stream head.
+    await this.scopeValidator.assertMutable(
+      ctx,
+      r.scope_type as ResultScopeType,
+      r.scope_target_id,
     );
   }
 

@@ -18,8 +18,9 @@ import {
 import { sql } from 'kysely';
 import { authorizeIn } from './authority-store';
 import type { Db } from './db';
+import { lockKeys } from './identity-support';
 import { ResultLedger, type ResultScopeValidator } from './result-ledger';
-import { inTransaction, ModuleRole, type TxContext } from './tx';
+import { inTransaction, ModuleRole, withModuleRole, type TxContext } from './tx';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -150,6 +151,37 @@ export const competitionResultScopeValidator: ResultScopeValidator = {
         },
       );
     }
+  },
+  /**
+   * ONCF-L6 (ADR-0078 §2.2): a CONTEST result is frozen once its event is COMPLETED or CANCELLED.
+   * The contest's lifecycle lock (`contest:<id>`, the one category completion holds for every
+   * contest while it validates) is taken first, then the event status is read as br_competition
+   * (`withModuleRole`; the login holds SET on both roles, no grant is widened). Classification
+   * scopes are not frozen: deriving from a finished event stays legitimate (V2).
+   */
+  async assertMutable(ctx, scopeType, scopeTargetId) {
+    if (scopeType !== 'CONTEST') return;
+    const path = await resolveHierarchy(ctx, 'CONTEST', scopeTargetId);
+    if (path?.eventId === undefined)
+      throw new DomainError(
+        DomainErrorCode.NOT_FOUND,
+        'result scope target does not exist in the competition hierarchy',
+      );
+    const eventId = path.eventId;
+    await lockKeys(ctx, `contest:${scopeTargetId}`);
+    const status = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
+      const { rows } = await sql<{ status: string }>`
+        SELECT status FROM competition.v_event_current WHERE event_id = ${eventId}`.execute(
+        cctx.trx,
+      );
+      return rows[0]?.status;
+    });
+    if (status === 'COMPLETED' || status === 'CANCELLED')
+      throw new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        'the event is finished; its results are frozen',
+        { reason: 'RESULTS_FROZEN', eventStatus: status },
+      );
   },
 };
 

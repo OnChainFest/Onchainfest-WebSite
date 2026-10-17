@@ -7,6 +7,7 @@ import type {
   RegistrationEntry,
   AdvancementStore,
   ContestResultService,
+  EventOutcomeStore,
   ResourceStore,
   ScheduleStore,
   ScoringStore,
@@ -47,6 +48,8 @@ export interface CompetitionV1Deps {
   readonly resources?: ResourceStore;
   /** ONCF-05E-C schedule versions, assignments and publication. */
   readonly schedule?: ScheduleStore;
+  /** ONCF-L6 derived category outcomes (public OFFICIAL-only reads, staff readiness). */
+  readonly outcomes?: EventOutcomeStore;
 }
 
 const notFound = (what: string) => new DomainError(DomainErrorCode.NOT_FOUND, `${what} not found`);
@@ -269,6 +272,71 @@ export function registerCompetitionV1(
       return { rounds, results: { status: 'NOT_AVAILABLE', reason: 'SOURCE_NOT_IMPLEMENTED' } };
     },
   );
+
+  // ONCF-L6 (ADR-0078 §2.5): the category outcome, derived on read from OFFICIAL results only.
+  // DRAFT competitions and events are 404 (the reader's gate); displays are the reader's
+  // public-safe ones. No result version ids, provenance or holds; the podium only once COMPLETED.
+  const outcomes = deps.outcomes;
+  if (outcomes !== undefined) {
+    const displaysOf = async (slug: string, eventSlug: string) =>
+      new Map(
+        ((await deps.reader.entries(slug, eventSlug)) ?? []).flatMap((e) =>
+          e.participantId === null ? [] : [[e.participantId, e.display] as const],
+        ),
+      );
+    route(
+      'GET',
+      '/v1/competitions/:slug/events/:eventSlug/outcome',
+      'PUBLIC',
+      { params: eventSlugParams },
+      async (request) => {
+        const p = params<{ slug: string; eventSlug: string }>(request);
+        const r = await deps.reader.eventBySlugs(p.slug, p.eventSlug);
+        if (r === undefined) throw notFound('event');
+        return {
+          ...(await outcomes.publicEvent(r.event.event.id, await displaysOf(p.slug, p.eventSlug))),
+          canonical: r.canonical,
+        };
+      },
+    );
+    route(
+      'GET',
+      '/v1/competitions/:slug/outcome',
+      'PUBLIC',
+      { params: compSlugParams },
+      async (request) => {
+        const r = await deps.reader.competitionBySlug(params<{ slug: string }>(request).slug);
+        if (r === undefined) throw notFound('competition');
+        const events = [];
+        for (const e of r.competition.events)
+          events.push({
+            id: e.id,
+            slug: e.slug,
+            name: e.name,
+            status: e.status,
+            displays: await displaysOf(r.canonicalSlug, e.slug),
+          });
+        return {
+          ...(await outcomes.publicCompetition(
+            { id: r.competition.competition.id, status: r.competition.competition.status },
+            events,
+          )),
+          canonicalSlug: r.canonicalSlug,
+        };
+      },
+    );
+    route(
+      'GET',
+      '/v1/events/:eventId/outcome',
+      'COMP_STAFF',
+      { params: idParams('eventId') },
+      async (request) =>
+        outcomes.staff({
+          actorAccountId: requireAuth(request).accountId,
+          eventId: params<{ eventId: string }>(request).eventId,
+        }),
+    );
+  }
 
   // ───────────────────────────── INTERNAL · sport catalog ─────────────────────────────
 

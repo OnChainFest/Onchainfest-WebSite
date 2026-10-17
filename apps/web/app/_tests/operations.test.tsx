@@ -571,9 +571,10 @@ describe('operations workspace', () => {
     const m = cat(out, MEN);
     expect(m).toContain('1/7 done · 1 in play');
     expect(offeredIn(m)).toEqual(['Complete category', 'Cancel category']);
-    // Completing with open matches says what happens to them.
+    // ONCF-L6: completing settles the outcome and freezes the results — the warning says so.
+    // (Readiness isn't stubbed here, so the API decides; the pre-block is in outcome.test.tsx.)
     expect(m).toContain(
-      '5 matches haven’t started and can’t start afterwards. 1 in play can still be finished.',
+      'Its official results and standings become final and are frozen: no result can be entered, accepted or corrected afterwards.',
     );
     expect(m).toContain('1 match is in play: cancelling the category doesn’t stop it.');
     const w = cat(out, WOMEN);

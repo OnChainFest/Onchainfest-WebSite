@@ -39,6 +39,8 @@ import {
 } from './competition-hierarchy';
 import { CompetitionReader } from './competition-reader';
 import { CompetitionStore } from './competition-store';
+import { refreshCompetitionCard, refreshCompetitionEvents } from './competition-projection';
+import { inTransaction, ModuleRole } from './tx';
 import { StructureStore } from './competition-structure-store';
 import { IdentityStore } from './identity-store';
 import { OrganizationStore } from './organization-store';
@@ -944,10 +946,24 @@ describe('stale base state (ADR-0075 § 16): any authoritative change refuses, n
     );
     expect(await snapshot(a.comp.competitionId, [a.comp.actor])).toEqual(before);
 
-    // Competition COMPLETED (every event terminal first): the schedule is closed.
-    await comps.completeCompetition({
-      actorAccountId: a.comp.actor,
-      competitionId: a.comp.competitionId,
+    // Competition COMPLETED: the schedule is closed. ONCF-L6 (ADR-0078 §2.4): a competition whose
+    // only category was cancelled can no longer complete (NO_COMPLETED_EVENT), so the completed
+    // competition this case needs is grandfathered pre-L6 data, written directly as such.
+    await rejects(
+      comps.completeCompetition({
+        actorAccountId: a.comp.actor,
+        competitionId: a.comp.competitionId,
+      }),
+      DomainErrorCode.INVALID_TRANSITION,
+      'NO_COMPLETED_EVENT',
+    );
+    await inTransaction(db, ModuleRole.competition, async (ctx) => {
+      await sql`INSERT INTO competition.competition_status_change (id, competition_id, status, actor_account_id, recorded_at)
+        VALUES (${newId()}, ${a.comp.competitionId}, 'COMPLETED', ${a.comp.actor}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+      await refreshCompetitionCard(ctx, a.comp.competitionId);
+      await refreshCompetitionEvents(ctx, a.comp.competitionId);
     });
     before = await snapshot(a.comp.competitionId, [a.comp.actor]);
     await rejects(commit(a.comp.actor, a.versionId, h), DomainErrorCode.INVALID_TRANSITION);

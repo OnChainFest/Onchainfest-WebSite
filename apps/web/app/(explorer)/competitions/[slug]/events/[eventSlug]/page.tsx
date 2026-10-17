@@ -3,7 +3,9 @@ import { getPublic } from '../../../../../_lib/api';
 import {
   Entrant,
   groupName,
+  OFFICIAL_AUTHORITY_NOTE,
   partitionLabel,
+  placeLabel,
   SlotView,
   StatusPill,
   when,
@@ -11,6 +13,7 @@ import {
   type Entry,
   type FieldEntry,
   type PublicEvent,
+  type PublicEventOutcome,
   type StructureRound,
 } from '../../../../../_lib/competition';
 import { RegistrationCtaPanel } from '../../../../../_lib/registration-cta';
@@ -22,13 +25,14 @@ type Params = { params: Promise<{ slug: string; eventSlug: string }> };
 
 async function load(slug: string, eventSlug: string) {
   const base = `/v1/competitions/${encodeURIComponent(slug)}/events/${encodeURIComponent(eventSlug)}`;
-  const [event, participants, schedule, bracket] = await Promise.all([
+  const [event, participants, schedule, bracket, outcome] = await Promise.all([
     getPublic<PublicEvent>(base),
     getPublic<{ items: Entry[] }>(`${base}/participants`),
     getPublic<{ items: Contest[] }>(`${base}/schedule`),
     getPublic<{ rounds: StructureRound[] }>(`${base}/bracket`),
+    getPublic<PublicEventOutcome>(`${base}/outcome`),
   ]);
-  return { event, participants, schedule, bracket };
+  return { event, participants, schedule, bracket, outcome };
 }
 
 export async function generateMetadata({ params }: Params) {
@@ -41,7 +45,7 @@ export async function generateMetadata({ params }: Params) {
 
 export default async function EventPage({ params }: Params) {
   const { slug, eventSlug } = await params;
-  const { event, participants, schedule, bracket } = await load(slug, eventSlug);
+  const { event, participants, schedule, bracket, outcome } = await load(slug, eventSlug);
   if (event.kind === 'not_found') notFound();
   if (event.kind === 'unavailable') return <Unavailable />;
   const d = event.data;
@@ -87,9 +91,9 @@ export default async function EventPage({ params }: Params) {
           fontSize: '0.9rem',
         }}
       >
-        This page shows how the event is operated: entries, schedule and structure. Contest and
-        event statuses are operational — they are not results, and nothing here is a verified
-        outcome, a ranking or a champion.
+        This page shows how the event is operated — entries, schedule and structure — and its
+        official results. Official results are declared by the organizer and are not independently
+        verified; contest and event statuses are operational, not results.
       </aside>
 
       <section style={{ marginTop: '1.5rem' }}>
@@ -200,13 +204,11 @@ export default async function EventPage({ params }: Params) {
         )}
       </section>
 
-      <section style={{ marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.1rem' }}>Results & standings</h2>
-        <p style={{ color: '#6b7280' }}>
-          <em>Not available yet.</em> Results are recorded and verified by a separate process that
-          is not live yet. No winners are shown until then.
-        </p>
-      </section>
+      <OutcomeSection
+        status={e.status}
+        outcome={outcome.kind === 'ok' ? outcome.data : null}
+        unavailable={outcome.kind === 'unavailable'}
+      />
 
       {(d.plan || d.seeding) && (
         <section style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#6b7280' }}>
@@ -237,6 +239,132 @@ export default async function EventPage({ params }: Params) {
         </section>
       )}
     </main>
+  );
+}
+
+const muted = { color: '#6b7280' } as const;
+const PLAYED = new Set(['IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
+const NOTE: Record<string, string> = {
+  TIE_UNBROKEN_LOT: 'A tie that only an organizer lot could separate is shown as shared.',
+  GROUPS_NO_CHAMPION: 'Groups are ranked separately: there is no overall champion.',
+};
+
+/**
+ * ONCF-L6 (ADR-0078): the category's OFFICIAL results only — standings so far while it is played,
+ * the final podium once it is completed. Nothing below OFFICIAL is ever shown, and nothing is
+ * shown rather than something not yet decided.
+ */
+function OutcomeSection({
+  status,
+  outcome,
+  unavailable,
+}: {
+  status: string;
+  outcome: PublicEventOutcome | null;
+  unavailable: boolean;
+}) {
+  const official = (outcome?.matches ?? []).filter((m) => m.official);
+  const podium = outcome?.podium.status === 'AVAILABLE' ? outcome.podium.placements : [];
+  const positions = [...new Set(podium.map((p) => p.position))].sort((a, b) => a - b);
+  return (
+    <section style={{ marginTop: '1.5rem' }} aria-label="Results and standings">
+      <h2 style={{ fontSize: '1.1rem' }}>
+        {outcome?.final ? 'Final result' : 'Results & standings'}
+      </h2>
+      {unavailable ? (
+        <p style={muted}>Results can’t be loaded right now. Try again in a moment.</p>
+      ) : outcome === null || !PLAYED.has(status) ? (
+        <p style={muted}>Results appear here once matches are played.</p>
+      ) : (
+        <>
+          <p style={{ ...muted, fontSize: '0.85rem' }}>
+            {status === 'CANCELLED'
+              ? 'Category cancelled — no outcome is decided. Official results recorded before it was cancelled are kept below.'
+              : outcome.final
+                ? `Final · ${OFFICIAL_AUTHORITY_NOTE}`
+                : `Standings so far — official results only (${OFFICIAL_AUTHORITY_NOTE.toLowerCase()}). The podium is shown once the category is completed.`}
+          </p>
+          {positions.length > 0 && (
+            <ol style={{ listStyle: 'none', padding: 0 }} aria-label="Podium">
+              {positions.map((pos) => {
+                const at = podium.filter((p) => p.position === pos);
+                return (
+                  <li key={pos} style={{ marginBottom: '0.35rem' }}>
+                    <strong>{placeLabel(pos, at.length)}:</strong>{' '}
+                    {at.map((p, i) => (
+                      <span key={p.participantId}>
+                        {i > 0 && ' · '}
+                        <Entrant display={p.display} />
+                      </span>
+                    ))}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {outcome.notes.map((n) => (
+            <p key={n} style={{ ...muted, fontSize: '0.85rem' }}>
+              {NOTE[n] ?? n}
+            </p>
+          ))}
+          {outcome.standings.map((t) => (
+            <div key={t.groupKey ?? 'all'} style={{ marginTop: '0.75rem' }}>
+              <h3 style={{ fontSize: '0.95rem' }}>
+                {t.groupKey !== null ? `Group ${groupName(t.groupKey)} · ` : ''}
+                {t.complete ? 'Standings' : 'Standings so far'}
+              </h3>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left' }}>
+                    <th>#</th>
+                    <th>Entrant</th>
+                    <th>Values</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.entries.map((x) => (
+                    <tr key={x.participantId} style={{ borderTop: '1px solid #e5e7eb' }}>
+                      <td>
+                        {x.status === 'CLASSIFIED' ? `${x.position}${x.tied ? '=' : ''}` : x.status}
+                      </td>
+                      <td>
+                        <Entrant display={x.display} />
+                      </td>
+                      <td style={muted}>
+                        {x.values.map((v) => `${v.key} ${v.value}`).join(' · ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <h3 style={{ fontSize: '0.95rem', marginTop: '0.75rem' }}>Official results</h3>
+          {official.length === 0 ? (
+            <p style={muted}>No official results yet.</p>
+          ) : (
+            <ul style={{ fontSize: '0.85rem' }}>
+              {official.map((m) => (
+                <li key={m.contestId}>
+                  <small style={muted}>{m.roundLabel} · </small>
+                  {m.entrants.map((x, i) => (
+                    <span key={x.participantId}>
+                      {i > 0 && ' · '}
+                      <Entrant display={x.display} />{' '}
+                      <small style={muted}>
+                        {(x.outcome ?? '').toLowerCase().replace(/_/g, ' ')}
+                        {x.score.length > 0 &&
+                          ` (${x.score.map((v) => `${v.key} ${v.value}`).join(', ')})`}
+                      </small>
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

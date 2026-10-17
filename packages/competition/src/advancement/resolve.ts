@@ -1,5 +1,5 @@
 import type { ResultOutcome } from '@br/domain';
-import type { NormalizedContestResult } from '../scoring';
+import type { NormalizedContestResult, NormalizedEntry } from '../scoring';
 import type { AdvancementFamily, AdvancementPolicySpec, CrossGroupKey } from './policy';
 
 /**
@@ -171,6 +171,20 @@ export interface AdvancementResolution {
 const WIN: readonly ResultOutcome[] = ['WIN', 'WALKOVER_WIN'];
 const CANCELLED = new Set(['CANCELLED', 'VOID']);
 
+/**
+ * The one winner rule of a head-to-head contest (shared with event-outcome/1, ONCF-L6): the entry
+ * whose outcome is WIN or WALKOVER_WIN, against exactly one other entry. Anything else (a draw,
+ * no winner, more or fewer than two entries) decides nothing.
+ */
+export function contestDecision(
+  result: NormalizedContestResult,
+): { readonly winner: NormalizedEntry; readonly loser: NormalizedEntry } | undefined {
+  const winner = result.entries.find((e) => WIN.includes(e.outcome));
+  const loser = result.entries.find((e) => e !== winner);
+  if (winner === undefined || loser === undefined || result.entries.length !== 2) return undefined;
+  return { winner, loser };
+}
+
 interface Ranked {
   readonly participantId: string;
   readonly position: number;
@@ -340,10 +354,9 @@ class Ctx {
     const inResult = ev.result.entries.map((e) => e.participantId).sort();
     if (occupants.length !== u.occupants.length || occupants.join() !== inResult.join())
       return pending('SOURCE_OCCUPANTS_CHANGED');
-    const winner = ev.result.entries.find((e) => WIN.includes(e.outcome));
-    const loser = ev.result.entries.find((e) => e !== winner);
-    if (winner === undefined || loser === undefined || ev.result.entries.length !== 2)
-      return pending('NO_WINNER');
+    const decision = contestDecision(ev.result);
+    if (decision === undefined) return pending('NO_WINNER');
+    const { winner, loser } = decision;
     return u.targets.map((t) => {
       const e = t.family === 'DIRECT_WINNER' ? winner : loser;
       const provenance: AdvancementProvenance = {

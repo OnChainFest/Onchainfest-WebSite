@@ -52,10 +52,10 @@ All class A tables have append-only and `recorded_at = transaction time` trigger
 |---|---|---|
 | DRAFT | PUBLISHED, CANCELLED | — |
 | PUBLISHED | ACTIVE, CANCELLED | — |
-| ACTIVE | COMPLETED, CANCELLED | COMPLETED requires every event to be COMPLETED or CANCELLED |
+| ACTIVE | COMPLETED, CANCELLED | COMPLETED requires every event to be COMPLETED or CANCELLED, and at least one COMPLETED ([ADR-0078](../adr/ADR-0078-event-completion-settles-the-sporting-outcome.md) §2.4) |
 | COMPLETED, CANCELLED | — | terminal |
 
-- **COMPLETED does not mean results are final or verified.**
+- **COMPLETED does not mean results are final or verified.** Since ONCF-L6 ([ADR-0078](../adr/ADR-0078-event-completion-settles-the-sporting-outcome.md)) every COMPLETED category's outcome is settled from OFFICIAL results (organizer-declared, not independently verified); result statuses are unchanged.
 - Cancellation appends CANCELLED facts to every non-terminal event and to their PLANNED/SCHEDULED contests. Nothing is deleted: participants, registrations, memberships and plans remain.
 - Publicly, DRAFT competitions return 404, while CANCELLED ones are served and marked.
 
@@ -75,10 +75,10 @@ All class A tables have append-only and `recorded_at = transaction time` trigger
 | REGISTRATION_OPEN | REGISTRATION_CLOSED, CANCELLED | — |
 | REGISTRATION_CLOSED | REGISTRATION_OPEN, FIELD_LOCKED, CANCELLED | FIELD_LOCKED via `lockField` only |
 | FIELD_LOCKED | IN_PROGRESS, CANCELLED | IN_PROGRESS requires a generated plan and an ACTIVE competition |
-| IN_PROGRESS | COMPLETED, CANCELLED | COMPLETED is an organizer command; never automatic |
+| IN_PROGRESS | COMPLETED, CANCELLED | COMPLETED is an organizer command; never automatic. Since ONCF-L6 it requires every contest terminal, every completed contest OFFICIAL and a determined outcome ([ADR-0078](../adr/ADR-0078-event-completion-settles-the-sporting-outcome.md) §2.1) |
 
 - There is **no path from FIELD_LOCKED back to registration**.
-- IN_PROGRESS and COMPLETED do not mean official or verified results.
+- IN_PROGRESS does not mean official or verified results. COMPLETED means operationally finished **and** sporting outcome settled from OFFICIAL results, never independently verified; a COMPLETED or CANCELLED event freezes its contest results and contest statuses (ADR-0078 §2.1–§2.3).
 
 ## 4. Registration, capacity and waitlist
 

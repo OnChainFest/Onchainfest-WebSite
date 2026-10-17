@@ -161,6 +161,18 @@ export const ERROR_MESSAGES = {
   result_review_changed:
     'The score changed since you checked it. Check the new summary, then record it.',
   result_unsupported: 'This match’s scoring can’t be entered here yet.',
+  result_frozen:
+    'This category is finished, so its results are frozen: nothing can be entered, accepted or corrected. Nothing was changed.',
+  operation_contests_open:
+    'The category can’t be completed while matches are still open. Finish them, or cancel those that won’t be played. Nothing was changed.',
+  operation_results_not_official:
+    'The category can’t be completed yet: every finished match needs an official result. Nothing was changed.',
+  operation_outcome_undecided:
+    'The category can’t be completed: its outcome isn’t decided (for example, the final has no winner). Record a deciding result or cancel the category. Nothing was changed.',
+  operation_no_completed_category:
+    'The tournament can’t be completed without at least one completed category. If nothing was played, cancel it instead. Nothing was changed.',
+  operation_event_finished:
+    'That match belongs to a finished category, so it can no longer change. Nothing was changed.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -225,7 +237,8 @@ export const NOTICE_MESSAGES = {
   schedule_published: 'Schedule published. It is now the official schedule.',
   schedule_discarded: 'Draft discarded. Nothing in it was published.',
   operation_category_started: 'Category started. Its scheduled matches can now be started.',
-  operation_category_completed: 'Category completed.',
+  operation_category_completed:
+    'Category completed. Its outcome is final and its results are frozen.',
   operation_match_started: 'Match started.',
   operation_match_completed: 'Match marked as played. Results are entered separately.',
   operation_match_cancelled: 'Match cancelled.',

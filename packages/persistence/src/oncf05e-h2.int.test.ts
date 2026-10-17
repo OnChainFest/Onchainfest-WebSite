@@ -937,8 +937,23 @@ describe('H-2 category level: competition cancellation vs category start, comple
   }, 600_000);
 
   it('B1: category completion first (held at its event write), then the cancellation', async () => {
-    const ev = await knockout(2, 0);
+    // ONCF-L6 (ADR-0078 §2.1): completion settles the outcome, so the final is played and
+    // OFFICIAL first (published, started, completed, declared) — the race itself is unchanged.
+    const ev = await knockout(2, 1);
+    const ref = await referee(ev.competitionId);
+    const final = ev.r1[0] as string;
+    const v1 = await openDraft(ev);
+    await place(ev, v1, final, 0, '2027-06-01T09:00:00Z');
+    await (
+      await publication(ev, v1, null)
+    )(schedule);
     await comps.startEvent({ actorAccountId: ev.actor, eventId: ev.eventId });
+    await structure.startContest({ actorAccountId: ev.actor, contestId: final });
+    await structure.completeContest({ actorAccountId: ev.actor, contestId: final });
+    await official(ev.actor, ref, final, {
+      family: 'SETS_OF_GAMES',
+      sets: [{ games: [6, 2] }, { games: [6, 3] }],
+    });
     const [d, c] = await pinned(
       EVENT_FACTS,
       () => comps.completeEvent({ actorAccountId: ev.actor, eventId: ev.eventId }),

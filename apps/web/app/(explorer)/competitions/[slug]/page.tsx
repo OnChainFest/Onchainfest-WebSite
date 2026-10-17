@@ -1,6 +1,14 @@
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getPublic } from '../../../_lib/api';
-import { StatusPill, when, type PublicCompetition } from '../../../_lib/competition';
+import {
+  Entrant,
+  OFFICIAL_AUTHORITY_NOTE,
+  placeLabel,
+  StatusPill,
+  when,
+  type PublicCompetition,
+  type PublicCompetitionOutcome,
+} from '../../../_lib/competition';
 import { RegistrationCtaLink } from '../../../_lib/registration-cta';
 import { Unavailable } from '../../../_lib/trust';
 
@@ -25,6 +33,14 @@ export default async function CompetitionPage({ params }: Params) {
   if (r.data.redirected || r.data.canonicalSlug !== slug)
     permanentRedirect(`/competitions/${r.data.canonicalSlug}`);
   const c = r.data.competition;
+  // ONCF-L6: each category's champion(s) once it is completed (OFFICIAL results only).
+  const outcome = await getPublic<PublicCompetitionOutcome>(
+    `/v1/competitions/${encodeURIComponent(c.slug)}/outcome`,
+  );
+  const outcomeOf = new Map(
+    (outcome.kind === 'ok' ? outcome.data.events : []).map((e) => [e.id, e]),
+  );
+  const completed = r.data.events.filter((e) => e.status === 'COMPLETED').length;
   return (
     <main style={{ maxWidth: 860 }}>
       <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>Competition</p>
@@ -53,8 +69,9 @@ export default async function CompetitionPage({ params }: Params) {
           fontSize: '0.9rem',
         }}
       >
-        Competition statuses are operational. A completed competition does not mean its results are
-        final or verified, and organizing a competition confers no sporting authority.
+        Competition statuses are operational. A completed category carries its final outcome from
+        official results — declared by the organizer, not independently verified. Organizing a
+        competition confers no sporting authority.
       </aside>
       <section style={{ marginTop: '1.5rem' }}>
         <h2 style={{ fontSize: '1.1rem' }}>Events</h2>
@@ -79,18 +96,45 @@ export default async function CompetitionPage({ params }: Params) {
                     : `${e.confirmedCount} confirmed`}
                   {e.capacity !== null && ` / ${e.capacity}`}
                 </small>
+                <Champions champions={outcomeOf.get(e.id)?.champions ?? null} />
               </li>
             ))}
           </ul>
         )}
       </section>
       <section style={{ marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.1rem' }}>Results & sporting authority</h2>
+        <h2 style={{ fontSize: '1.1rem' }}>Results</h2>
         <p style={{ color: '#6b7280' }}>
-          <em>Not available yet.</em> Verified results and recognized authority are not published
-          here yet — nothing is shown rather than something unverified.
+          {c.status === 'COMPLETED'
+            ? `Competition completed · ${completed} ${completed === 1 ? 'category' : 'categories'} with a final result.`
+            : c.status === 'CANCELLED'
+              ? 'Competition cancelled — no further results.'
+              : completed > 0
+                ? `${completed} ${completed === 1 ? 'category has' : 'categories have'} a final result; open an event for its standings and official results.`
+                : 'Final results appear per category once it is completed; open an event for its official results so far.'}{' '}
+          {OFFICIAL_AUTHORITY_NOTE}. Recognized sporting authority is not published here.
         </p>
       </section>
     </main>
+  );
+}
+
+/** The champion(s) of a completed, decided category — joint when tied; nothing otherwise. */
+function Champions({
+  champions,
+}: {
+  champions: PublicCompetitionOutcome['events'][number]['champions'];
+}) {
+  if (champions === null || champions.length === 0) return null;
+  return (
+    <div style={{ fontSize: '0.85rem' }}>
+      <strong>{placeLabel(1, champions.length)}:</strong>{' '}
+      {champions.map((p, i) => (
+        <span key={p.participantId}>
+          {i > 0 && ' · '}
+          <Entrant display={p.display} />
+        </span>
+      ))}
+    </div>
   );
 }

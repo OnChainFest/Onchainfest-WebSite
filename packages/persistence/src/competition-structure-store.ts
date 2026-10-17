@@ -1240,6 +1240,15 @@ export class StructureStore {
       );
       if (!canTransition(ContestLifecycle, c.status, to))
         throw transitionError('contest', c.status, to);
+      // ONCF-L6 (ADR-0078 §2.3, amending ADR-0066 §7.2): a finished event is final — its matches
+      // no longer complete, void or cancel (start already needs the event IN_PROGRESS). Completion
+      // holds this lock while it validates, so the event status read here is current.
+      if (to !== 'IN_PROGRESS' && isFinished(e.status))
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'the event is finished; its matches can no longer change',
+          { reason: 'EVENT_FINISHED', eventStatus: e.status },
+        );
       if (to === 'IN_PROGRESS') {
         if (e.status !== 'IN_PROGRESS')
           throw new DomainError(
