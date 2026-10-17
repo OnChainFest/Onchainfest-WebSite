@@ -359,6 +359,34 @@ describe('ONCF-05D over the API', () => {
     expect(versions.body?.versions).toEqual([
       expect.objectContaining({ resultVersionId: rv, status: 'OFFICIAL', current: true }),
     ]);
+    // ONCF-L5: staff read the stored canonical content (the score they declared), unchanged.
+    const read = (versions.body?.versions as Json[])[0] as Json;
+    expect(read.contentHash).toBe(sub.body?.contentHash);
+    expect(typeof read.recordedAt).toBe('string');
+    expect(read.content.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: lanes[0],
+          outcome: 'WIN',
+          primaryMark: expect.objectContaining({ metricId: 'sog.sets_won', value: '2' }),
+        }),
+        expect.objectContaining({ participantId: lanes[1], outcome: 'LOSS' }),
+      ]),
+    );
+    expect(read.content.performances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: lanes[0],
+          ordinal: 1,
+          mark: expect.objectContaining({ metricId: 'sog.set_games', value: '6' }),
+        }),
+        expect.objectContaining({
+          participantId: lanes[1],
+          ordinal: 2,
+          mark: expect.objectContaining({ metricId: 'sog.set_games', value: '2' }),
+        }),
+      ]),
+    );
 
     // Advancement: readable by staff (incl. the registration manager), decided only by OWNER / ADMIN.
     const state = await call('GET', `/v1/events/${eventId}/advancement`, A.h);

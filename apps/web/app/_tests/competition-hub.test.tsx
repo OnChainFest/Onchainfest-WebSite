@@ -424,8 +424,9 @@ describe('Competition Hub', () => {
     expect(stage(out, 'operations')?.[1]).toBe('todo');
     expect(stage(out, 'operations')?.[2]).toContain('After publishing');
     expect(stage(out, 'operations')?.[2]).not.toContain('href=');
-    expect(stage(out, 'results')?.[1]).toBe('planned');
-    expect(stage(out, 'results')?.[2]).toContain('Not available yet');
+    // ONCF-L5: results has its page; before publishing it isn't linked.
+    expect(stage(out, 'results')?.[1]).toBe('todo');
+    expect(stage(out, 'results')?.[2]).toContain('After publishing');
     expect(stage(out, 'results')?.[2]).not.toContain('href=');
   });
 
@@ -522,13 +523,16 @@ describe('Competition Hub', () => {
     expect(out).toContain(`href="${STAFF_PAGE}" data-key="staff"`);
   });
 
-  it('never links to workflow slices that have no route yet', async () => {
+  it('links every workflow slice that has a route, and only those', async () => {
     platform({ detail: managed({ status: 'PUBLISHED' }) });
     for (const out of [
       html(await Hub({ ...pc(), ...sp() })),
       html(await Staff({ ...pc(), ...sp() })),
     ]) {
-      expect(out).not.toMatch(/href="[^"]*\/results["/?#]/);
+      // ONCF-L5: results has its page now.
+      expect(out).toContain(`href="${BASE}/results" data-key="results"`);
+      expect(out).not.toMatch(/aria-disabled="true" data-key="results"/);
+      expect(out).not.toMatch(/aria-disabled="true"/);
       expect(out).toContain(`href="${BASE}/resources" data-key="resources"`);
       expect(out).not.toMatch(/aria-disabled="true" data-key="resources"/);
       // ONCF-L3: the schedule has its page now.

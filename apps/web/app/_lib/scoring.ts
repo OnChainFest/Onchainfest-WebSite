@@ -14,6 +14,8 @@ export interface EventScoring {
   frozen: boolean;
   ruleset?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
   classificationTemplate?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
+  /** Per-stage ruleset / template overrides by stage key (ONCF-L5 reads the ruleset). */
+  stageOverrides?: Record<string, { rulesetVersionId?: string }>;
   /** ONCF-05D. */
   advancementPolicy?: (CatalogScoringVersion & { spec: Record<string, unknown> }) | null;
   /** ONCF-05E-B: the pinned SchedulingProfile version (chosen with the scoring, before field lock). */
