@@ -38,7 +38,7 @@ const FIELD_LOCKED: readonly EventStatus[] = ['FIELD_LOCKED', 'IN_PROGRESS', 'CO
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Later slices (operations/results) have API support but no web surface. */
+/** Later slices (results) have API support but no web surface. */
 const PLANNED = 'Not in the web app yet';
 
 export function hubStages(
@@ -105,7 +105,8 @@ export function hubStages(
     },
     resourceStage(resources, `${base}/resources`),
     scheduleStage(data, schedule, `${base}/schedule`),
-    { key: 'operations', label: 'Operations & results', state: 'planned', detail: PLANNED },
+    operationsStage(data, `${base}/operations`),
+    { key: 'results', label: 'Results', state: 'planned', detail: PLANNED },
     {
       key: 'staff',
       label: 'Staff',
@@ -187,6 +188,33 @@ function scheduleStage(
   };
 }
 
+/**
+ * ONCF-L4: whether the tournament is running — from the competition's and its categories'
+ * statuses only. Match progress lives on the operations page itself.
+ */
+function operationsStage(data: ManagedCompetition, href: string): HubStage {
+  const stage = { key: 'operations', label: 'Operations', href };
+  const live = data.events.filter((e) => e.status === 'IN_PROGRESS').length;
+  switch (data.competition.status) {
+    case 'DRAFT':
+      return { key: 'operations', label: 'Operations', state: 'todo', detail: 'After publishing' };
+    case 'PUBLISHED':
+      return { ...stage, state: 'todo', detail: 'Starts when the tournament goes live' };
+    case 'ACTIVE':
+      return live > 0
+        ? {
+            ...stage,
+            state: 'progress',
+            detail: `Live · ${plural(live, 'category', 'categories')} in play`,
+          }
+        : { ...stage, state: 'open', detail: 'Live · no category in play' };
+    case 'COMPLETED':
+      return { ...stage, state: 'ready', detail: 'Completed' };
+    default:
+      return { ...stage, state: 'attention', detail: 'Cancelled' };
+  }
+}
+
 export interface NextAction {
   readonly label: string;
   readonly detail: string;
@@ -211,7 +239,7 @@ export function nextAction(
   if (c.status === 'COMPLETED')
     return {
       label: 'Tournament completed',
-      detail: 'Results and match operations come to the web app in a later release.',
+      detail: 'Results come to the web app in a later release.',
     };
   if (c.status === 'DRAFT') {
     if (live.length === 0)
@@ -293,13 +321,19 @@ export function nextAction(
       };
   }
   if (schedule !== null && schedule.published !== null)
-    return {
-      label: 'Schedule published',
-      detail: 'Match operations and results come to the web app in a later release.',
-      href: `${base}/schedule`,
-    };
+    return c.status === 'ACTIVE'
+      ? {
+          label: 'Run the tournament',
+          detail: 'Start categories and matches, and follow play, from Operations.',
+          href: `${base}/operations`,
+        }
+      : {
+          label: 'Schedule published',
+          detail: 'Start the tournament from Operations when play begins.',
+          href: `${base}/operations`,
+        };
   return {
     label: 'Structure is set',
-    detail: 'Next comes the schedule. Match operations come to the web app in a later release.',
+    detail: 'Next comes the schedule, then running the day from Operations.',
   };
 }

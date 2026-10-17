@@ -28,7 +28,7 @@ export function CompetitionNav({
 }: {
   data: ManagedCompetition;
   base: string;
-  current: 'overview' | 'registrations' | 'resources' | 'schedule' | 'staff';
+  current: 'overview' | 'registrations' | 'resources' | 'schedule' | 'operations' | 'staff';
 }) {
   const c = data.competition;
   const live = data.events.filter((e) => e.status !== 'CANCELLED');
@@ -48,7 +48,7 @@ export function CompetitionNav({
         },
     { key: 'resources', label: 'Resources', href: `${base}/resources` },
     { key: 'schedule', label: 'Schedule', href: `${base}/schedule` },
-    { key: 'operations', label: 'Operations', note: 'Soon' },
+    { key: 'operations', label: 'Operations', href: `${base}/operations` },
     { key: 'staff', label: 'Staff', href: `${base}/staff` },
     c.status === 'DRAFT'
       ? { key: 'public', label: 'Public', note: 'After publishing' }
