@@ -131,6 +131,8 @@ export interface CatalogScoringVersion {
   family: string;
   specHash: string;
   basis: { kind: 'GOVERNING_RULE'; source: string } | { kind: 'COMMON_PRACTICE'; note: string };
+  /** The version's parameters (the catalog route returns them; ONCF-L5 reads stage overrides). */
+  spec?: Record<string, unknown>;
 }
 
 export type EntryAttributeValueType = 'DURATION_MS' | 'INTEGER' | 'DECIMAL' | 'TEXT';

@@ -38,9 +38,6 @@ const FIELD_LOCKED: readonly EventStatus[] = ['FIELD_LOCKED', 'IN_PROGRESS', 'CO
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Later slices (results) have API support but no web surface. */
-const PLANNED = 'Not in the web app yet';
-
 export function hubStages(
   data: ManagedCompetition,
   base: string,
@@ -106,7 +103,7 @@ export function hubStages(
     resourceStage(resources, `${base}/resources`),
     scheduleStage(data, schedule, `${base}/schedule`),
     operationsStage(data, `${base}/operations`),
-    { key: 'results', label: 'Results', state: 'planned', detail: PLANNED },
+    resultsStage(data, `${base}/results`),
     {
       key: 'staff',
       label: 'Staff',
@@ -212,6 +209,29 @@ function operationsStage(data: ManagedCompetition, href: string): HubStage {
       return { ...stage, state: 'ready', detail: 'Completed' };
     default:
       return { ...stage, state: 'attention', detail: 'Cancelled' };
+  }
+}
+
+/**
+ * ONCF-L5: whether there are results to record — from statuses only (results are read on the
+ * results page itself, match by match).
+ */
+function resultsStage(data: ManagedCompetition, href: string): HubStage {
+  const stage = { key: 'results', label: 'Results', href };
+  const played = data.events.filter(
+    (e) => e.status === 'IN_PROGRESS' || e.status === 'COMPLETED',
+  ).length;
+  switch (data.competition.status) {
+    case 'DRAFT':
+      return { key: 'results', label: 'Results', state: 'todo', detail: 'After publishing' };
+    case 'CANCELLED':
+      return { ...stage, state: 'attention', detail: 'Cancelled' };
+    case 'COMPLETED':
+      return { ...stage, state: 'open', detail: 'Review the recorded results' };
+    default:
+      return played > 0
+        ? { ...stage, state: 'open', detail: 'Enter and confirm match results' }
+        : { ...stage, state: 'todo', detail: 'Once matches are played' };
   }
 }
 

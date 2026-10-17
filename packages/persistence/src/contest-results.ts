@@ -4,6 +4,7 @@ import {
   DomainError,
   DomainErrorCode,
   RecognitionLevel,
+  type ResultVersionContent,
   type ResultVersionStatus,
   type Uuid,
 } from '@br/domain';
@@ -247,7 +248,11 @@ export class ContestResultService {
     };
   }
 
-  /** The contest's result versions and their lifecycle (competition staff). */
+  /**
+   * The contest's result versions and their lifecycle (competition staff). Each version carries
+   * its stored canonical content (ONCF-L5), so staff can see the score they accept, declare
+   * official or correct; nothing is re-derived here.
+   */
   async contestResult(input: { actorAccountId: string; contestId: string }) {
     await inTransaction(this.db, ModuleRole.competition, async (ctx) => {
       const { rows } = await sql<{
@@ -271,9 +276,11 @@ export class ContestResultService {
         status: ResultVersionStatus;
         supersedes_version_id: string | null;
         current: boolean;
+        content: ResultVersionContent;
+        recorded_at: Date;
       }>`
         SELECT v.id, v.version_number, v.content_hash, st.current_status AS status, v.supersedes_version_id,
-               rs.current_version_id = v.id AS current
+               rs.current_version_id = v.id AS current, v.content, v.recorded_at
         FROM results.result r JOIN results.result_version v ON v.result_id = r.id
         JOIN results.result_version_state st ON st.result_version_id = v.id
         JOIN results.result_state rs ON rs.result_id = r.id
@@ -288,6 +295,8 @@ export class ContestResultService {
           status: r.status,
           current: r.current === true,
           supersedesVersionId: r.supersedes_version_id,
+          content: r.content,
+          recordedAt: r.recorded_at.toISOString(),
         })),
       };
     });

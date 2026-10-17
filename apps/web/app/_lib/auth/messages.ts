@@ -140,6 +140,27 @@ export const ERROR_MESSAGES = {
     'That was already done — by you in another tab or by another staff member. Nothing changed twice.',
   operation_blocked:
     'That can’t happen yet: something it depends on isn’t ready. Nothing was changed — the page shows what it’s waiting for.',
+  result_no_authority:
+    'You don’t hold result authority for this tournament. The platform issues it to owners and admins who don’t take part in it. Nothing was recorded.',
+  result_not_permitted:
+    'Your account can’t act on results here: it needs a staff role on this tournament and its own person profile.',
+  result_invalid:
+    'That score isn’t valid under this category’s scoring. Nothing was recorded — check it and try again.',
+  result_changed:
+    'Someone else changed this result first. Nothing was recorded — the page now shows the current result.',
+  result_entered_meanwhile:
+    'A result was entered for this match while you were filling it in. Nothing was recorded — review the one now shown.',
+  result_already_done:
+    'That was already done — by you in another tab or by another staff member. Nothing changed twice.',
+  result_blocked: 'That step isn’t possible from the result’s current state. Nothing was changed.',
+  result_not_found: 'That match or result no longer exists. Reload the page.',
+  result_same_as_current: 'That is the score already recorded. A correction has to change it.',
+  result_reason_required:
+    'Give a reason for the correction (up to 200 characters). It is kept in the result’s record.',
+  result_confirm_required: 'Tick the confirmation to declare the result official.',
+  result_review_changed:
+    'The score changed since you checked it. Check the new summary, then record it.',
+  result_unsupported: 'This match’s scoring can’t be entered here yet.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -209,6 +230,12 @@ export const NOTICE_MESSAGES = {
   operation_match_completed: 'Match marked as played. Results are entered separately.',
   operation_match_cancelled: 'Match cancelled.',
   operation_match_voided: 'Match voided.',
+  result_entered: 'Result entered. It counts once it is accepted.',
+  result_accepted:
+    'Result accepted as provisional. Declare it official once it is confirmed — advancement waits for that.',
+  result_official: 'Result declared official. Advancement and standings can use it now.',
+  result_corrected:
+    'Correction recorded. The new score is provisional — declare it official again.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;
