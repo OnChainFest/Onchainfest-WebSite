@@ -129,6 +129,17 @@ export const ERROR_MESSAGES = {
   schedule_acknowledge_required: 'Confirm that you have reviewed the warnings before publishing.',
   schedule_acknowledge_mismatch:
     'The warnings changed since you reviewed them. Review them again, then publish.',
+  operation_not_permitted:
+    'Your role can’t do that here. Owners and admins start, complete and cancel; schedulers start and finish matches.',
+  operation_not_found: 'That tournament, category or match no longer exists. Reload the page.',
+  operation_invalid: 'That request isn’t valid. Reload the page and try again.',
+  operation_confirm_required: 'Tick the confirmation to show you understand this can’t be undone.',
+  operation_stale:
+    'Someone else changed this first. Nothing was done — the page now shows its current state.',
+  operation_already_done:
+    'That was already done — by you in another tab or by another staff member. Nothing changed twice.',
+  operation_blocked:
+    'That can’t happen yet: something it depends on isn’t ready. Nothing was changed — the page shows what it’s waiting for.',
   unknown: 'Something went wrong. Try again.',
 } as const;
 
@@ -192,6 +203,12 @@ export const NOTICE_MESSAGES = {
   schedule_committed: 'Proposal added to the draft. Check it below, then publish.',
   schedule_published: 'Schedule published. It is now the official schedule.',
   schedule_discarded: 'Draft discarded. Nothing in it was published.',
+  operation_category_started: 'Category started. Its scheduled matches can now be started.',
+  operation_category_completed: 'Category completed.',
+  operation_match_started: 'Match started.',
+  operation_match_completed: 'Match marked as played. Results are entered separately.',
+  operation_match_cancelled: 'Match cancelled.',
+  operation_match_voided: 'Match voided.',
 } as const;
 
 export type AuthErrorCode = keyof typeof ERROR_MESSAGES;

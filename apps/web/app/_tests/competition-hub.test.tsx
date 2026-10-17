@@ -420,9 +420,13 @@ describe('Competition Hub', () => {
     expect(stage(out, 'schedule')?.[1]).toBe('todo');
     expect(stage(out, 'schedule')?.[2]).toContain('After a field is locked');
     expect(stage(out, 'schedule')?.[2]).toContain(`href="${BASE}/schedule"`);
-    expect(stage(out, 'operations')?.[1]).toBe('planned');
-    expect(stage(out, 'operations')?.[2]).toContain('Not available yet');
+    // ONCF-L4: operations has its page; before publishing it isn't linked.
+    expect(stage(out, 'operations')?.[1]).toBe('todo');
+    expect(stage(out, 'operations')?.[2]).toContain('After publishing');
     expect(stage(out, 'operations')?.[2]).not.toContain('href=');
+    expect(stage(out, 'results')?.[1]).toBe('planned');
+    expect(stage(out, 'results')?.[2]).toContain('Not available yet');
+    expect(stage(out, 'results')?.[2]).not.toContain('href=');
   });
 
   it('reflects open, closed and locked categories after publication', async () => {
@@ -489,8 +493,19 @@ describe('Competition Hub', () => {
       versions: [version(1, 'PUBLISHED')],
     });
     out = html(await Hub({ ...pc(), ...sp() }));
-    expect(out).toContain('Schedule published');
-    expect(out).toContain('Match operations and results come to the web app in a later release.');
+    // ONCF-L4: a live tournament with a published schedule is run from Operations.
+    expect(out).toMatch(/Run the tournament.*href="[^"]*\/operations"[^>]*>Go/);
+    expect(out).toContain('Start categories and matches, and follow play, from Operations.');
+
+    platform({
+      detail: managed({ status: 'PUBLISHED', events: [event({ status: 'FIELD_LOCKED' })] }),
+      resources: [court(COURT_1, 'Court 1')],
+      facts: [weekly(null, '01')],
+      versions: [version(1, 'PUBLISHED')],
+    });
+    out = html(await Hub({ ...pc(), ...sp() }));
+    expect(out).toMatch(/Schedule published.*href="[^"]*\/operations"[^>]*>Go/);
+    expect(stage(out, 'operations')?.[2]).toContain('Starts when the tournament goes live');
   });
 
   it('keeps the existing builder navigation and adds the tournament nav', async () => {
@@ -513,13 +528,15 @@ describe('Competition Hub', () => {
       html(await Hub({ ...pc(), ...sp() })),
       html(await Staff({ ...pc(), ...sp() })),
     ]) {
-      expect(out).not.toMatch(/href="[^"]*\/(operations|results)["/?#]/);
+      expect(out).not.toMatch(/href="[^"]*\/results["/?#]/);
       expect(out).toContain(`href="${BASE}/resources" data-key="resources"`);
       expect(out).not.toMatch(/aria-disabled="true" data-key="resources"/);
       // ONCF-L3: the schedule has its page now.
       expect(out).toContain(`href="${BASE}/schedule" data-key="schedule"`);
       expect(out).not.toMatch(/aria-disabled="true" data-key="schedule"/);
-      expect(out).toMatch(/aria-disabled="true" data-key="operations"/);
+      // ONCF-L4: operations has its page now.
+      expect(out).toContain(`href="${BASE}/operations" data-key="operations"`);
+      expect(out).not.toMatch(/aria-disabled="true" data-key="operations"/);
     }
   });
 
