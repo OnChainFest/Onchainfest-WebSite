@@ -10,8 +10,9 @@ import {
   RESULT_STATUSES,
   type MatchScoring,
   type ResultVersion,
+  type StaffOutcome,
 } from '../../../../../../_lib/results';
-import { contestResults } from '../../../../../../_lib/results-api';
+import { contestResults, eventOutcome } from '../../../../../../_lib/results-api';
 import { eventBracket } from '../../../../../../_lib/schedule';
 import { eventScoring, type EventScoring } from '../../../../../../_lib/scoring';
 import { one, type SearchParams } from '../../../../../../_lib/search-params';
@@ -22,6 +23,7 @@ import { tournamentCatalog } from '../../../../../../_lib/tournaments';
 import { CompetitionNav } from '../../../../../../_product/competition-hub-ui';
 import { Flash } from '../../../../../../_product/flash';
 import {
+  CategoryOutcomePanel,
   LifecyclePanel,
   ProgressionPanel,
   ResultAttentionList,
@@ -72,16 +74,19 @@ export default async function TournamentResultsPage({
 
   const structures = await Promise.all(
     running.map(async (event) => {
-      const [b, f, s] = await Promise.all([
+      const [b, f, s, o] = await Promise.all([
         eventBracket(c.slug, event.slug),
         lockedField(token, event.id),
         eventScoring(token, event.id),
+        // ONCF-L6: the category outcome (official results only) once play has started.
+        event.status === 'FIELD_LOCKED' ? null : eventOutcome(token, event.id),
       ]);
       return {
         event,
         rounds: b.kind === 'ok' ? b.data.rounds : null,
         field: f.kind === 'ok' ? f.data.items : [],
         scoring: s.kind === 'ok' ? s.data : null,
+        outcome: o === null ? undefined : o.kind === 'ok' ? o.data : null,
       };
     }),
   );
@@ -230,6 +235,35 @@ export default async function TournamentResultsPage({
           ) : (
             <div className="tb-layout">
               <section className="tb-main ops-main" aria-label="Match results">
+                {structures.some((s) => s.outcome !== undefined) ? (
+                  <section id="res-outcome" className="ops-section" aria-labelledby="res-outcome-h">
+                    <div className="section-head">
+                      <h3 id="res-outcome-h" className="tb-h3">
+                        Category outcome
+                      </h3>
+                    </div>
+                    {structures
+                      .filter((s) => s.outcome !== undefined)
+                      .map((s) => {
+                        const names = new Map(
+                          s.field.map((p) => [
+                            p.participantId,
+                            p.athlete?.displayName ?? p.teamName ?? 'Private entrant',
+                          ]),
+                        );
+                        return (
+                          <CategoryOutcomePanel
+                            key={s.event.id}
+                            name={s.event.settings.name}
+                            status={s.event.status}
+                            data={(s.outcome ?? null) as StaffOutcome | null}
+                            nameOf={(id) => names.get(id) ?? 'Private entrant'}
+                            base={base}
+                          />
+                        );
+                      })}
+                  </section>
+                ) : null}
                 <ResultsPulse
                   counts={{
                     needs: board.needs.length,

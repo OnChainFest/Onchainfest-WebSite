@@ -54,6 +54,7 @@ import {
   refreshEventReadModels,
 } from './competition-projection';
 import type { Db } from './db';
+import { EventOutcomeStore, eventSettlementIn } from './event-outcome-store';
 import {
   hasOrgPermission,
   identityIdempotency,
@@ -62,6 +63,7 @@ import {
   recordAudit,
 } from './identity-support';
 import { emitEvent } from './outbox';
+import { ScoringStore } from './scoring-store';
 import { inTransaction, ModuleRole, type TxContext } from './tx';
 
 export interface CompetitionProfileInput {
@@ -481,13 +483,16 @@ function registrationActions(
 /**
  * Competition operations (br_competition): competitions, staff, events, registration.
  * Application permissions only — nothing here issues, reads or implies an Authority capability,
- * and no status here states a sporting result.
+ * and no status here states a sporting result. Since ONCF-L6 (ADR-0078) completing an event
+ * requires its outcome to be settled from OFFICIAL results (read, never written, here).
  */
 export class CompetitionStore {
   private readonly db: Db;
+  private readonly outcomes: EventOutcomeStore;
 
   constructor(db: Db) {
     this.db = db;
+    this.outcomes = new EventOutcomeStore(db, new ScoringStore(db));
   }
 
   private tx<T>(fn: (ctx: TxContext) => Promise<T>): Promise<T> {
@@ -674,7 +679,10 @@ export class CompetitionStore {
     );
   }
 
-  /** Operational completion only (never "all results final"); requires every event to be terminal. */
+  /**
+   * Requires every event to be terminal and at least one COMPLETED (ADR-0078 §2.4): a competition
+   * whose categories were all cancelled has no sporting outcome and is cancelled instead.
+   */
   completeCompetition(input: { actorAccountId: string; competitionId: string }): Promise<void> {
     return this.setCompetitionStatus(
       input.actorAccountId,
@@ -731,10 +739,21 @@ export class CompetitionStore {
           WHERE e.id = ANY(${candidates}::uuid[]) ORDER BY e.id`.execute(ctx.trx);
         open = now.filter((e) => !isTerminal(EventLifecycle, e.status));
       }
+      // ONCF-L6: terminal events never re-open and createEvent takes this competition's lock, so
+      // the statuses read here can only move towards terminal (a spurious refusal, never a wrong
+      // completion); each COMPLETED event already settled its own outcome (ADR-0078 §2.4).
       if (to === 'COMPLETED' && open.length > 0) {
         throw new DomainError(
           DomainErrorCode.INVALID_TRANSITION,
           'every event must be COMPLETED or CANCELLED before the competition completes',
+          { reason: 'EVENTS_OPEN' },
+        );
+      }
+      if (to === 'COMPLETED' && !events.some((e) => e.status === 'COMPLETED')) {
+        throw new DomainError(
+          DomainErrorCode.INVALID_TRANSITION,
+          'at least one event must be COMPLETED before the competition completes; cancel it instead',
+          { reason: 'NO_COMPLETED_EVENT' },
         );
       }
       await sql`INSERT INTO competition.competition_status_change (id, competition_id, status, reason, actor_account_id, recorded_at)
@@ -1236,9 +1255,14 @@ export class CompetitionStore {
         },
       });
       if (idem.lookup.replay) return { ...idem.lookup.response, created: false };
-      await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_EDIT');
-      if (!competitionAcceptsEvents(c.status))
-        throw transitionError('competition', c.status, 'add events to');
+      // ONCF-L6 (ADR-0078 §2.4): the competition's lifecycle lock (that of setCompetitionStatus),
+      // then its status re-read under it, so a concurrent completion or cancellation is either
+      // seen here or waits for this event. Lock order: idempotency, competition, event slug.
+      await lockKeys(ctx, `competition:${c.id}`);
+      const current = await loadCompetition(ctx, c.id);
+      await requireCompPermission(ctx, input.actorAccountId, current, 'COMP_EDIT');
+      if (!competitionAcceptsEvents(current.status))
+        throw transitionError('competition', current.status, 'add events to');
       const compTz = await this.assertWithinCompetition(ctx, c.id, s.startsAt, s.endsAt);
       const timezone = input.settings.timezone === undefined ? compTz : s.timezone;
 
@@ -1421,14 +1445,24 @@ export class CompetitionStore {
     );
   }
 
-  /** Organizer operation; never automatic. Completion does not mean results are final/verified. */
-  completeEvent(input: { actorAccountId: string; eventId: string }): Promise<void> {
+  /**
+   * Organizer operation; never automatic. ONCF-L6 (ADR-0078 §2.1): completion settles the sporting
+   * outcome — every contest terminal, every completed contest with a current OFFICIAL / FINAL
+   * result, and a determined `event-outcome/1`. The outcome is derived before the transaction (it
+   * reads through ScoringStore's own transactions); the transaction re-reads the settlement under
+   * every contest lock and completes only if it is exactly what the outcome read. Results stay
+   * organizer-declared, never verified.
+   */
+  async completeEvent(input: { actorAccountId: string; eventId: string }): Promise<void> {
+    const preflight = await this.outcomes.preflight(input.eventId);
     return this.setEventStatus(
       input.actorAccountId,
       input.eventId,
       'COMPLETED',
       'COMP_EDIT',
       'EventStatusChanged',
+      undefined,
+      preflight,
     );
   }
 
@@ -1450,6 +1484,7 @@ export class CompetitionStore {
     permission: CompPermission,
     eventType: DomainEventType,
     reason?: string,
+    preflight?: Awaited<ReturnType<EventOutcomeStore['preflight']>>,
   ): Promise<void> {
     return this.tx(async (ctx) => {
       await lockKeys(ctx, `event-capacity:${eventId}`, `event-structure:${eventId}`);
@@ -1481,6 +1516,7 @@ export class CompetitionStore {
             'the event plan must be generated before the event starts',
           );
       }
+      if (to === 'COMPLETED') await assertOutcomeSettled(ctx, e.id, preflight);
       if (to === 'CANCELLED')
         await cancelEventFacts(ctx, [e.id], actor, reason ?? 'event cancelled');
       else {
@@ -2080,6 +2116,61 @@ export class CompetitionStore {
     });
     return next;
   }
+}
+
+/**
+ * ONCF-L6 (ADR-0078 §2.1): under the event's lifecycle locks, takes every contest's lifecycle lock
+ * (one sorted batch — the tier of the cancellation cascade; no result write or contest command can
+ * then change what is read) and refuses completion unless the event is settled and its outcome,
+ * computed beforehand, read exactly this settlement.
+ */
+async function assertOutcomeSettled(
+  ctx: TxContext,
+  eventId: string,
+  preflight: Awaited<ReturnType<EventOutcomeStore['preflight']>> | undefined,
+): Promise<void> {
+  const { rows } = await sql<{ id: string }>`
+    SELECT id FROM competition.contest WHERE event_id = ${eventId}`.execute(ctx.trx);
+  await lockContestLifecycles(
+    ctx,
+    rows.map((r) => r.id),
+  );
+  const settlement = await eventSettlementIn(ctx, eventId);
+  if (settlement.open.length > 0)
+    throw new DomainError(
+      DomainErrorCode.INVALID_TRANSITION,
+      'every match must be completed, cancelled or void before the event completes',
+      { reason: 'CONTESTS_OPEN', contests: settlement.open.slice(0, 20) },
+    );
+  if (settlement.notOfficial.length > 0)
+    throw new DomainError(
+      DomainErrorCode.INVALID_TRANSITION,
+      'every completed match needs an OFFICIAL result before the event completes',
+      { reason: 'RESULTS_NOT_OFFICIAL', contests: settlement.notOfficial.slice(0, 20) },
+    );
+  const derived = preflight?.derived;
+  if (derived === undefined)
+    throw new DomainError(
+      DomainErrorCode.INVALID_TRANSITION,
+      'the outcome of the event cannot be determined',
+      { reason: 'OUTCOME_UNDECIDED', outcome: [preflight?.error ?? 'OUTCOME_UNAVAILABLE'] },
+    );
+  if (derived.settlement.fingerprint !== settlement.fingerprint)
+    throw new DomainError(
+      DomainErrorCode.CONCURRENCY_CONFLICT,
+      'results changed while the event was being completed',
+      { reason: 'OUTCOME_INPUTS_CHANGED' },
+    );
+  const status = derived.outcome.document.status;
+  if (status === 'PENDING' || status === 'UNDECIDED')
+    throw new DomainError(
+      DomainErrorCode.INVALID_TRANSITION,
+      'the outcome of the event is not decided',
+      {
+        reason: 'OUTCOME_UNDECIDED',
+        outcome: derived.outcome.document.reasons.map((r) => r.code),
+      },
+    );
 }
 
 /**

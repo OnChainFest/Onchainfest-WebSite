@@ -19,6 +19,15 @@ import { context, errorCode, field, to, UUID_RE } from '../../../action-support'
 
 type Failure = Exclude<ApiResult<unknown>, { kind: 'ok' }>;
 
+const L6_ERRORS: Readonly<Record<string, AuthErrorCode>> = {
+  CONTESTS_OPEN: 'operation_contests_open',
+  RESULTS_NOT_OFFICIAL: 'operation_results_not_official',
+  OUTCOME_UNDECIDED: 'operation_outcome_undecided',
+  NO_COMPLETED_EVENT: 'operation_no_completed_category',
+  EVENT_FINISHED: 'operation_event_finished',
+  OUTCOME_INPUTS_CHANGED: 'operation_stale',
+};
+
 const STATUS_RE = /^[A-Z_]{1,32}$/;
 
 /** The target's status as the API reports it now (null: can't tell). Read-only. */
@@ -58,6 +67,9 @@ async function operationError(
       return o.reason ? 'reason_required' : 'operation_invalid';
     case 'INVALID_TRANSITION':
     case 'CONCURRENCY_CONFLICT': {
+      // ONCF-L6 (ADR-0078): completion and freeze refusals say exactly what is missing.
+      const known = r.reason === undefined || r.reason === null ? undefined : L6_ERRORS[r.reason];
+      if (known !== undefined) return known;
       const now = await read();
       if (now === null || shown === '') return 'tournament_transition';
       if (now === o.result) return 'operation_already_done';

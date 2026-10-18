@@ -56,7 +56,8 @@ function failure(r: Failure): AuthErrorCode {
     case 'IMMUTABLE':
       return 'result_changed';
     case 'INVALID_TRANSITION':
-      return 'result_blocked';
+      // ONCF-L6: the category was completed or cancelled meanwhile; its results are frozen.
+      return r.reason === 'RESULTS_FROZEN' ? 'result_frozen' : 'result_blocked';
     case 'NOT_FOUND':
       return 'result_not_found';
     default:
@@ -168,6 +169,7 @@ export async function transitionAction(form: FormData): Promise<never> {
   let error = failure(r);
   if (
     r.kind === 'error' &&
+    r.reason !== 'RESULTS_FROZEN' &&
     ['INVALID_TRANSITION', 'CONCURRENCY_CONFLICT', 'CURRENT_VERSION_CONFLICT'].includes(
       r.code ?? '',
     )

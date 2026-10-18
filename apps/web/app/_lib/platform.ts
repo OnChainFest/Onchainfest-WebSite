@@ -25,7 +25,13 @@ export interface MyOrganization {
 
 export type ApiResult<T> =
   | { kind: 'ok'; status: number; data: T }
-  | { kind: 'error'; status: number; code: string | null }
+  | {
+      kind: 'error';
+      status: number;
+      code: string | null;
+      /** The API's fixed-vocabulary refusal reason, when it exposes one (ONCF-L6). */
+      reason?: string | null;
+    }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable' };
 
@@ -54,13 +60,19 @@ export async function apiRequest<T>(
   if (res.status >= 500) return { kind: 'unavailable' };
   if (!res.ok) {
     let code: string | null;
+    let reason: string | null = null;
     try {
-      const body = (await res.json()) as { error?: { code?: unknown } };
+      const body = (await res.json()) as { error?: { code?: unknown; reason?: unknown } };
       code = typeof body.error?.code === 'string' ? body.error.code : null;
+      if (
+        typeof body.error?.reason === 'string' &&
+        /^[A-Z][A-Z0-9_]{0,39}$/.test(body.error.reason)
+      )
+        reason = body.error.reason;
     } catch {
       code = null;
     }
-    return { kind: 'error', status: res.status, code };
+    return { kind: 'error', status: res.status, code, ...(reason === null ? {} : { reason }) };
   }
   // A 204 (e.g. DELETE /v1/competition-staff/:id) carries no body.
   if (res.status === 204) return { kind: 'ok', status: 204, data: null as T };

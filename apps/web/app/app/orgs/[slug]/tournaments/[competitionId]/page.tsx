@@ -1,4 +1,6 @@
 import { notFound } from 'next/navigation';
+import { getPublic } from '../../../../../_lib/api';
+import type { PublicCompetitionOutcome } from '../../../../../_lib/competition';
 import { hubStages, nextAction } from '../../../../../_lib/competition-hub';
 import { orgContext } from '../../../../../_lib/org-context';
 import {
@@ -26,6 +28,7 @@ import { tournamentCatalog, type ManagedEvent } from '../../../../../_lib/tourna
 import {
   CompetitionNav,
   NextActionPanel,
+  OutcomeSummary,
   StageGrid,
 } from '../../../../../_product/competition-hub-ui';
 import { Flash } from '../../../../../_product/flash';
@@ -74,12 +77,18 @@ export default async function TournamentBuilderPage({
   const { competition: c, events, access } = t.data;
   const p = c.profile;
   const base = `${hub}/${c.id}`;
-  const [staff, resources, facts, catalog, versions] = await Promise.all([
+  const [staff, resources, facts, catalog, versions, outcome] = await Promise.all([
     competitionStaff(org.ctx.accessToken, c.id),
     competitionResources(org.ctx.accessToken, c.id),
     competitionAvailability(org.ctx.accessToken, c.id),
     tournamentCatalog(),
     scheduleVersions(org.ctx.accessToken, c.id),
+    // ONCF-L6: completed categories' champions (the public, OFFICIAL-only outcome).
+    events.some((e) => e.status === 'COMPLETED')
+      ? getPublic<PublicCompetitionOutcome>(
+          `/v1/competitions/${encodeURIComponent(c.slug)}/outcome`,
+        )
+      : null,
   ]);
   const scheduleState = versions.kind === 'ok' ? currentVersions(versions.data.items) : null;
   const resourceState =
@@ -203,6 +212,11 @@ export default async function TournamentBuilderPage({
         </section>
 
         <aside className="tb-side">
+          <OutcomeSummary
+            outcome={outcome?.kind === 'ok' ? outcome.data : null}
+            base={base}
+            publicHref={`/competitions/${c.slug}`}
+          />
           {c.status === 'DRAFT' ? (
             <section id="review" aria-labelledby="rev-h" className="tb-panel">
               <h3 id="rev-h" className="mono muted">

@@ -4,6 +4,12 @@ import {
   type NextAction,
   type StageState,
 } from '../_lib/competition-hub';
+import {
+  Entrant,
+  OFFICIAL_AUTHORITY_NOTE,
+  placeLabel,
+  type PublicCompetitionOutcome,
+} from '../_lib/competition';
 import type { ManagedCompetition } from '../_lib/tournaments';
 
 /** ONCF-L1 Competition Hub presentation (server-safe, no state). */
@@ -118,6 +124,64 @@ export function NextActionPanel({ next }: { next: NextAction }) {
           Go →
         </a>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * ONCF-L6: the outcome of every completed category — its champion(s), joint when tied, or why
+ * there is none — with links to the results workspace and the public outcome. Nothing is shown
+ * until a category is completed (and never a provisional result).
+ */
+export function OutcomeSummary({
+  outcome,
+  base,
+  publicHref,
+}: {
+  outcome: PublicCompetitionOutcome | null;
+  base: string;
+  publicHref: string;
+}) {
+  const done = (outcome?.events ?? []).filter((e) => e.final);
+  if (done.length === 0) return null;
+  return (
+    <section className="tb-panel" aria-labelledby="hub-outcome-h">
+      <h3 id="hub-outcome-h" className="mono muted">
+        Completed categories <span className="tb-count">{done.length}</span>
+      </h3>
+      <ul className="ops-staff">
+        {done.map((e) => (
+          <li key={e.id}>
+            <strong>{e.name}</strong>{' '}
+            <span className="muted small">
+              {e.champions !== null && e.champions.length > 0 ? (
+                <>
+                  {placeLabel(1, e.champions.length)}:{' '}
+                  {e.champions.map((p, i) => (
+                    <span key={p.participantId}>
+                      {i > 0 ? ' · ' : ''}
+                      <Entrant display={p.display} />
+                    </span>
+                  ))}
+                </>
+              ) : e.kind === 'GROUPS' ? (
+                'Groups ranked separately — no overall champion'
+              ) : (
+                'Final results recorded'
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">{OFFICIAL_AUTHORITY_NOTE}.</p>
+      <p className="small">
+        <a className="link" href={`${base}/results`}>
+          Results →
+        </a>{' '}
+        <a className="link" href={publicHref}>
+          Public outcome ↗
+        </a>
+      </p>
     </section>
   );
 }

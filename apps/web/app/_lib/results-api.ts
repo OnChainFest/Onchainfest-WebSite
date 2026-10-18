@@ -1,5 +1,5 @@
 import { apiRequest, type ApiResult } from './platform';
-import type { ResultContent, ResultVersion } from './results';
+import type { ResultContent, ResultVersion, StaffOutcome } from './results';
 import type { SheetIssue } from './score-sheet';
 
 /**
@@ -26,4 +26,9 @@ export function checkSheet(
   return apiRequest(token, 'POST', `/v1/contests/${contestId}/score-sheets/validate`, {
     body: { sheet },
   });
+}
+
+/** ONCF-L6: the category outcome and its completion readiness (COMP_VIEW_PRIVATE). Read-only. */
+export function eventOutcome(token: string, eventId: string): Promise<ApiResult<StaffOutcome>> {
+  return apiRequest(token, 'GET', `/v1/events/${eventId}/outcome`);
 }

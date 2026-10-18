@@ -24,11 +24,11 @@ import {
   basisLabel,
   compatibleRulesets,
   compatibleSchedulingProfiles,
-  decidedByLabel,
   eventScoring,
   stageClassification,
   templatesFor,
 } from '../../../../../../../../_lib/scoring';
+import { ClassificationTable } from '../../../../../../../../_product/classification-table';
 import { Flash } from '../../../../../../../../_product/flash';
 import { SubmitButton } from '../../../../../../../../_product/submit-button';
 import { SportGlyph, StatusBadge } from '../../../../../../../../_product/tournament-ui';
@@ -772,62 +772,5 @@ function ScoringPanel({
         </form>
       ) : null}
     </section>
-  );
-}
-
-function ClassificationTable({
-  data,
-  names,
-}: {
-  data: Awaited<ReturnType<typeof stageClassification>> extends infer R
-    ? R extends { kind: 'ok'; data: infer D }
-      ? D
-      : never
-    : never;
-  names: readonly {
-    participantId: string;
-    athlete: { displayName: string } | null;
-    teamName: string | null;
-  }[];
-}) {
-  const nameOf = (id: string) => {
-    const p = names.find((x) => x.participantId === id);
-    return p?.athlete?.displayName ?? p?.teamName ?? 'Private entrant';
-  };
-  return (
-    <>
-      <p className="mono muted small">
-        {data.document.complete
-          ? 'All results in'
-          : `${data.pendingContests.length} contest(s) pending`}{' '}
-        · {data.document.policy.code} v{data.document.policy.version}
-      </p>
-      <table className="st-table">
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">Entrant</th>
-            <th scope="col">Values</th>
-            <th scope="col">Decided by</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.document.entries.map((x) => (
-            <tr key={x.participantId}>
-              <td className="mono">
-                {x.status === 'CLASSIFIED' ? `${x.position}${x.tied ? '=' : ''}` : x.status}
-              </td>
-              <td>{nameOf(x.participantId)}</td>
-              <td className="mono small">
-                {x.values.map((v) => `${v.key} ${v.value}`).join(' · ')}
-              </td>
-              <td className="muted small">
-                {decidedByLabel(x.decidedBy?.kind) ?? (x.tied ? 'tied' : '')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
   );
 }

@@ -214,24 +214,37 @@ function operationsStage(data: ManagedCompetition, href: string): HubStage {
 
 /**
  * ONCF-L5: whether there are results to record — from statuses only (results are read on the
- * results page itself, match by match).
+ * results page itself, match by match). ONCF-L6: a completed category's results are final and
+ * frozen, so only categories in play still take results.
  */
 function resultsStage(data: ManagedCompetition, href: string): HubStage {
   const stage = { key: 'results', label: 'Results', href };
-  const played = data.events.filter(
-    (e) => e.status === 'IN_PROGRESS' || e.status === 'COMPLETED',
-  ).length;
+  const inPlay = data.events.filter((e) => e.status === 'IN_PROGRESS').length;
+  const completed = data.events.filter((e) => e.status === 'COMPLETED').length;
+  const counted = data.events.filter((e) => e.status !== 'CANCELLED').length;
+  const settled =
+    completed > 0 ? `${completed} of ${plural(counted, 'category', 'categories')} completed` : '';
   switch (data.competition.status) {
     case 'DRAFT':
       return { key: 'results', label: 'Results', state: 'todo', detail: 'After publishing' };
     case 'CANCELLED':
       return { ...stage, state: 'attention', detail: 'Cancelled' };
     case 'COMPLETED':
-      return { ...stage, state: 'open', detail: 'Review the recorded results' };
+      return {
+        ...stage,
+        state: 'ready',
+        detail: `Final · ${plural(completed, 'category', 'categories')} settled`,
+      };
     default:
-      return played > 0
-        ? { ...stage, state: 'open', detail: 'Enter and confirm match results' }
-        : { ...stage, state: 'todo', detail: 'Once matches are played' };
+      return inPlay > 0
+        ? {
+            ...stage,
+            state: 'open',
+            detail: ['Enter and confirm match results', settled].filter(Boolean).join(' · '),
+          }
+        : completed > 0
+          ? { ...stage, state: 'progress', detail: settled }
+          : { ...stage, state: 'todo', detail: 'Once matches are played' };
   }
 }
 
@@ -256,11 +269,15 @@ export function nextAction(
   const live = data.events.filter((e) => e.status !== 'CANCELLED');
   if (c.status === 'CANCELLED')
     return { label: 'Tournament cancelled', detail: 'Nothing else can change.' };
-  if (c.status === 'COMPLETED')
+  if (c.status === 'COMPLETED') {
+    // ONCF-L6 (ADR-0078): each completed category's outcome is final, from its official results.
+    const settled = data.events.filter((e) => e.status === 'COMPLETED').length;
     return {
       label: 'Tournament completed',
-      detail: 'Results come to the web app in a later release.',
+      detail: `${plural(settled, 'category', 'categories')} settled from official results, declared by the organizer. See the final results.`,
+      href: `${base}/results`,
     };
+  }
   if (c.status === 'DRAFT') {
     if (live.length === 0)
       return c.editable.addEvents && perms.includes('COMP_EDIT')

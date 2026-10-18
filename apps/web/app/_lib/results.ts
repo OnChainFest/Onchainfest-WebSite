@@ -1,8 +1,9 @@
 import type { Contest, StructureRound } from './competition';
-import { partitionLabel } from './competition';
+import { partitionLabel, placeLabel } from './competition';
 import { sideText } from './schedule';
 import type { FieldParticipant } from './structure';
 import { FAMILY_LABEL, isEntryFamily } from './score-sheet';
+import type { StageClassification } from './scoring';
 import type { ManagedEvent } from './tournaments';
 
 /**
@@ -115,6 +116,8 @@ export interface ResultMatch {
   scoring: MatchScoring | null;
   /** null: the result couldn't be read. */
   versions: ResultVersion[] | null;
+  /** ONCF-L6: its category is finished (COMPLETED or CANCELLED) — results are frozen. */
+  frozen: boolean;
 }
 
 export type ResultState = 'needs' | 'entered' | 'provisional' | 'official' | 'unreadable';
@@ -129,6 +132,9 @@ export const RESULT_STATE_LABEL: Record<ResultState, string> = {
 
 /** The matches whose results matter now: in play (about to need one), finished, or voided after one. */
 export const RESULT_STATUSES: ReadonlySet<string> = new Set(['IN_PROGRESS', 'COMPLETED', 'VOID']);
+
+/** ONCF-L6 (ADR-0078): a finished category's results and matches no longer change. */
+export const FINISHED_CATEGORY: ReadonlySet<string> = new Set(['COMPLETED', 'CANCELLED']);
 
 export const currentVersion = (m: Pick<ResultMatch, 'versions'>) =>
   m.versions?.find((v) => v.current) ?? null;
@@ -184,6 +190,7 @@ export function resultMatches(
           status: c.status,
           scoring: scoringFor(r.stage?.key ?? null),
           versions: v,
+          frozen: FINISHED_CATEGORY.has(event.status),
         });
       }
   }
@@ -234,7 +241,8 @@ export function resultAttention(
         detail: 'Check which one is right and accept only that one.',
         href: `#r-${m.contestId}`,
       });
-  const finished = board.needs.filter((m) => m.status === 'COMPLETED');
+  // A frozen category's matches can't be acted on (only grandfathered data has gaps there).
+  const finished = board.needs.filter((m) => m.status === 'COMPLETED' && !m.frozen);
   if (finished.length > 0)
     items.push({
       key: 'finished',
@@ -273,4 +281,80 @@ export function resultAttention(
       });
   }
   return items;
+}
+
+// ───────────────────────────── category outcome (ONCF-L6) ─────────────────────────────
+
+export type OutcomeKind = 'KNOCKOUT' | 'STEPLADDER' | 'STANDINGS' | 'METRIC' | 'GROUPS';
+export type OutcomeStatus = 'DECIDED' | 'PENDING' | 'UNDECIDED' | 'NOT_SUPPORTED';
+
+export interface OutcomePlacement {
+  participantId: string;
+  position: number;
+  tied: boolean;
+}
+
+/**
+ * `GET /v1/events/:eventId/outcome` (competition staff): the category's `event-outcome/1`, derived
+ * by the API from OFFICIAL results only, and whether it can be completed now (ADR-0078).
+ */
+export interface StaffOutcome {
+  eventId: string;
+  eventStatus: string;
+  final: boolean;
+  outcome: {
+    kind?: OutcomeKind;
+    status: OutcomeStatus;
+    reasons: { code: string; contestIds?: string[] }[];
+    placements: OutcomePlacement[];
+    standings: { groupKey?: string; document: StageClassification['document'] }[];
+  };
+  hash: string;
+  readiness: {
+    ready: boolean;
+    contestsOpen: string[];
+    resultsNotOfficial: string[];
+    required: number;
+    official: number;
+  };
+}
+
+/** Why an outcome isn't settled (or what a reader must know about it), in organizer words. */
+export const OUTCOME_REASON_LABEL: Record<string, string> = {
+  ENGINE_V1: 'This category’s format has no stage structure, so no outcome is derived for it.',
+  STRUCTURE_UNRECOGNIZED: 'The final of this category can’t be identified.',
+  CLASSIFICATION_UNAVAILABLE: 'No standings template is chosen for this category.',
+  CLASSIFICATION_INCOMPLETE: 'Some matches still need an official result.',
+  DYNAMIC_ROUND_PENDING: 'A later round hasn’t been filled yet.',
+  FINAL_NOT_OFFICIAL: 'The final has no official result yet.',
+  FINAL_NO_WINNER: 'The final’s official result has no winner.',
+  FINAL_VOID: 'The final was voided.',
+  FINAL_CANCELLED: 'The final was cancelled.',
+  FINAL_VACANT: 'A place in the final is vacant.',
+  FINAL_OCCUPANTS_CHANGED: 'The final’s result names other players than the final.',
+  THIRD_PLACE_NOT_OFFICIAL: 'The third-place match has no official result yet.',
+  THIRD_PLACE_NO_WINNER: 'The third-place match has no winner.',
+  SEMIFINAL_NOT_OFFICIAL: 'A semifinal has no official result yet.',
+  TIE_UNBROKEN_LOT: 'A tie that only an organizer lot could separate stays shared.',
+  GROUPS_NO_CHAMPION: 'Groups are ranked separately: there is no single champion.',
+};
+
+export const outcomeReasonLabel = (code: string) => OUTCOME_REASON_LABEL[code] ?? code;
+
+/** The podium: positions 1–3 exactly as derived (ties stay shared; no place is invented). */
+export const podiumOf = (placements: readonly OutcomePlacement[]) =>
+  placements.filter((p) => p.position <= 3);
+
+/** Podium placements grouped by position, in order. */
+export function podiumGroups(placements: readonly OutcomePlacement[]) {
+  const groups = new Map<number, OutcomePlacement[]>();
+  for (const p of podiumOf(placements))
+    groups.set(p.position, [...(groups.get(p.position) ?? []), p]);
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([position, entrants]) => ({
+      position,
+      label: placeLabel(position, entrants.length),
+      entrants,
+    }));
 }

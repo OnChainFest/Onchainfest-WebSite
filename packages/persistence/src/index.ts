@@ -27,6 +27,7 @@ export * from './competition-support';
 export * from './competition-store';
 export * from './competition-structure-store';
 export * from './scoring-store';
+export * from './event-outcome-store';
 export * from './advancement-store';
 export * from './contest-results';
 export * from './competition-participation';

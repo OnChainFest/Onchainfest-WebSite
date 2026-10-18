@@ -29,6 +29,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CatalogStore } from './catalog-store';
 import { CompetitionReader } from './competition-reader';
 import { CompetitionStore } from './competition-store';
+import { refreshEventReadModels } from './competition-projection';
+import { inTransaction, ModuleRole } from './tx';
 import { StructureStore } from './competition-structure-store';
 import { IdentityStore } from './identity-store';
 import { OrganizationStore } from './organization-store';
@@ -673,7 +675,22 @@ describe('ONCF-05E-E proposal preview: authoritative input, read-only, statuses'
     await resource(comp, 'TENNIS_COURT', 'Court 1');
     await openAllWeek(comp);
     await comps.startEvent({ actorAccountId: comp.actor, eventId: done.eventId });
-    await comps.completeEvent({ actorAccountId: comp.actor, eventId: done.eventId });
+    // ONCF-L6 (ADR-0078 §2.1): completing a category with PLANNED matches is now refused, so the
+    // finished category with unplayed matches this case needs is grandfathered pre-L6 data,
+    // written directly as such (ADR-0078 §2.8).
+    await expect(
+      comps.completeEvent({ actorAccountId: comp.actor, eventId: done.eventId }),
+    ).rejects.toMatchObject({
+      code: DomainErrorCode.INVALID_TRANSITION,
+      details: { reason: 'CONTESTS_OPEN' },
+    });
+    await inTransaction(db, ModuleRole.competition, async (ctx) => {
+      await sql`INSERT INTO competition.event_status_change (id, event_id, status, actor_account_id, recorded_at)
+        VALUES (${newId()}, ${done.eventId}, 'COMPLETED', ${comp.actor}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+      await refreshEventReadModels(ctx, done.eventId);
+    });
     const r = await preview(comp.actor, await draft(comp));
     expect(r.proposal.status).toBe('NOTHING_TO_PLACE');
     expect(r.proposal.placements).toEqual([]);

@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { contestStatusLabel } from '../_lib/operations';
 import {
   currentVersion,
+  outcomeReasonLabel,
   pendingVersions,
+  podiumGroups,
   RESULT_STATE_LABEL,
   resultState,
   TRANSITIONS,
@@ -10,10 +12,12 @@ import {
   type ResultAttention,
   type ResultMatch,
   type ResultVersion,
+  type StaffOutcome,
   type TransitionKey,
 } from '../_lib/results';
 import { FAMILY_LABEL, formValues, isEntryFamily, scoreLine } from '../_lib/score-sheet';
 import { dateTime } from '../_lib/tournament-builder';
+import { StandingsTable } from './classification-table';
 import type { EntryState } from '../app/orgs/[slug]/tournaments/[competitionId]/results/actions';
 import { ScoreSheetForm } from './score-sheet-form';
 import { SubmitButton } from './submit-button';
@@ -193,6 +197,14 @@ function RowActions({ m, ctx }: { m: ResultMatch; ctx: RowContext }) {
   const state = resultState(m);
   if (state === 'unreadable')
     return <p className="small rs-note">This match’s result can’t be read right now.</p>;
+  // ONCF-L6: a finished category's results are frozen (the API refuses every change).
+  if (m.frozen)
+    return (
+      <p className="small rs-note" data-frozen="true">
+        Results frozen: the category is {m.event.status === 'CANCELLED' ? 'cancelled' : 'completed'}
+        .
+      </p>
+    );
   const cur = currentVersion(m);
   const pending = pendingVersions(m);
   const ready = m.sideIds.length === 2 && m.sideIds.every((x) => x !== null);
@@ -397,6 +409,13 @@ export function LifecyclePanel() {
             in the record.
           </span>
         </li>
+        <li>
+          <strong>Final</strong>
+          <span className="muted small">
+            Completing a category settles its outcome from the official results and freezes them:
+            nothing can be corrected afterwards.
+          </span>
+        </li>
       </ol>
       <p className="muted small">
         If two staff act on the same result, the first change wins; the other sees why and the page
@@ -432,6 +451,128 @@ export function ProgressionPanel({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+// ───────────────────────────── category outcome (ONCF-L6) ─────────────────────────────
+
+/**
+ * One category's outcome as the API derives it from OFFICIAL results only: standings so far while
+ * it is played (never a podium), what still blocks completing it, and — once completed — the
+ * final podium. Completion itself stays in operations.
+ */
+export function CategoryOutcomePanel({
+  name,
+  status,
+  data,
+  nameOf,
+  base,
+}: {
+  name: string;
+  status: string;
+  /** null: the outcome couldn't be read. */
+  data: StaffOutcome | null;
+  nameOf: (participantId: string) => string;
+  base: string;
+}) {
+  const final = status === 'COMPLETED';
+  const outcome = data?.outcome;
+  const readiness = data?.readiness;
+  const tables = outcome?.standings ?? [];
+  const blocking = [...(readiness?.contestsOpen ?? []), ...(readiness?.resultsNotOfficial ?? [])];
+  const reasons = (outcome?.reasons ?? []).filter(
+    (r) => final || !['TIE_UNBROKEN_LOT', 'GROUPS_NO_CHAMPION'].includes(r.code),
+  );
+  const notes = (outcome?.reasons ?? []).filter((r) =>
+    ['TIE_UNBROKEN_LOT', 'GROUPS_NO_CHAMPION'].includes(r.code),
+  );
+  return (
+    <section className="tb-panel rs-outcome" data-final={final} aria-label={`${name} outcome`}>
+      <div className="section-head">
+        <h3 className="tb-h3">
+          {name} <span className="muted small">· {final ? 'Final' : 'Standings so far'}</span>
+        </h3>
+      </div>
+      {data === null ? (
+        <p className="small rs-note">The outcome can’t be read right now. Nothing was changed.</p>
+      ) : (
+        <>
+          <p className="small rs-authority">
+            {final
+              ? 'Final · Official (organizer-declared), not independently verified'
+              : 'Standings so far — official results only'}
+          </p>
+          {readiness !== undefined && readiness.official === 0 && !final ? (
+            <p className="muted small ops-empty">No official results yet.</p>
+          ) : null}
+          {final ? (
+            <>
+              {outcome?.status === 'DECIDED' && outcome.kind !== 'GROUPS' ? (
+                <ol className="rs-podium">
+                  {podiumGroups(outcome.placements).map((g) => (
+                    <li key={g.position} data-position={g.position}>
+                      <span className="mono muted">{g.label}</span>
+                      <strong>{g.entrants.map((p) => nameOf(p.participantId)).join(' · ')}</strong>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              <p className="small rs-note" data-frozen="true">
+                Results frozen: nothing in this category can be changed.
+              </p>
+            </>
+          ) : readiness !== undefined ? (
+            <div className="rs-readiness">
+              <p className="small">
+                Official results: {readiness.official} / {readiness.required}
+              </p>
+              {blocking.length > 0 ? (
+                <p className="small">
+                  Still blocking completion:{' '}
+                  {blocking.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 ? ', ' : ''}
+                      <a className="link" href={`#r-${id}`}>
+                        match {i + 1}
+                      </a>
+                    </span>
+                  ))}
+                  .{' '}
+                  {readiness.contestsOpen.length > 0
+                    ? 'Finish or cancel every match first; unplayed ones are cancelled in operations.'
+                    : 'Every finished match needs an official result.'}
+                </p>
+              ) : null}
+              {reasons.map((r) => (
+                <p key={r.code} className="small ops-warning" role="note">
+                  {outcomeReasonLabel(r.code)}
+                </p>
+              ))}
+              {readiness.ready ? (
+                <p className="small">
+                  <a className="link" href={`${base}/operations#cat-${data.eventId}`}>
+                    Ready · complete the category in operations →
+                  </a>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {notes.map((r) => (
+            <p key={r.code} className="muted small">
+              {outcomeReasonLabel(r.code)}
+            </p>
+          ))}
+          {tables.map((t) => (
+            <div key={t.groupKey ?? 'all'} className="rs-standings">
+              {t.groupKey === undefined ? null : (
+                <p className="mono muted small">Group {t.groupKey.slice(1)}</p>
+              )}
+              <StandingsTable entries={t.document.entries} nameOf={nameOf} />
+            </div>
+          ))}
+        </>
+      )}
     </section>
   );
 }

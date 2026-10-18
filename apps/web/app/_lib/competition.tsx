@@ -245,3 +245,83 @@ export function StatusPill({ status }: { status: string }): ReactNode {
     </span>
   );
 }
+
+// ───────────────────────────── official outcome (ONCF-L6) ─────────────────────────────
+
+/** The trust boundary of every official result and outcome (ADR-0078 §2.6). */
+export const OFFICIAL_AUTHORITY_NOTE = 'Official (organizer-declared) · not independently verified';
+
+export interface PublicPlacement {
+  participantId: string;
+  display: EntrantDisplay;
+  position: number;
+  tied: boolean;
+}
+
+/** `br:public-event-outcome@1`: OFFICIAL results only; the podium only once the category is completed. */
+export interface PublicEventOutcome {
+  event: { id: string; status: string };
+  final: boolean;
+  authority: 'ORGANIZER_DECLARED';
+  kind: 'KNOCKOUT' | 'STEPLADDER' | 'STANDINGS' | 'METRIC' | 'GROUPS' | null;
+  podium:
+    | { status: 'AVAILABLE'; placements: PublicPlacement[] }
+    | { status: 'NOT_AVAILABLE'; reason: string };
+  standings: {
+    groupKey: string | null;
+    complete: boolean;
+    entries: {
+      participantId: string;
+      display: EntrantDisplay;
+      position: number;
+      tied: boolean;
+      status: string;
+      values: { key: string; value: string }[];
+    }[];
+  }[];
+  matches: {
+    contestId: string;
+    sequence: number;
+    roundLabel: string;
+    roundSequence: number;
+    groupKey: string | null;
+    status: string;
+    official: boolean;
+    entrants: {
+      participantId: string;
+      display: EntrantDisplay;
+      outcome: string | null;
+      score: { key: string; value: string }[];
+    }[];
+  }[];
+  notes: ('TIE_UNBROKEN_LOT' | 'GROUPS_NO_CHAMPION')[];
+}
+
+/** `br:public-competition-outcome@1`: each category's champion(s) once it is completed and decided. */
+export interface PublicCompetitionOutcome {
+  competition: { id: string; status: string };
+  authority: 'ORGANIZER_DECLARED';
+  events: {
+    id: string;
+    slug: string;
+    name: string;
+    status: string;
+    final: boolean;
+    kind: PublicEventOutcome['kind'];
+    champions: PublicPlacement[] | null;
+  }[];
+}
+
+/** "Champion", "Joint champions", "Runner-up", "Third", "Joint third" (ties are never split). */
+export function placeLabel(position: number, count: number): string {
+  const base =
+    position === 1
+      ? 'Champion'
+      : position === 2
+        ? 'Runner-up'
+        : position === 3
+          ? 'Third'
+          : ordinalLabel(position);
+  if (count <= 1) return base;
+  return position === 1 ? 'Joint champions' : `Joint ${base.toLowerCase()}`;
+}

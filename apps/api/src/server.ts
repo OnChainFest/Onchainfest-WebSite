@@ -29,6 +29,7 @@ import {
   PersonPrincipalService,
   AdvancementStore,
   ContestResultService,
+  EventOutcomeStore,
   ResourceStore,
   ScheduleStore,
   PersonPrivateDataService,
@@ -249,6 +250,7 @@ export function buildServer(options: ApiOptions): ApiServer {
       advancement,
       resources: new ResourceStore(options.db),
       schedule: new ScheduleStore(options.db),
+      outcomes: new EventOutcomeStore(options.db, scoring),
       results: new ContestResultService(options.db, scoring, {
         ...(options.resultConflictChecker === undefined
           ? {}

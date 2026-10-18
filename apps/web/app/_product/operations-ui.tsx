@@ -372,16 +372,10 @@ export function CategoryTable({
     <ol className="ops-list ops-cats">
       {categories.map((x) => {
         const name = <>{x.event.settings.name}</>;
-        const unstarted = x.matches.open - x.matches.live;
+        // ONCF-L6: completion is offered only once every match is settled and official, so the
+        // warning is what can't be undone: the outcome is final and its results are frozen.
         const completeWarning =
-          [
-            unstarted > 0
-              ? `${unstarted} ${unstarted === 1 ? 'match hasn’t' : 'matches haven’t'} started and can’t start afterwards.`
-              : '',
-            x.matches.live > 0 ? `${x.matches.live} in play can still be finished.` : '',
-          ]
-            .filter((t) => t !== '')
-            .join(' ') || null;
+          'Its official results and standings become final and are frozen: no result can be entered, accepted or corrected afterwards.';
         return (
           <li
             key={x.event.id}

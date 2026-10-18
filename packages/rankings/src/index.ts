@@ -8,3 +8,4 @@ export * from './staleness';
 export * from './public';
 export * from './classification-policy-v2';
 export * from './classification-engine-v2';
+export * from './event-outcome';

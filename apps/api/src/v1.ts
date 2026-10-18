@@ -129,6 +129,17 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   RANKING_INTEGRITY_FAILURE: 500,
 };
 
+/** ONCF-L6 fixed reason values of INVALID_TRANSITION (ADR-0078 §2.1–§2.4). */
+const L6_TRANSITION_REASONS: ReadonlySet<string> = new Set([
+  'RESULTS_FROZEN',
+  'CONTESTS_OPEN',
+  'RESULTS_NOT_OFFICIAL',
+  'OUTCOME_UNDECIDED',
+  'EVENTS_OPEN',
+  'NO_COMPLETED_EVENT',
+  'EVENT_FINISHED',
+]);
+
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */
 export function errorBody(err: DomainError): {
   status: number;
@@ -161,7 +172,12 @@ export function errorBody(err: DomainError): {
     // ONCF-05E-H-1 (ADR-0070 §9 amendment): a stale manual schedule edit, machine-readable and
     // distinct from BASE_VERSION_STALE and REPORT_STALE.
     (err.code === 'CONCURRENCY_CONFLICT' && reason === 'LAST_FACT_STALE') ||
-    (err.code === 'INVALID_TRANSITION' && reason === 'PROPOSAL_NOT_COMMITTABLE');
+    (err.code === 'INVALID_TRANSITION' && reason === 'PROPOSAL_NOT_COMMITTABLE') ||
+    // ONCF-L6 (ADR-0078): the completion and freeze refusals an organizer must tell apart.
+    (err.code === 'INVALID_TRANSITION' &&
+      typeof reason === 'string' &&
+      L6_TRANSITION_REASONS.has(reason)) ||
+    (err.code === 'CONCURRENCY_CONFLICT' && reason === 'OUTCOME_INPUTS_CHANGED');
   // BRT-07: policy-spec validation issues — fixed codes and sanitized JSON pointers, never values.
   const rawIssues = err.code === 'INVALID_INPUT' ? err.details.issues : undefined;
   const issues = Array.isArray(rawIssues)
