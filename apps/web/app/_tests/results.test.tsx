@@ -810,6 +810,29 @@ describe('results workspace', () => {
     expect(buttons(row(out, K(3)))).toEqual(['Correct result']);
   });
 
+  it('a voided match keeps its record but offers nothing: its result no longer counts', async () => {
+    platform();
+    const QF6 = stored(PADEL.spec, [P(2), P(4)], sets([6, 3], [6, 4]));
+    // An official result, and two different scores entered for another voided match.
+    results[K(6)] = [version(6, 'OFFICIAL', QF6)];
+    let out = await render();
+    expect(out).toContain(`id="r-${K(6)}"`);
+    expect(buttons(row(out, K(6)))).toEqual([]);
+    expect(row(out, K(6))).toContain('data-void="true"');
+    expect(row(out, K(6))).toContain('Match voided: its result doesn’t count');
+    expect(row(out, K(6))).not.toContain('name="mode" value="correct"');
+
+    results[K(6)] = [
+      version(6, 'SUBMITTED', QF6),
+      version(7, 'SUBMITTED', stored(PADEL.spec, [P(2), P(4)], sets([3, 6], [4, 6]))),
+    ];
+    out = await render();
+    expect(buttons(row(out, K(6)))).toEqual([]);
+    // Two scores on a voided match need no decision: only the live match with two (K5) is flagged.
+    expect(out.match(/has 2 different scores entered/g)).toHaveLength(1);
+    expect(row(out, K(5))).toContain('2 different scores were entered');
+  });
+
   it('keeps the record: every version, replaced ones included', async () => {
     platform();
     results[K(3)] = [
@@ -1225,5 +1248,12 @@ describe('navigation and context', () => {
     );
     expect(block).not.toMatch(/min-width: \d{3,}px/);
     expect(block).not.toMatch(/\swidth: \d{3,}px/);
+  });
+
+  it('never scrolls the page sideways: the hero bleed is clipped, standings scroll in place', () => {
+    const css = readFileSync(new URL('../_product/product.css', import.meta.url), 'utf8');
+    // `clip`, not `hidden`: a scroll container would break the sticky top bar.
+    expect(css).toMatch(/\n\.oc-app \{\s*overflow-x: clip;\s*\}/);
+    expect(css).toMatch(/\.oc-app \.rs-standings \{\s*overflow-x: auto;\s*\}/);
   });
 });

@@ -119,6 +119,10 @@ export function CategoryBuilder({
               </label>
             ))}
           </div>
+          <p className="muted small" data-scope-note="true">
+            Only sports played as head-to-head matches are offered for now: their results can be
+            entered and completed here. Races and other field events aren’t available yet.
+          </p>
         </Step>
 
         <Step

@@ -1007,6 +1007,25 @@ describe('operation commands', () => {
     ] as const)
       expect(ERROR_MESSAGES[code]).toBeTruthy();
   });
+
+  it('completing the tournament while a category is open says exactly that (EVENTS_OPEN)', async () => {
+    const { ERROR_MESSAGES } = await import('../_lib/auth/messages');
+    platform();
+    routes[`POST /v1/competitions/${COMP}/complete`] = () =>
+      json(409, { error: { code: 'INVALID_TRANSITION', reason: 'EVENTS_OPEN' } });
+    expect(
+      await run({
+        target: 'competition',
+        command: 'complete',
+        targetId: COMP,
+        from: 'ACTIVE',
+        confirm: 'yes',
+      }),
+    ).toBe(`${BACK}?error=operation_events_open`);
+    expect(writes()).toHaveLength(1);
+    expect(ERROR_MESSAGES.operation_events_open).toContain('a category is still open');
+    expect(ERROR_MESSAGES.operation_events_open).toContain('Nothing was changed');
+  });
 });
 
 // ───────────────────────────── navigation, dates, layout ─────────────────────────────

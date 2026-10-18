@@ -461,7 +461,9 @@ export class EventOutcomeStore {
 
   private async deriveOnce(eventId: string): Promise<DerivedEventOutcome> {
     const s = await this.structure(eventId);
-    const ids = s.contests.map((c) => c.id);
+    // A CANCELLED or VOID contest decides nothing: a result it carries is never read as evidence,
+    // so it reaches neither a placement nor the public match list (ONCF-V1 hardening).
+    const ids = s.contests.filter((c) => !SETTLED_CONTEST.has(c.status)).map((c) => c.id);
     const evidence = await this.evidence(ids);
     const classifications = await this.classifications(s);
     // Fail closed: every result read is the contest's current OFFICIAL / FINAL version of the

@@ -65,6 +65,8 @@ const STATUS_FLOOR: Record<string, readonly string[]> = {
   OFFICIAL: ['OFFICIAL', 'FINAL'],
   FINAL: ['FINAL'],
 };
+/** CANCELLED and VOID contests decide nothing (ADR-0066): a result they carry is never an input. */
+const SETTLED_CONTEST: ReadonlySet<string> = new Set(['CANCELLED', 'VOID']);
 
 interface Pinned {
   readonly rulesetVersionId: string;
@@ -629,7 +631,8 @@ export class ScoringStore {
   /**
    * Classification of one stage scope under the pinned template (COMP_VIEW_PRIVATE). Groups must
    * be named for grouped stages. Contests without an admissible current result, or with unresolved
-   * slots, are PENDING (the document says `complete: false`); a stored result that does not
+   * slots, are PENDING (the document says `complete: false`); CANCELLED and VOID contests are
+   * neither inputs nor pending, whatever result they carry; a stored result that does not
    * re-validate under the ruleset blocks the whole classification (CONTEST_RESULT_INVALID).
    */
   async classify(input: {
@@ -708,8 +711,10 @@ export class ScoringStore {
         throw new DomainError(DomainErrorCode.INVALID_INPUT, 'name the group to classify', {
           reason: 'GROUP_REQUIRED',
         });
-      const { rows: contests } = await sql<{ id: string; round_sequence: number }>`
-        SELECT c.id, r.sequence AS round_sequence FROM competition.contest c JOIN competition.round r ON r.id = c.round_id
+      const { rows: contests } = await sql<{ id: string; round_sequence: number; status: string }>`
+        SELECT c.id, r.sequence AS round_sequence, cur.status FROM competition.contest c
+        JOIN competition.round r ON r.id = c.round_id
+        JOIN competition.v_contest_current cur ON cur.contest_id = c.id
         WHERE r.stage_id = ${st.id} AND (${input.groupKey ?? null}::text IS NULL OR r.group_key = ${input.groupKey ?? null})
         ORDER BY r.sequence, c.sequence`.execute(ctx.trx);
       const contexts = [];
@@ -720,7 +725,10 @@ export class ScoringStore {
       )) {
         const context = await this.contestContext(ctx, c.id);
         // A contest decided vacant (its field place no longer selected) is not part of the stage.
-        if (!context.vacant) contexts.push({ contestId: c.id, ...context });
+        // A CANCELLED or VOID one keeps its entrants in the stage but contributes no result and
+        // keeps nothing pending (ONCF-V1 hardening).
+        if (!context.vacant)
+          contexts.push({ contestId: c.id, settled: SETTLED_CONTEST.has(c.status), ...context });
       }
       const { rows: seeding } = await sql<{ seed_order: string[] }>`
         SELECT seed_order FROM competition.event_seeding WHERE event_id = ${e.id}`.execute(ctx.trx);
@@ -750,7 +758,8 @@ export class ScoringStore {
       STATUS_FLOOR[input.floor ?? structure.spec.minimumInputStatus] ??
       STATUS_FLOOR['PROVISIONAL'] ??
       [];
-    const contestIds = structure.contexts.map((c) => c.contestId);
+    const counted = structure.contexts.filter((c) => !c.settled);
+    const contestIds = counted.map((c) => c.contestId);
     const current = await inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const { rows } = await sql<{
         contest_id: string;
@@ -776,7 +785,7 @@ export class ScoringStore {
     const pending: string[] = [];
     const invalid: { contestId: string; issues: readonly { code: string; message: string }[] }[] =
       [];
-    for (const c of structure.contexts) {
+    for (const c of counted) {
       const r = current.get(c.contestId);
       if (c.unresolved || r === undefined) {
         pending.push(c.contestId);

@@ -678,6 +678,11 @@
   object-fit: cover;
   background: var(--white);
 }
+/* The hero's backdrop bleeds sideways (::before, inset −50vw) without widening the page. `clip`,
+   not `hidden`: no scroll container, so the sticky top bar keeps working. */
+.oc-app {
+  overflow-x: clip;
+}
 .oc-app .org-hero {
   position: relative;
   margin: 0 0 2rem;
@@ -4639,6 +4644,9 @@
   align-items: baseline;
   margin: 0;
   overflow-wrap: anywhere;
+}
+.oc-app .rs-standings {
+  overflow-x: auto;
 }
 .oc-app .rs-note {
   margin: 0;

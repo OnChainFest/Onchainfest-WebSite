@@ -7,6 +7,7 @@ import type {
   EntrantKind,
   EventStatus,
 } from './tournaments';
+import { isEntryFamily } from './score-sheet';
 
 /**
  * ONCF-03B organizer Tournament Builder helpers. Pure, so the category builder (client) and the
@@ -20,14 +21,15 @@ import type {
 /**
  * The command that performs each advertised competition transition (`/v1/competitions/:id/<cmd>`)
  * and the competition permission it needs, so a button is only offered to callers the API would
- * accept. A transition the server does not list in `nextStatuses` is never rendered.
+ * accept. A transition the server does not list in `nextStatuses` is never rendered. Completion
+ * is not here: it freezes results, so it has one path, the guarded one in Operations (blockers,
+ * explicit confirmation, specific refusals); the hub links there instead.
  */
 export const COMPETITION_COMMANDS: Partial<
   Record<CompetitionStatus, { command: string; permission: string; label: string }>
 > = {
   PUBLISHED: { command: 'publish', permission: 'COMP_PUBLISH', label: 'Publish tournament' },
   ACTIVE: { command: 'activate', permission: 'COMP_EDIT', label: 'Start tournament' },
-  COMPLETED: { command: 'complete', permission: 'COMP_EDIT', label: 'Mark completed' },
   CANCELLED: { command: 'cancel', permission: 'COMP_CANCEL', label: 'Cancel tournament' },
 };
 
@@ -130,8 +132,12 @@ export function disciplinesFor(catalog: Catalog, sportCode: string): CatalogDisc
 }
 
 /**
- * Formats the catalog says can run a discipline version: listed in its
- * `compatibleFormatVersionIds` and backed by an engine in this build (`contestType` not null).
+ * Formats the catalog says can run a discipline version (listed in its `compatibleFormatVersionIds`
+ * and backed by an engine in this build), narrowed to what V1 can score and complete end to end:
+ * head-to-head (MATCH) formats of a discipline that offers a head-to-head ruleset family, the only
+ * families with a score sheet here. Field formats and field-only disciplines (running, swimming,
+ * cycling, bowling, golf stroke play) are not offered (ONCF-V1 hardening). A discipline listed
+ * without capabilities (an older API build) is judged by its formats alone.
  */
 export function compatibleFormats(
   catalog: Catalog,
@@ -139,8 +145,12 @@ export function compatibleFormats(
 ): CatalogFormatVersion[] {
   const d = catalog.disciplineVersions.find((x) => x.disciplineVersionId === disciplineVersionId);
   if (d === undefined) return [];
+  if (d.capabilities !== undefined && !d.capabilities.rulesetFamilies.some(isEntryFamily))
+    return [];
   const ids = new Set(d.compatibleFormatVersionIds);
-  return catalog.formatVersions.filter((f) => ids.has(f.formatVersionId) && f.contestType !== null);
+  return catalog.formatVersions.filter(
+    (f) => ids.has(f.formatVersionId) && f.contestType === 'MATCH',
+  );
 }
 
 /** True only for a combination the catalog offers. The API re-checks it on create. */

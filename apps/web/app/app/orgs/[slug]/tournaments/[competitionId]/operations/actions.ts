@@ -23,6 +23,7 @@ const L6_ERRORS: Readonly<Record<string, AuthErrorCode>> = {
   CONTESTS_OPEN: 'operation_contests_open',
   RESULTS_NOT_OFFICIAL: 'operation_results_not_official',
   OUTCOME_UNDECIDED: 'operation_outcome_undecided',
+  EVENTS_OPEN: 'operation_events_open',
   NO_COMPLETED_EVENT: 'operation_no_completed_category',
   EVENT_FINISHED: 'operation_event_finished',
   OUTCOME_INPUTS_CHANGED: 'operation_stale',

@@ -1,4 +1,5 @@
 import { apiRequest, type ApiResult } from './platform';
+import { isEntryFamily } from './score-sheet';
 import type { Catalog, CatalogSchedulingProfile, CatalogScoringVersion } from './tournaments';
 
 /**
@@ -76,6 +77,17 @@ export function compatibleRulesets(
   const d = catalog.disciplineVersions.find((x) => x.disciplineVersionId === disciplineVersionId);
   const ok = new Set(d?.compatibleRulesetVersionIds ?? []);
   return (catalog.rulesetVersions ?? []).filter((r) => ok.has(r.versionId));
+}
+
+/**
+ * The compatible rulesets a category can be scored under in this app: only families with a score
+ * sheet (head-to-head), so a pinned category can always reach official results (ONCF-V1 hardening).
+ */
+export function entryRulesets(
+  catalog: Catalog,
+  disciplineVersionId: string | undefined,
+): CatalogScoringVersion[] {
+  return compatibleRulesets(catalog, disciplineVersionId).filter((r) => isEntryFamily(r.family));
 }
 
 /**

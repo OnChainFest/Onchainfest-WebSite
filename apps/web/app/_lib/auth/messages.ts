@@ -169,6 +169,8 @@ export const ERROR_MESSAGES = {
     'The category can’t be completed yet: every finished match needs an official result. Nothing was changed.',
   operation_outcome_undecided:
     'The category can’t be completed: its outcome isn’t decided (for example, the final has no winner). Record a deciding result or cancel the category. Nothing was changed.',
+  operation_events_open:
+    'The tournament can’t be completed while a category is still open. Complete or cancel every category first. Nothing was changed.',
   operation_no_completed_category:
     'The tournament can’t be completed without at least one completed category. If nothing was played, cancel it instead. Nothing was changed.',
   operation_event_finished:

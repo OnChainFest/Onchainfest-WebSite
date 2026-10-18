@@ -654,6 +654,27 @@ describe('tournament builder', () => {
     expect(staff).toContain('Your role can’t change this tournament’s status.');
   });
 
+  it('completion has one path: a live tournament links to Operations, never completes from the hub', async () => {
+    const live = (permissions?: string[]) =>
+      managed({
+        status: 'ACTIVE',
+        nextStatuses: ['COMPLETED', 'CANCELLED'],
+        ...(permissions === undefined ? {} : { permissions }),
+      });
+    platform('OWNER', ALL, live());
+    const out = html(await Builder({ ...pc(), ...sp() }));
+    expect(out).not.toContain('value="complete"');
+    expect(out).not.toContain('Mark completed');
+    expect(out).toMatch(
+      new RegExp(
+        `href="${TB}/${COMP}/operations" data-complete-in="operations">Complete tournament in Operations<`,
+      ),
+    );
+    expect(out).toContain('Cancel tournament');
+    platform('OWNER', ALL, live(['COMP_VIEW_PRIVATE']));
+    expect(html(await Builder({ ...pc(), ...sp() }))).not.toContain('data-complete-in');
+  });
+
   it('an empty tournament offers its first category slot only while events can be added', async () => {
     platform('OWNER', ALL, managed({ events: [] }));
     expect(html(await Builder({ ...pc(), ...sp() }))).toContain('Add your first category');
@@ -746,6 +767,15 @@ describe('tournament lifecycle', () => {
     );
   });
 
+  it('the hub action never completes a tournament: completion is guarded in Operations only', async () => {
+    platform('OWNER', ALL);
+    const f = { slug: 'club-uno', competitionId: COMP, command: 'complete' };
+    expect(await outcome(() => actions.tournamentTransitionAction(form(f)))).toBe(
+      `${TB}/${COMP}?error=tournament_transition`,
+    );
+    expect(writes()).toEqual([]);
+  });
+
   it('cancellation requires a reason and sends it', async () => {
     platform('OWNER', ALL);
     routes[`POST /v1/competitions/${COMP}/cancel`] = () =>
@@ -795,6 +825,115 @@ describe('catalog filtering', () => {
       builder.compatibleFormats(CATALOG as never, DV_SINGLES).map((f) => f.formatVersionId),
     ).toEqual([FV_SE]);
     expect(builder.compatibleFormats(CATALOG as never, DV_RUN)).toEqual([]);
+  });
+
+  it('offers only what V1 can score and complete: head-to-head formats of head-to-head sports', async () => {
+    const DV_GOLF = '47444444-4444-4444-8444-444444444444';
+    const DV_BOWL = '48444444-4444-4444-8444-444444444444';
+    const DV_SWIM = '49444444-4444-4444-8444-444444444444';
+    const FV_SERIES = '58555555-5555-4555-8555-555555555555';
+    const FV_FIELD = '59555555-5555-4555-8555-555555555555';
+    const caps = (rulesetFamilies: string[]) => ({
+      contestTypes: [],
+      participantKinds: ['INDIVIDUAL'],
+      rulesetFamilies,
+      partitionKinds: [],
+      startMethods: [],
+      multiRound: true,
+      resourceTypes: [],
+      entryAttributes: [],
+    });
+    const discipline = (id: string, code: string, families: string[], formats: string[]) => ({
+      disciplineVersionId: id,
+      sport: { code, name: code },
+      discipline: { code: `${code}.x`, name: code },
+      version: 2,
+      specHash: id,
+      participantKinds: ['INDIVIDUAL'],
+      lineupSize: { min: 1, max: 1 },
+      allowedContestTypes: ['MATCH', 'SERIES', 'HEAT'],
+      compatibleFormatVersionIds: formats,
+      capabilities: caps(families),
+    });
+    const format = (id: string, code: string, contestType: string) => ({
+      formatVersionId: id,
+      format: { code, name: code },
+      version: 2,
+      engine: `${code}/2`,
+      contestType,
+      configurationSchema: { type: 'object', properties: {}, additionalProperties: false },
+    });
+    const catalog = {
+      disciplineVersions: [
+        ...CATALOG.disciplineVersions,
+        // Golf: match play is head-to-head; stroke play (a SERIES format) has no score sheet.
+        discipline(
+          DV_GOLF,
+          'golf',
+          ['STROKES', 'STABLEFORD', 'MATCH_PLAY_HOLES'],
+          [FV_SE, FV_SERIES],
+        ),
+        // Bowling: a MATCH format exists, but pinfall can't be entered here.
+        discipline(DV_BOWL, 'bowling', ['FRAMES_PINFALL'], [FV_SE, FV_SERIES]),
+        // Swimming: a field format with an engine, field-only families.
+        discipline(DV_SWIM, 'swimming', ['ELAPSED_TIME'], [FV_FIELD]),
+      ],
+      formatVersions: [
+        ...CATALOG.formatVersions,
+        format(FV_SERIES, 'stroke-series', 'SERIES'),
+        format(FV_FIELD, 'heats', 'HEAT'),
+      ],
+    } as never;
+    expect(builder.catalogSports(catalog).map((s) => s.code)).toEqual(['golf', 'padel', 'tennis']);
+    expect(builder.disciplinesFor(catalog, 'bowling')).toEqual([]);
+    expect(builder.disciplinesFor(catalog, 'swimming')).toEqual([]);
+    expect(builder.compatibleFormats(catalog, DV_GOLF).map((f) => f.formatVersionId)).toEqual([
+      FV_SE,
+    ]);
+    expect(builder.compatibleFormats(catalog, DV_PADEL).map((f) => f.formatVersionId)).toEqual([
+      FV_SE,
+      FV_RR,
+    ]);
+    const golf = {
+      disciplineVersionId: DV_GOLF,
+      formatVersionId: FV_SE,
+      entrantKind: 'INDIVIDUAL',
+    };
+    expect(builder.validCombination(catalog, golf)).toBe(true);
+    expect(builder.validCombination(catalog, { ...golf, formatVersionId: FV_SERIES })).toBe(false);
+    expect(builder.validCombination(catalog, { ...golf, disciplineVersionId: DV_BOWL })).toBe(
+      false,
+    );
+    expect(
+      builder.validCombination(catalog, {
+        ...golf,
+        disciplineVersionId: DV_SWIM,
+        formatVersionId: FV_FIELD,
+      }),
+    ).toBe(false);
+
+    // The scoring choice offers only rulesets whose results can be entered here.
+    const { entryRulesets } = await import('../_lib/scoring');
+    const ruleset = (versionId: string, family: string) => ({
+      versionId,
+      code: family.toLowerCase(),
+      name: family,
+      version: 1,
+      family,
+      specHash: versionId,
+      basis: { kind: 'COMMON_PRACTICE', note: 'test' },
+    });
+    const pinCatalog = {
+      disciplineVersions: [
+        {
+          ...discipline(DV_GOLF, 'golf', ['STROKES', 'MATCH_PLAY_HOLES'], [FV_SE]),
+          compatibleRulesetVersionIds: ['r-strokes', 'r-match'],
+        },
+      ],
+      formatVersions: [],
+      rulesetVersions: [ruleset('r-strokes', 'STROKES'), ruleset('r-match', 'MATCH_PLAY_HOLES')],
+    } as never;
+    expect(entryRulesets(pinCatalog, DV_GOLF).map((r) => r.versionId)).toEqual(['r-match']);
   });
 
   it('rejects incompatible formats and entrant kinds', () => {
