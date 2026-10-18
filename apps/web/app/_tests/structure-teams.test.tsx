@@ -825,7 +825,8 @@ describe('scheduling profile choice', () => {
             code: 'swim',
             name: 'Swim timing',
             version: 1,
-            family: 'TIMED',
+            // A family with a score sheet: the scoring choice offers no other (ONCF-V1 hardening).
+            family: 'TIMED_OR_TARGET',
             specHash: 'h',
             basis,
           },

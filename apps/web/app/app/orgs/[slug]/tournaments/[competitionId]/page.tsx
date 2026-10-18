@@ -113,6 +113,8 @@ export default async function TournamentBuilderPage({
   const transitions = offeredTransitions(c.nextStatuses, COMPETITION_COMMANDS, perms);
   const forward = transitions.filter((x) => x.status !== 'CANCELLED');
   const cancel = transitions.find((x) => x.status === 'CANCELLED');
+  // Completion freezes results: it is offered only in Operations, behind its blockers and confirmation.
+  const completeIn = c.nextStatuses.includes('COMPLETED') && canEdit ? `${base}/operations` : null;
   const review = reviewChecklist(t.data);
   const ordered = [
     ...events.filter((e) => e.status !== 'CANCELLED'),
@@ -243,8 +245,19 @@ export default async function TournamentBuilderPage({
               status={c.status}
               labels={COMPETITION_STATUS_LABEL}
             />
-            {forward.length > 0 || cancel !== undefined ? (
+            {forward.length > 0 || cancel !== undefined || completeIn !== null ? (
               <div className="tb-actions">
+                {completeIn !== null ? (
+                  <a
+                    className={
+                      forward.length === 0 ? 'btn btn-cyan btn-full' : 'btn btn-ghost btn-full'
+                    }
+                    href={completeIn}
+                    data-complete-in="operations"
+                  >
+                    Complete tournament in Operations
+                  </a>
+                ) : null}
                 {forward.map((x, i) => (
                   <form key={x.command} action={tournamentTransitionAction}>
                     <input type="hidden" name="slug" value={slug} />

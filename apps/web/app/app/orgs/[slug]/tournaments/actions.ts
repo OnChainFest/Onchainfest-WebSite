@@ -29,10 +29,10 @@ import { context, errorCode, field, optional, to, UUID_RE } from '../action-supp
  * COMP_OPEN_REGISTRATION…), edit window and lifecycle transition; nothing is decided here.
  */
 
+/** Completion is not among them: it has one path, the guarded one in Operations. */
 const COMPETITION_NOTICE = {
   publish: 'published',
   activate: 'tournament_started',
-  complete: 'tournament_completed',
   cancel: 'tournament_cancelled',
 } as const satisfies Record<string, AuthNoticeCode>;
 

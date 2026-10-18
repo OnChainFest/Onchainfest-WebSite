@@ -598,6 +598,105 @@ describe('L6 category completion settles the outcome (ADR-0078 §2.1)', () => {
   }, 600_000);
 });
 
+// ───────────────────────────── V1 hardening ─────────────────────────────
+
+describe('V1 hardening: a CANCELLED or VOID match contributes nothing (ADR-0066)', () => {
+  let comp: Comp;
+  beforeAll(async () => {
+    comp = await competition();
+  }, 240_000);
+
+  /**
+   * A 3-player round robin played as a cycle: A beats B, B beats C, C beats A. Counted in full it
+   * is a three-way tie; without C–A it is A (beat B head-to-head) 1st, B 2nd, C 3rd.
+   */
+  async function cycle() {
+    const cat = await category(comp, 'rr', 3);
+    expect(cat.contests).toHaveLength(3);
+    const [a, b] = cat.contests[0]?.places as [string, string];
+    const c = cat.contests.flatMap((x) => x.places).find((p) => p !== a && p !== b) as string;
+    const between = (x: string, y: string) =>
+      cat.contests.find((k) => k.places.includes(x) && k.places.includes(y)) as Cat['contests'][0];
+    const won = (k: Cat['contests'][0], winner: string) => k.places[0] === winner;
+    return { cat, a, b, c, ab: between(a, b), bc: between(b, c), ca: between(c, a), won };
+  }
+
+  const inputIds = async (eventId: string) =>
+    (await outcomes.derive(eventId)).outcome.document.inputs.map((i) => i.contestId).sort();
+
+  async function expectExcluded(r: Awaited<ReturnType<typeof cycle>>) {
+    const { cat, a, b, c, ab, bc, ca } = r;
+    // Only the two counted matches are inputs; C (whose only counted match is a loss) stays listed.
+    expect(await inputIds(cat.eventId)).toEqual([ab.id, bc.id].sort());
+    const before = await outcomes.derive(cat.eventId);
+    const stageKey = before.outcome.document.finalStageKey as string;
+    const table = await scoring.classificationAt({
+      eventId: cat.eventId,
+      stageKey,
+      floor: 'OFFICIAL',
+    });
+    expect(table.pendingContests).toEqual([]);
+    expect(table.document.inputs.map((i) => i.contestId).sort()).toEqual([ab.id, bc.id].sort());
+    expect(table.document.entries.map((e) => e.participantId).sort()).toEqual([a, b, c].sort());
+
+    await complete(comp, cat);
+    expect(await eventStatus(cat.eventId)).toBe('COMPLETED');
+    const d = await outcomes.derive(cat.eventId);
+    expect(d.outcome.document).toMatchObject({ kind: 'STANDINGS', status: 'DECIDED' });
+    expect(d.outcome.document.placements.map((p) => [p.participantId, p.position, p.tied])).toEqual(
+      [
+        [a, 1, false],
+        [b, 2, false],
+        [c, 3, false],
+      ],
+    );
+
+    const pub = await outcomes.publicEvent(cat.eventId, new Map());
+    expect(pub.podium).toMatchObject({ status: 'AVAILABLE' });
+    expect(
+      pub.podium.status === 'AVAILABLE' ? pub.podium.placements.map((p) => p.participantId) : [],
+    ).toEqual([a, b, c]);
+    const shown = pub.matches.find((m) => m.contestId === ca.id);
+    expect(shown).toMatchObject({ official: false });
+    expect(shown?.entrants.every((e) => e.outcome === null && e.score.length === 0)).toBe(true);
+    expect(pub.matches.find((m) => m.contestId === ab.id)).toMatchObject({ official: true });
+  }
+
+  it('B1. a match voided after its result became OFFICIAL leaves standings, podium and public outcome', async () => {
+    const r = await cycle();
+    const { cat, a, b, c, ab, bc, ca, won } = r;
+    await played(comp, [ab.id, bc.id, ca.id]);
+    await result(comp, ab.id, 'OFFICIAL', won(ab, a));
+    await result(comp, bc.id, 'OFFICIAL', won(bc, b));
+    await result(comp, ca.id, 'OFFICIAL', won(ca, c));
+    // Counted while it stands: every match is an input.
+    expect(await inputIds(cat.eventId)).toEqual([ab.id, bc.id, ca.id].sort());
+    await structure.voidContest({
+      actorAccountId: comp.actor,
+      contestId: ca.id,
+      reason: 'wrong player',
+    });
+    expect(await contestStatus(ca.id)).toBe('VOID');
+    expect((await currentVersion(ca.id))?.status).toBe('OFFICIAL');
+    await expectExcluded(r);
+  }, 600_000);
+
+  it('B1. a match cancelled with an OFFICIAL result on it leaves standings, podium and public outcome', async () => {
+    const r = await cycle();
+    const { cat, a, b, c, ab, bc, ca, won } = r;
+    // The ledger has no contest-lifecycle gate: a result can be declared before the match is played.
+    await result(comp, ca.id, 'OFFICIAL', won(ca, c));
+    await played(comp, [ab.id, bc.id]);
+    await result(comp, ab.id, 'OFFICIAL', won(ab, a));
+    await result(comp, bc.id, 'OFFICIAL', won(bc, b));
+    expect(await inputIds(cat.eventId)).toEqual([ab.id, bc.id, ca.id].sort());
+    await structure.cancelContest({ actorAccountId: comp.actor, contestId: ca.id, reason: 'rain' });
+    expect(await contestStatus(ca.id)).toBe('CANCELLED');
+    expect((await currentVersion(ca.id))?.status).toBe('OFFICIAL');
+    await expectExcluded(r);
+  }, 600_000);
+});
+
 // ───────────────────────────── freeze ─────────────────────────────
 
 describe('L6 results freeze at COMPLETED and CANCELLED (ADR-0078 §2.2–§2.3)', () => {

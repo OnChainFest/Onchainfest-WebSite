@@ -171,7 +171,7 @@ export const OPERATIONS = {
     permission: 'COMP_CANCEL',
     label: 'Void match',
     consequence:
-      'Annuls the match as played: it can’t be finished, restarted or played again. Voiding decides no result. This can’t be undone.',
+      'Annuls the match as played: it can’t be finished, restarted or played again. Voiding decides no result: a result it already has stops counting. This can’t be undone.',
     reason: true,
     final: true,
     tone: 'danger',

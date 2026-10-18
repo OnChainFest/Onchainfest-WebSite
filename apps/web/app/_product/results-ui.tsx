@@ -205,6 +205,13 @@ function RowActions({ m, ctx }: { m: ResultMatch; ctx: RowContext }) {
         .
       </p>
     );
+  // A voided match decides nothing: its versions stay in the record but never count.
+  if (m.status === 'VOID')
+    return (
+      <p className="small rs-note" data-void="true">
+        Match voided: its result doesn’t count in the standings or the outcome.
+      </p>
+    );
   const cur = currentVersion(m);
   const pending = pendingVersions(m);
   const ready = m.sideIds.length === 2 && m.sideIds.every((x) => x !== null);

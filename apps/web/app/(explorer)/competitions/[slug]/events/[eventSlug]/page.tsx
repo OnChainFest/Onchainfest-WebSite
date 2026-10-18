@@ -122,39 +122,42 @@ export default async function EventPage({ params }: Params) {
             No contests yet (the structure is generated after the field is locked).
           </p>
         ) : (
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
-            <thead>
-              <tr style={{ textAlign: 'left' }}>
-                <th>#</th>
-                <th>Round</th>
-                <th>When</th>
-                <th>Where</th>
-                <th>Contestants</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contests.map((c) => (
-                <tr key={c.contestId} style={{ borderTop: '1px solid #e5e7eb' }}>
-                  <td>{c.sequence}</td>
-                  <td>{c.round.label}</td>
-                  <td>{when(c.scheduledStart, tz)}</td>
-                  <td>{[c.locationLabel, c.courtLabel].filter(Boolean).join(' · ') || '—'}</td>
-                  <td>
-                    {c.slots.length === 0 && (c.entryCount ?? 0) > 0
-                      ? `${c.entryCount} entrants${c.partitionKey ? ` · ${partitionLabel(c.partitionKey) ?? ''}` : ''}`
-                      : c.slots.map((s, i) => (
-                          <span key={s.slot}>
-                            {i > 0 && ' vs '}
-                            <SlotView slot={s} />
-                          </span>
-                        ))}
-                  </td>
-                  <td>{c.status.toLowerCase().replace(/_/g, ' ')}</td>
+          // A narrow screen scrolls the schedule sideways instead of the page.
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left' }}>
+                  <th>#</th>
+                  <th>Round</th>
+                  <th>When</th>
+                  <th>Where</th>
+                  <th>Contestants</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {contests.map((c) => (
+                  <tr key={c.contestId} style={{ borderTop: '1px solid #e5e7eb' }}>
+                    <td>{c.sequence}</td>
+                    <td>{c.round.label}</td>
+                    <td>{when(c.scheduledStart, tz)}</td>
+                    <td>{[c.locationLabel, c.courtLabel].filter(Boolean).join(' · ') || '—'}</td>
+                    <td>
+                      {c.slots.length === 0 && (c.entryCount ?? 0) > 0
+                        ? `${c.entryCount} entrants${c.partitionKey ? ` · ${partitionLabel(c.partitionKey) ?? ''}` : ''}`
+                        : c.slots.map((s, i) => (
+                            <span key={s.slot}>
+                              {i > 0 && ' vs '}
+                              <SlotView slot={s} />
+                            </span>
+                          ))}
+                    </td>
+                    <td>{c.status.toLowerCase().replace(/_/g, ' ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -308,7 +311,7 @@ function OutcomeSection({
             </p>
           ))}
           {outcome.standings.map((t) => (
-            <div key={t.groupKey ?? 'all'} style={{ marginTop: '0.75rem' }}>
+            <div key={t.groupKey ?? 'all'} style={{ marginTop: '0.75rem', overflowX: 'auto' }}>
               <h3 style={{ fontSize: '0.95rem' }}>
                 {t.groupKey !== null ? `Group ${groupName(t.groupKey)} · ` : ''}
                 {t.complete ? 'Standings' : 'Standings so far'}

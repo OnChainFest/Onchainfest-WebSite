@@ -22,8 +22,8 @@ import { tournamentFor } from '../../../../../../../../_lib/tournament-context';
 import { catalogDiscipline, tournamentCatalog } from '../../../../../../../../_lib/tournaments';
 import {
   basisLabel,
-  compatibleRulesets,
   compatibleSchedulingProfiles,
+  entryRulesets,
   eventScoring,
   stageClassification,
   templatesFor,
@@ -332,7 +332,7 @@ export default async function StructurePage({
             pinned={pinned}
             rulesets={
               catalog.kind === 'ok'
-                ? compatibleRulesets(catalog.data, discipline?.disciplineVersionId)
+                ? entryRulesets(catalog.data, discipline?.disciplineVersionId)
                 : []
             }
             templates={(family) =>
@@ -619,7 +619,7 @@ function ScoringPanel({
       ? D | null
       : never
     : never;
-  rulesets: ReturnType<typeof compatibleRulesets>;
+  rulesets: ReturnType<typeof entryRulesets>;
   templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
   policies: ReturnType<typeof templatesFor>;
   profiles: ReturnType<typeof compatibleSchedulingProfiles>;

@@ -232,8 +232,9 @@ export function resultAttention(
 ): ResultAttention[] {
   const items: ResultAttention[] = [];
   const name = (m: ResultMatch) => `${m.event.settings.name} · ${m.round} · ${m.title}`;
+  // A voided match's entered scores never count, so they need no decision.
   for (const m of board.entered)
-    if (pendingVersions(m).length > 1)
+    if (m.status !== 'VOID' && pendingVersions(m).length > 1)
       items.push({
         key: `two-${m.contestId}`,
         tone: 'bad',
