@@ -4,9 +4,10 @@
 [`legal/`](../../legal/README.md). It is a separate static site, deployed as a **separate Vercel
 project** by [`.github/workflows/legal-hub.yml`](../../.github/workflows/legal-hub.yml).
 
-Status at ONCHAINFEST-LEGAL-01: implemented and tested locally. **Not deployed.** No Vercel
-project, secret, variable or DNS record exists yet. Both corporate documents are drafts, so a
-production build is refused until they are approved (§5).
+Status after ONCHAINFEST-LEGAL-03: merged code only. **Not deployed.** No Vercel project, secret,
+variable, environment or DNS record exists yet. Both corporate documents are drafts, so a
+production build is refused until they are approved (§5). LEGAL-03 split the deployment
+controls into independent preview and production switches (§2).
 
 ## 1. Isolation from www.onchainfest.xyz
 
@@ -26,9 +27,13 @@ Such a PR still builds a website preview, and that preview is byte-identical to 
 ## 2. Safeguards in `legal-hub.yml`
 
 1. **Path filters**: `legal/**` and the workflow file only.
-2. **Dormant by default**: the preview and production jobs run only when the repository
-   variable `LEGAL_HUB_DEPLOY_ENABLED` is `true`. Until then, only the `check` job runs (tests
-   and build).
+2. **Independent switches, off by default**: two repository variables. When either one is
+   undefined or anything other than the string `true`, its job does not run.
+   - `LEGAL_HUB_PREVIEW_ENABLED` runs only the preview job, for same-repository PRs. It never
+     authorizes production. The preview job has no `--prod` step.
+   - `LEGAL_HUB_PRODUCTION_ENABLED` runs only the production job, on pushes to `main`.
+   - `LEGAL_HUB_DEPLOY_ENABLED` (LEGAL-01) is no longer read.
+   - Until a variable is set, only the `check` job runs (tests and build).
 3. **Own project secret**: `VERCEL_LEGAL_PROJECT_ID`. The job fails if it is empty or equal to
    the website's `VERCEL_PROJECT_ID`.
 4. **Link check**: after `vercel pull`, the job fails unless `.vercel/project.json` is the legal
@@ -39,13 +44,44 @@ Such a PR still builds a website preview, and that preview is byte-identical to 
    carry `<meta name="oncf-site" content="legal-hub">`; `contact.html` is refused. This check was
    exercised locally against a good artifact, a leaked `contact.html` and the website's
    `index.html`.
-7. **Production gate**: `node scripts/build.mjs --require-publishable` fails while any document
-   is a draft or any review marker is open. A Vercel production build (`VERCEL_ENV=production`)
-   applies the same gate.
+7. **Production gates**: production needs all of the following, in this order:
+   - (a) `LEGAL_HUB_PRODUCTION_ENABLED == 'true'`;
+   - (b) approval in the GitHub Environment `legal-hub-production`. The first step fails the job
+     unless that environment has **required reviewers**; an environment that GitHub auto-creates
+     on first use has none;
+   - (c) `node scripts/build.mjs --require-publishable`, which fails while any document is a
+     draft or any review marker is open;
+   - (d) the same gate again inside `vercel build --prod`, because the build step sets
+     `VERCEL_ENV=production` explicitly. LEGAL-03 found that, without the explicit variable,
+     `vercel build --prod` does not see `VERCEL_ENV` unless the pulled environment file
+     provides it.
 8. **Separate concurrency groups**: `legal-hub-preview-*` and `legal-hub-production`.
 9. **Fork PRs**: the job runs only when the head repository is this repository.
-10. **Least privilege**: the Vercel secrets are defined only on the deploy jobs. The `check`
-    job runs the PR's code without them.
+10. **Least privilege**: no secrets at workflow level or in the `check` job.
+    - In the deploy jobs, `VERCEL_TOKEN` is set only on the `vercel pull` and `vercel deploy`
+      steps.
+    - The build steps (`vercel build`, which runs `legal/scripts/build.mjs`) get no token.
+    - LEGAL-03 verified that with Vercel CLI 62.4.0, after a pull, `vercel build` needs no token
+      and no network: it was run with an empty home directory, no token and the network blocked.
+    - `legal/test/workflow.test.mjs` enforces these rules. Mutation checks confirmed that the
+      tests fail if any of them is reverted.
+
+### Limits of these safeguards (not solved by the workflow)
+
+- **Same-repository PR authors** run the PR's own version of this workflow, so they could edit
+  it to use the secrets. Fork PRs never receive secrets. The real boundary is who has write
+  access to the repository.
+- **The build and deploy steps of one job share a runner.** Code run by the build step (the
+  repository's build script) could tamper with the runner, for example through `$GITHUB_ENV` or
+  the globally installed CLI, before the deploy step receives the token. Step-level scoping
+  reduces accidental exposure but is not a security boundary. A stronger design would build in
+  a job without secrets and deploy the artifact from a separate job; that is not implemented.
+- **`VERCEL_TOKEN` is an account token at repository level.** `vercel-deploy.yml` already
+  exposes it to every same-repository PR. A dedicated token stored only as a
+  `legal-hub-production` **environment secret** would make the reviewer gate protect the
+  credential itself.
+- **`main` has no branch protection or rulesets**. Anyone with write access can push to `main`.
+  For production, the environment's required reviewers are the human gate.
 
 Local CLI caution: the main checkout has a root `.vercel/repo.json` that links the repository to
 `onchainfest-web-site`. Never run `vercel` from a checkout without `--project <legal project>`.
@@ -60,16 +96,27 @@ Local CLI caution: the main checkout has a root `.vercel/repo.json` that links t
 2. **GitHub** (`OnChainFest/Onchainfest-WebSite` → Settings → Secrets and variables → Actions):
    - Secret `VERCEL_LEGAL_PROJECT_ID`: the new project's ID (`prj_…`).
    - `VERCEL_TOKEN` is reused. Confirm that its scope covers the new project.
-   - Variable `LEGAL_HUB_DEPLOY_ENABLED=true`, only when previews should start.
-3. **First preview**: open a PR that touches `legal/**`. Check the preview URL (protected by
-   Vercel Authentication) and the response headers (CSP, `X-Robots-Tag`).
+   - Variable `LEGAL_HUB_PREVIEW_ENABLED=true`, only when previews should start.
+   - Leave `LEGAL_HUB_PRODUCTION_ENABLED` **undefined**.
+3. **First preview**: open a PR that touches `legal/**`. Check:
+   - the preview URL (protected by Vercel Authentication);
+   - the response headers (CSP, `X-Robots-Tag`);
+   - the draft banners.
+
 4. **Domain**: in the Vercel project, add `legal.onchainfest.xyz`. Vercel shows the exact DNS
    record to create.
 5. **DNS** (GoDaddy; the zone's nameservers are `ns61/ns62.domaincontrol.com`): add
    `CNAME legal → <value shown by Vercel>`. Today `www` uses `cname.vercel-dns.com`. Do not touch
    the apex records, `www` or MX.
-6. **Production**: only after §5 is complete. Merging the approved documents to `main` triggers
-   the production job.
+6. **Production**: only after §5 is complete, in this order:
+   - Create the environment `legal-hub-production` (Settings → Environments).
+   - Add required reviewers.
+   - Set its deployment branch policy to `main` only.
+   - Optionally, move a dedicated Vercel token into it as an environment secret.
+   - Check: `gh api repos/OnChainFest/Onchainfest-WebSite/environments/legal-hub-production --jq '[.protection_rules[].type]'`
+     must include `required_reviewers`.
+   - Then set `LEGAL_HUB_PRODUCTION_ENABLED=true`.
+   - A push to `main` that touches `legal/**` then waits for the reviewer's approval.
 7. **Plan**: Vercel's Hobby plan is for non-commercial use. The owner should confirm the plan
    that fits OnChainFest LLC's commercial use. This applies to the website too.
 
