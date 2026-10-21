@@ -1,0 +1,3 @@
+# Build output and the local Vercel link of the legal hub project (never the website's).
+dist/
+.vercel
