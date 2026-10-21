@@ -1,228 +1,76 @@
 name: legal-hub
 
-# ONCHAINFEST-LEGAL-01/03 · legal.onchainfest.xyz — the OnChainFest LLC legal hub (legal/).
+# ONCHAINFEST-LEGAL-01/03/04 · legal.onchainfest.xyz — legal hub BUILD (untrusted side).
 #
-# A SEPARATE Vercel project from the public website: this workflow never touches
-# `onchainfest-web-site`, its vercel.json, its .vercelignore or vercel-deploy.yml.
+# Runs the repository's code (tests, legal/scripts/build.mjs) with NO secrets and a read-only
+# token, then uploads one artifact, `legal-hub-site`: the static site plus a manifest. It never
+# deploys. Deployment is legal-hub-deploy.yml, a `workflow_run` workflow that always runs from
+# the default branch, verifies this artifact as untrusted data and deploys it.
 #
-#   pull_request (legal/**) -> check -> vercel pull/build/deploy --prebuilt (preview)
-#   push to main (legal/**) -> check -> publishable gate -> vercel deploy --prebuilt --prod
-#
-# Safeguards (see docs/operations/ONCF-LEGAL-01-LEGAL-HUB.md):
-#   - Two independent repository variables, both off when undefined:
-#       LEGAL_HUB_PREVIEW_ENABLED == 'true'     -> preview job only (same-repository PRs)
-#       LEGAL_HUB_PRODUCTION_ENABLED == 'true'  -> production job only (pushes to main)
-#     Neither variable affects the other job.
-#   - Production also runs in the GitHub Environment `legal-hub-production` and fails closed
-#     unless that environment has required reviewers. It refuses drafts and open review markers
-#     twice: build.mjs --require-publishable, then `vercel build --prod` with VERCEL_ENV=production.
-#   - Own secret (VERCEL_LEGAL_PROJECT_ID); the job fails if it is missing or equals the
-#     website's VERCEL_PROJECT_ID, or if the pulled project link is not that project.
-#   - VERCEL_TOKEN is given only to the `vercel pull` and `vercel deploy` steps. The check job
-#     and the build steps (which run the repository's build script) never receive it.
-#   - Everything runs inside legal/, so the website's root vercel.json is never read.
-#   - The artifact must contain only legal hub files, each page carrying the legal-hub marker.
+# The website (`onchainfest-web-site`, vercel.json, .vercelignore, vercel-deploy.yml) is untouched.
+# See docs/operations/ONCF-LEGAL-01-LEGAL-HUB.md.
 
 on:
   pull_request:
-    paths: ['legal/**', '.github/workflows/legal-hub.yml']
+    paths: ['legal/**', '.github/legal-hub/**', '.github/workflows/legal-hub*.yml']
   push:
     branches: [main]
-    paths: ['legal/**', '.github/workflows/legal-hub.yml']
+    paths: ['legal/**', '.github/legal-hub/**', '.github/workflows/legal-hub*.yml']
 
 permissions:
   contents: read
 
-env:
-  VERCEL_CLI_VERSION: '62.4.0'
-  VERCEL_SCOPE: victor-valverdes-projects
-  VERCEL_TELEMETRY_DISABLED: '1'
-
 jobs:
-  check:
-    name: legal hub checks
+  build:
+    name: legal hub build
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: legal
+    env:
+      # The commit the artifact is built from and labelled with: the PR head (not GitHub's
+      # merge commit), so it matches workflow_run.head_sha on the deploy side.
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - name: Tests (links, localization, accessibility basics, document relationships, approval model, isolation)
-        run: node --test test/*.test.mjs
+      - name: Hub and workflow tests
+        run: node --test legal/test/*.test.mjs
+      - name: Artifact verification tests (path traversal, symlinks, tampering, types, project ids)
+        run: python3 -I -m unittest discover -s .github/legal-hub -p 'test_*.py'
       - name: Build
-        run: node scripts/build.mjs
-
-  preview:
-    name: legal hub preview
-    needs: check
-    if: >-
-      github.event_name == 'pull_request' && vars.LEGAL_HUB_PREVIEW_ENABLED == 'true' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    concurrency:
-      group: legal-hub-preview-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    # Project IDs only (not credentials); VERCEL_TOKEN is set per step on pull and deploy. Not
-    # named VERCEL_PROJECT_ID on purpose (the CLI would also require VERCEL_ORG_ID); the project
-    # is passed explicitly with --project.
-    env:
-      VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
-      VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
-    defaults:
-      run:
-        working-directory: legal
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-      - name: Guard target project
-        run: |
-          set -euo pipefail
-          if [ -z "$VC_PROJECT" ]; then echo "::error::VERCEL_LEGAL_PROJECT_ID is not set"; exit 1; fi
-          if [ "$VC_PROJECT" = "$VC_WEBSITE_PROJECT" ]; then
-            echo "::error::VERCEL_LEGAL_PROJECT_ID is the website project; refusing to deploy"; exit 1
-          fi
-      - name: Install Vercel CLI
-        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
-      - name: Pull Vercel project settings (preview)
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node legal/scripts/build.mjs
+      # Production is enabled: a push to main must already be publishable (first legal gate;
+      # the deploy side checks the content again, independently).
+      - name: Publishable gate (pushes to main, production enabled)
+        if: github.event_name == 'push' && vars.LEGAL_HUB_PRODUCTION_ENABLED == 'true'
+        run: node legal/scripts/build.mjs --require-publishable
+      - name: Package artifact
         run: >-
-          vercel pull --yes --environment=preview
-          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
-      - name: Guard pulled project link
-        run: |
-          node -e '
-            const p = require("./.vercel/project.json");
-            if (p.projectId !== process.env.VC_PROJECT) throw new Error("pulled link is not the legal hub project");
-            const root = p.settings?.rootDirectory;
-            if (root && root !== ".") throw new Error(`Root Directory must be empty (got "${root}"): this job runs inside legal/`);
-          '
-      # No token: after `vercel pull`, `vercel build` reads .vercel/project.json and needs no
-      # credentials or network (verified with CLI 62.4.0).
-      - name: Build (preview, no token)
-        run: vercel build --yes
-      - name: Verify artifact contains only the legal hub
-        run: |
-          set -euo pipefail
-          out=.vercel/output
-          test -d "$out/static"
-          if [ -e "$out/functions" ]; then echo "::error::Unexpected serverless functions in build output"; exit 1; fi
-          unexpected=$(cd "$out/static" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' \
-            | grep -Ev '^((es/)?(terms|privacy)\.html|(es/)?products/[a-z0-9-]+\.html|index\.html|es\.html|404\.html|robots\.txt|assets/(legal\.css|logo\.png|favicon\.ico))$' || true)
-          if [ -n "$unexpected" ]; then echo "::error::Non-legal-hub files in build output:"; echo "$unexpected"; exit 1; fi
-          for f in index.html terms.html privacy.html es.html 404.html assets/legal.css; do test -f "$out/static/$f"; done
-          if [ -e "$out/static/contact.html" ]; then echo "::error::The public website leaked into the build"; exit 1; fi
-          missing=$(cd "$out/static" && grep -L '<meta name="oncf-site" content="legal-hub" />' $(find . -name '*.html') || true)
-          if [ -n "$missing" ]; then echo "::error::Pages without the legal-hub marker:"; echo "$missing"; exit 1; fi
-          find "$out/static" -type f | sed "s|^$out/static/||" | sort
-      - name: Deploy (preview)
-        timeout-minutes: 10
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          url=$(vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
-          echo "Preview deployment: $url"
-          echo "### Legal hub preview deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "$url" >> "$GITHUB_STEP_SUMMARY"
-
-  production:
-    name: legal hub production
-    needs: check
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      vars.LEGAL_HUB_PRODUCTION_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    # Required reviewers are configured in the repository settings, not here; the first step
-    # below fails the job if they are missing (an environment GitHub created on first use has none).
-    environment: legal-hub-production
-    permissions:
-      contents: read
-      actions: read
-    concurrency:
-      group: legal-hub-production
-      cancel-in-progress: false
-    # Project IDs only (not credentials); VERCEL_TOKEN is set per step on pull and deploy. Not
-    # named VERCEL_PROJECT_ID on purpose (the CLI would also require VERCEL_ORG_ID); the project
-    # is passed explicitly with --project.
-    env:
-      VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
-      VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
-    defaults:
-      run:
-        working-directory: legal
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-      - name: Guard environment protection (required reviewers)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          reviewers=$(gh api "repos/$GITHUB_REPOSITORY/environments/legal-hub-production" \
-            --jq '[.protection_rules[]?.type] | index("required_reviewers") != null')
-          if [ "$reviewers" != "true" ]; then
-            echo "::error::Environment legal-hub-production has no required reviewers; refusing production"; exit 1
-          fi
-      - name: Publishable gate (no drafts, no open review markers)
-        run: node scripts/build.mjs --require-publishable
-      - name: Guard target project
-        run: |
-          set -euo pipefail
-          if [ -z "$VC_PROJECT" ]; then echo "::error::VERCEL_LEGAL_PROJECT_ID is not set"; exit 1; fi
-          if [ "$VC_PROJECT" = "$VC_WEBSITE_PROJECT" ]; then
-            echo "::error::VERCEL_LEGAL_PROJECT_ID is the website project; refusing to deploy"; exit 1
-          fi
-      - name: Install Vercel CLI
-        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
-      - name: Pull Vercel project settings (production)
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          python3 -I .github/legal-hub/artifact.py package
+          --dist legal/dist --out "$RUNNER_TEMP/legal-hub-site"
+          --repository "$GITHUB_REPOSITORY" --sha "$HEAD_SHA"
+          --run-id "$GITHUB_RUN_ID" --event "$GITHUB_EVENT_NAME"
+      - name: Self-check (the deploy-side verification, preview mode)
         run: >-
-          vercel pull --yes --environment=production
-          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
-      - name: Guard pulled project link
-        run: |
-          node -e '
-            const p = require("./.vercel/project.json");
-            if (p.projectId !== process.env.VC_PROJECT) throw new Error("pulled link is not the legal hub project");
-            const root = p.settings?.rootDirectory;
-            if (root && root !== ".") throw new Error(`Root Directory must be empty (got "${root}"): this job runs inside legal/`);
-          '
-      # No token. VERCEL_ENV is set explicitly so build.mjs applies the publishable gate even if
-      # the pulled environment file does not carry system variables.
-      - name: Build (production, no token)
+          python3 -I .github/legal-hub/artifact.py selfcheck
+          --dir "$RUNNER_TEMP/legal-hub-site"
+          --repository "$GITHUB_REPOSITORY" --sha "$HEAD_SHA" --run-id "$GITHUB_RUN_ID"
+      - name: Upload artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-hub-site
+          path: ${{ runner.temp }}/legal-hub-site/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+      - name: Record artifact digest
         env:
-          VERCEL_ENV: production
-        run: vercel build --prod --yes
-      - name: Verify artifact contains only the legal hub
+          DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
         run: |
-          set -euo pipefail
-          out=.vercel/output
-          test -d "$out/static"
-          if [ -e "$out/functions" ]; then echo "::error::Unexpected serverless functions in build output"; exit 1; fi
-          unexpected=$(cd "$out/static" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' \
-            | grep -Ev '^((es/)?(terms|privacy)\.html|(es/)?products/[a-z0-9-]+\.html|index\.html|es\.html|404\.html|robots\.txt|assets/(legal\.css|logo\.png|favicon\.ico))$' || true)
-          if [ -n "$unexpected" ]; then echo "::error::Non-legal-hub files in build output:"; echo "$unexpected"; exit 1; fi
-          for f in index.html terms.html privacy.html es.html 404.html assets/legal.css; do test -f "$out/static/$f"; done
-          if [ -e "$out/static/contact.html" ]; then echo "::error::The public website leaked into the build"; exit 1; fi
-          missing=$(cd "$out/static" && grep -L '<meta name="oncf-site" content="legal-hub" />' $(find . -name '*.html') || true)
-          if [ -n "$missing" ]; then echo "::error::Pages without the legal-hub marker:"; echo "$missing"; exit 1; fi
-          find "$out/static" -type f | sed "s|^$out/static/||" | sort
-      - name: Deploy (production)
-        timeout-minutes: 10
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          url=$(vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
-          echo "Production deployment: $url"
-          echo "### Legal hub production deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Legal hub artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "id ${ARTIFACT_ID}, digest sha256:${DIGEST}, commit ${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"

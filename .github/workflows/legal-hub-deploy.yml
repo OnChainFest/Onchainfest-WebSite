@@ -1,0 +1,280 @@
+name: legal-hub-deploy
+
+# ONCHAINFEST-LEGAL-04 · legal.onchainfest.xyz — legal hub DEPLOY (trusted side).
+#
+# Trigger: `workflow_run` of legal-hub (the build). GitHub always runs this file from the default
+# branch, so a pull request cannot change these steps. The jobs never check out or execute the
+# pull request's code: they download the build's artifact and treat it as untrusted data.
+#
+#   1. Each job runs only when its own repository variable is the string 'true':
+#        LEGAL_HUB_PREVIEW_ENABLED     -> preview, for same-repository pull requests
+#        LEGAL_HUB_PRODUCTION_ENABLED  -> production, for pushes to main
+#   2. Credentials are environment secrets (legal-hub-preview / legal-hub-production), never
+#      repository secrets. Each job first fails closed if its environment is not restricted to
+#      main; production also requires required reviewers (human approval).
+#   3. The artifact must belong to the triggering run and commit, match GitHub's sha256 digest,
+#      and pass .github/legal-hub/artifact.py (from the trusted commit): path allowlist, no
+#      symlinks / traversal / executables / active content, size limits, manifest hashes;
+#      production additionally rejects drafts, review markers and noindex.
+#   4. The deploy workspace is the trusted legal/vercel.json (without a build command) plus the
+#      verified files; `vercel build` only copies them (no token), and the output is checked to be
+#      exactly those files before `vercel deploy --prebuilt` (token) runs.
+#   5. Production deploys only a commit that is on main.
+
+on:
+  workflow_run:
+    workflows: [legal-hub]
+    types: [completed]
+
+permissions: {}
+
+env:
+  VERCEL_CLI_VERSION: '62.4.0'
+  VERCEL_SCOPE: victor-valverdes-projects
+  VERCEL_TELEMETRY_DISABLED: '1'
+  ARTIFACT_NAME: legal-hub-site
+  RUN_ID: ${{ github.event.workflow_run.id }}
+  HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  preview:
+    name: legal hub preview deploy
+    if: >-
+      vars.LEGAL_HUB_PREVIEW_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.path == '.github/workflows/legal-hub.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: legal-hub-preview
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: legal-hub-preview-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    env:
+      MODE: preview
+      ENVIRONMENT: legal-hub-preview
+    steps:
+      - name: Guard environment protection (main only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          env_api="repos/$GITHUB_REPOSITORY/environments/$ENVIRONMENT"
+          custom=$(gh api "$env_api" --jq '.deployment_branch_policy.custom_branch_policies // false')
+          branches=$(gh api "$env_api/deployment-branch-policies" --jq '[.branch_policies[] | "\(.type):\(.name)"] | sort | join(",")')
+          if [ "$custom" != "true" ] || [ "$branches" != "branch:main" ]; then
+            echo "::error::$ENVIRONMENT must allow deployments from main only (got custom=$custom, branches=$branches)"; exit 1
+          fi
+      # Trusted code and config for previews: the current default branch, never the PR.
+      - name: Check out trusted tooling (default branch)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/legal-hub
+            legal/vercel.json
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Fetch and verify the build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          meta=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"$ARTIFACT_NAME\")]")
+          if [ "$(jq length <<<"$meta")" != 1 ]; then echo "::error::expected exactly one $ARTIFACT_NAME artifact"; exit 1; fi
+          id=$(jq -r '.[0].id' <<<"$meta")
+          digest=$(jq -r '.[0].digest // ""' <<<"$meta")
+          [ "$(jq -r '.[0].expired' <<<"$meta")" = false ] || { echo "::error::artifact expired"; exit 1; }
+          [ "$(jq -r '.[0].workflow_run.id' <<<"$meta")" = "$RUN_ID" ] || { echo "::error::artifact is from another run"; exit 1; }
+          [ "$(jq -r '.[0].workflow_run.head_sha' <<<"$meta")" = "$HEAD_SHA" ] || { echo "::error::artifact is from another commit"; exit 1; }
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304 \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o "$RUNNER_TEMP/artifact.zip" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip"
+          python3 -I .github/legal-hub/artifact.py verify \
+            --zip "$RUNNER_TEMP/artifact.zip" --digest "$digest" \
+            --repository "$GITHUB_REPOSITORY" --sha "$HEAD_SHA" --run-id "$RUN_ID" \
+            --mode "$MODE" --out "$RUNNER_TEMP/site/public"
+      - name: Prepare deploy workspace (trusted vercel.json, verified files)
+        run: python3 -I .github/legal-hub/artifact.py workspace --vercel-json legal/vercel.json --out "$RUNNER_TEMP/site"
+      - name: Install Vercel CLI
+        run: npm install --global --ignore-scripts "vercel@${VERCEL_CLI_VERSION}"
+      - name: Guard target project (before any credential is used)
+        env:
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-ids
+          --project-id "$VC_PROJECT" --website-project-id "$VC_WEBSITE_PROJECT"
+      - name: Pull Vercel project settings (preview)
+        working-directory: ${{ runner.temp }}/site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+        run: >-
+          vercel pull --yes --environment=preview
+          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Guard project link (legal hub only, never the website)
+        env:
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-link
+          --project-json "$RUNNER_TEMP/site/.vercel/project.json"
+          --project-id "$VC_PROJECT" --website-project-id "$VC_WEBSITE_PROJECT"
+      - name: Build prebuilt output (no token; copies the verified files)
+        working-directory: ${{ runner.temp }}/site
+        run: vercel build --yes
+      - name: Verify prebuilt output
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-output
+          --output "$RUNNER_TEMP/site/.vercel/output" --public "$RUNNER_TEMP/site/public" --target preview
+      - name: Deploy (preview)
+        working-directory: ${{ runner.temp }}/site
+        timeout-minutes: 10
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          echo "Preview deployment: $url"
+          echo "### Legal hub preview deployment ($HEAD_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    name: legal hub production deploy
+    if: >-
+      vars.LEGAL_HUB_PRODUCTION_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/legal-hub.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Required reviewers are configured in the repository settings; the first step fails the job
+    # if they are missing (an environment GitHub auto-creates on first use has none).
+    environment: legal-hub-production
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: legal-hub-production
+      cancel-in-progress: false
+    env:
+      MODE: production
+      ENVIRONMENT: legal-hub-production
+    steps:
+      - name: Guard environment protection (required reviewers, main only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          env_api="repos/$GITHUB_REPOSITORY/environments/$ENVIRONMENT"
+          reviewers=$(gh api "$env_api" --jq '[.protection_rules[]?.type] | index("required_reviewers") != null')
+          custom=$(gh api "$env_api" --jq '.deployment_branch_policy.custom_branch_policies // false')
+          branches=$(gh api "$env_api/deployment-branch-policies" --jq '[.branch_policies[] | "\(.type):\(.name)"] | sort | join(",")')
+          if [ "$reviewers" != "true" ]; then
+            echo "::error::$ENVIRONMENT has no required reviewers; refusing production"; exit 1
+          fi
+          if [ "$custom" != "true" ] || [ "$branches" != "branch:main" ]; then
+            echo "::error::$ENVIRONMENT must allow deployments from main only (got custom=$custom, branches=$branches)"; exit 1
+          fi
+      - name: Guard commit is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...$GITHUB_SHA" --jq .status)
+          case "$status" in
+            identical|ahead) echo "$HEAD_SHA is on main ($status)" ;;
+            *) echo "::error::$HEAD_SHA is not on main ($status); refusing production"; exit 1 ;;
+          esac
+      - name: Check out trusted tooling (the approved main commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/legal-hub
+            legal/vercel.json
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Fetch and verify the build artifact (production rules)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          meta=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"$ARTIFACT_NAME\")]")
+          if [ "$(jq length <<<"$meta")" != 1 ]; then echo "::error::expected exactly one $ARTIFACT_NAME artifact"; exit 1; fi
+          id=$(jq -r '.[0].id' <<<"$meta")
+          digest=$(jq -r '.[0].digest // ""' <<<"$meta")
+          [ "$(jq -r '.[0].expired' <<<"$meta")" = false ] || { echo "::error::artifact expired"; exit 1; }
+          [ "$(jq -r '.[0].workflow_run.id' <<<"$meta")" = "$RUN_ID" ] || { echo "::error::artifact is from another run"; exit 1; }
+          [ "$(jq -r '.[0].workflow_run.head_sha' <<<"$meta")" = "$HEAD_SHA" ] || { echo "::error::artifact is from another commit"; exit 1; }
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304 \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o "$RUNNER_TEMP/artifact.zip" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip"
+          python3 -I .github/legal-hub/artifact.py verify \
+            --zip "$RUNNER_TEMP/artifact.zip" --digest "$digest" \
+            --repository "$GITHUB_REPOSITORY" --sha "$HEAD_SHA" --run-id "$RUN_ID" \
+            --mode "$MODE" --out "$RUNNER_TEMP/site/public"
+      - name: Prepare deploy workspace (trusted vercel.json, verified files)
+        run: python3 -I .github/legal-hub/artifact.py workspace --vercel-json legal/vercel.json --out "$RUNNER_TEMP/site"
+      - name: Install Vercel CLI
+        run: npm install --global --ignore-scripts "vercel@${VERCEL_CLI_VERSION}"
+      - name: Guard target project (before any credential is used)
+        env:
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-ids
+          --project-id "$VC_PROJECT" --website-project-id "$VC_WEBSITE_PROJECT"
+      - name: Pull Vercel project settings (production)
+        working-directory: ${{ runner.temp }}/site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+        run: >-
+          vercel pull --yes --environment=production
+          --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT"
+      - name: Guard project link (legal hub only, never the website)
+        env:
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          VC_WEBSITE_PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-link
+          --project-json "$RUNNER_TEMP/site/.vercel/project.json"
+          --project-id "$VC_PROJECT" --website-project-id "$VC_WEBSITE_PROJECT"
+      - name: Build prebuilt output (no token; copies the verified files)
+        working-directory: ${{ runner.temp }}/site
+        run: vercel build --prod --yes
+      - name: Verify prebuilt output
+        run: >-
+          python3 -I .github/legal-hub/artifact.py check-output
+          --output "$RUNNER_TEMP/site/.vercel/output" --public "$RUNNER_TEMP/site/public" --target production
+      - name: Deploy (production)
+        working-directory: ${{ runner.temp }}/site
+        timeout-minutes: 10
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" --project "$VC_PROJECT")
+          echo "Production deployment: $url"
+          echo "### Legal hub production deployment ($HEAD_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
