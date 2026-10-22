@@ -183,7 +183,7 @@ export function homePage({ locale, products, indexable }) {
     factRow(
       ui.companyRegistration,
       COMPANY.registration
-        ? escapeHtml(COMPANY.registration)
+        ? escapeHtml(COMPANY.registration[locale])
         : reviewCallout('REGISTRATION', locale),
     ),
     factRow(

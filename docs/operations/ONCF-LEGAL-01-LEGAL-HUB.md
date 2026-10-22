@@ -328,7 +328,7 @@ Each item renders as a "Pending legal review" callout until it is resolved in `l
 
 | Key               | Where                     | Needed from owner / counsel                                         |
 | ----------------- | ------------------------- | ------------------------------------------------------------------- |
-| `REGISTRATION`    | Overview, Terms, Privacy  | State/country of formation, registration number                     |
+| `REGISTRATION`    | Overview, Terms, Privacy  | Resolved in LEGAL-08B (Wyoming, Filing ID); see the last section    |
 | `ADDRESS`         | Overview, Terms, Privacy  | Registered address, address for legal notices                       |
 | `LEGAL_CONTACT`   | Terms, Privacy            | Official legal/privacy contact (today: `vicvalch@onchainfest.xyz`)  |
 | `PRECEDENCE`      | Terms, Privacy            | Relationship and precedence between corporate and product documents |
@@ -424,3 +424,24 @@ OnChainFest product bills through the **same** account:
 - For OnChainFest LLC, decide a role address for legal and privacy requests (`LEGAL_CONTACT`)
   instead of a personal mailbox. Use it in the hub and in the account-level public details if
   they move to OnChainFest LLC.
+
+## LEGAL-08B — Owner-verified formation facts (draft only; 2026-10-21)
+
+From the original formation documents provided by the owner (not committed to this repository):
+
+- OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025, Wyoming Filing ID
+  `2025-001725151`.
+- The original Articles of Organization named Registered Agents Inc as registered agent, at
+  30 N Gould St, Ste R, Sheridan, WY 82801. The drafts show this only as historical information.
+
+Still to verify independently before legal approval:
+
+- that the Wyoming registration is active;
+- the current registered agent and a legally acceptable address for notices (`ADDRESS` stays
+  open);
+- the official legal and privacy contact (`LEGAL_CONTACT` stays open).
+
+Corporate source documents, tax identifiers and members' personal records are never committed to
+this repository or published. The corporate-site drafts do not cover the sports platform, and the
+other review questions (§5) remain open. The draft, `noindex` and publishability gates continue to
+fail closed.
