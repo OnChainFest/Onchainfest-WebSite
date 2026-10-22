@@ -424,3 +424,10 @@ OnChainFest product bills through the **same** account:
 - For OnChainFest LLC, decide a role address for legal and privacy requests (`LEGAL_CONTACT`)
   instead of a personal mailbox. Use it in the hub and in the account-level public details if
   they move to OnChainFest LLC.
+
+
+## LEGAL-08B — Owner-verified formation facts (draft-only; 2026-10-21)
+
+Owner-provided formation documents verify: OnChainFest LLC, Wyoming (United States), formation on July 18, 2025, filing ID 2025-001725151. Original Articles named Registered Agents Inc and stated 30 N Gould St, Ste R, Sheridan, WY 82801 as original registered/mailing/principal address. **Historical facts only:** doola is reportedly no longer the service provider; neither the current registered agent nor the suitability of the original address for service/legal notices has been independently verified. Current ADDRESS and LEGAL_CONTACT review markers must remain open.
+
+IRS EIN issuance was reported by the owner. No EIN, tax documents, member personal records, IRS forms or complete corporate documents belong in this repository or public pages. Verify active Wyoming registration, registered agent and legally acceptable notice address independently before legal approval. Corporate-site drafts are distinct from sports-platform terms; other privacy, governing-law, liability, retention, token and product-specific review questions remain unresolved. Draft/noindex/publishability gates must continue to fail closed. Evidence source: owner-provided original corporate formation documents, not committed to this repository.
