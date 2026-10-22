@@ -328,7 +328,7 @@ Each item renders as a "Pending legal review" callout until it is resolved in `l
 
 | Key               | Where                     | Needed from owner / counsel                                         |
 | ----------------- | ------------------------- | ------------------------------------------------------------------- |
-| `REGISTRATION`    | Overview, Terms, Privacy  | State/country of formation, registration number                     |
+| `REGISTRATION`    | Overview, Terms, Privacy  | Resolved in LEGAL-08B (Wyoming, Filing ID); see the last section    |
 | `ADDRESS`         | Overview, Terms, Privacy  | Registered address, address for legal notices                       |
 | `LEGAL_CONTACT`   | Terms, Privacy            | Official legal/privacy contact (today: `vicvalch@onchainfest.xyz`)  |
 | `PRECEDENCE`      | Terms, Privacy            | Relationship and precedence between corporate and product documents |
@@ -425,9 +425,23 @@ OnChainFest product bills through the **same** account:
   instead of a personal mailbox. Use it in the hub and in the account-level public details if
   they move to OnChainFest LLC.
 
+## LEGAL-08B — Owner-verified formation facts (draft only; 2026-10-21)
 
-## LEGAL-08B — Owner-verified formation facts (draft-only; 2026-10-21)
+From the original formation documents provided by the owner (not committed to this repository):
 
-Owner-provided formation documents verify: OnChainFest LLC, Wyoming (United States), formation on July 18, 2025, filing ID 2025-001725151. Original Articles named Registered Agents Inc and stated 30 N Gould St, Ste R, Sheridan, WY 82801 as original registered/mailing/principal address. **Historical facts only:** doola is reportedly no longer the service provider; neither the current registered agent nor the suitability of the original address for service/legal notices has been independently verified. Current ADDRESS and LEGAL_CONTACT review markers must remain open.
+- OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025, Wyoming Filing ID
+  `2025-001725151`.
+- The original Articles of Organization named Registered Agents Inc as registered agent, at
+  30 N Gould St, Ste R, Sheridan, WY 82801. The drafts show this only as historical information.
 
-IRS EIN issuance was reported by the owner. No EIN, tax documents, member personal records, IRS forms or complete corporate documents belong in this repository or public pages. Verify active Wyoming registration, registered agent and legally acceptable notice address independently before legal approval. Corporate-site drafts are distinct from sports-platform terms; other privacy, governing-law, liability, retention, token and product-specific review questions remain unresolved. Draft/noindex/publishability gates must continue to fail closed. Evidence source: owner-provided original corporate formation documents, not committed to this repository.
+Still to verify independently before legal approval:
+
+- that the Wyoming registration is active;
+- the current registered agent and a legally acceptable address for notices (`ADDRESS` stays
+  open);
+- the official legal and privacy contact (`LEGAL_CONTACT` stays open).
+
+Corporate source documents, tax identifiers and members' personal records are never committed to
+this repository or published. The corporate-site drafts do not cover the sports platform, and the
+other review questions (§5) remain open. The draft, `noindex` and publishability gates continue to
+fail closed.

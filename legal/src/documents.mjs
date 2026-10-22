@@ -22,7 +22,7 @@ export const DOCUMENTS = [
       en: {
         title: 'Corporate Terms of Use',
         summary:
-          'The terms for using the corporate websites of OnChainFest LLC. Product-specific legal terms must be verified separately.',
+          'The terms for using the corporate websites of OnChainFest LLC. They do not cover the use of OnChainFest LLC products.',
         appliesTo: 'www.onchainfest.xyz and legal.onchainfest.xyz',
         sections: [
           {
@@ -30,7 +30,7 @@ export const DOCUMENTS = [
             heading: 'Scope',
             body: [
               'These Terms of Use apply to the corporate websites of {{company}}: www.onchainfest.xyz and legal.onchainfest.xyz (the “Corporate Sites”).',
-              'They do not govern the use of any product. Products may have separate terms and privacy policies where published and applicable. See the [product legal directory](~/#products) for documents that have been individually verified; do not assume every product has published documents.',
+              'They do not govern the use of any product. Where a product has its own terms and privacy policy, they are published on the product’s website, listed in the [product legal directory](~/#products), and govern the use of that product.',
               '{{review:PRECEDENCE}}',
             ],
           },
@@ -39,7 +39,8 @@ export const DOCUMENTS = [
             heading: 'Who we are',
             body: [
               'The Corporate Sites are operated by {{company}}.',
-              'OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025 (Wyoming Filing ID 2025-001725151). The original Articles named Registered Agents Inc as registered agent and listed 30 N Gould St, Ste R, Sheridan, WY 82801 as the original registered, mailing and principal address. These are historical formation facts, not confirmation of the current registered agent or a valid current notice address.',
+              'OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025 (Wyoming Filing ID 2025-001725151).',
+              'For reference only: the original Articles of Organization filed in 2025 named Registered Agents Inc as registered agent, at 30 N Gould St, Ste R, Sheridan, WY 82801. This is historical information from the original filing. It has not been confirmed as the current registered agent or as an address for legal notices.',
               '{{review:ADDRESS}}',
             ],
           },
@@ -61,7 +62,7 @@ export const DOCUMENTS = [
             id: 'information',
             heading: 'Information on the Corporate Sites',
             body: [
-              'Content on the Corporate Sites describes {{company}} and its products in general terms. Any applicable product-specific terms, where published, govern the applicable product offering.',
+              'Content on the Corporate Sites describes {{company}} and its products in general terms. Where a product has its own terms, those terms set what that product provides and on what conditions.',
               '{{review:DIGITAL_ASSETS}}',
             ],
           },
@@ -76,7 +77,7 @@ export const DOCUMENTS = [
             id: 'links',
             heading: 'Links to other websites',
             body: [
-              'The Corporate Sites may link to product websites with separately published legal terms, and to websites operated by others. Websites operated by others are governed by their own terms and policies.',
+              'The Corporate Sites link to product websites, which may have their own terms, and may link to websites operated by others. Websites operated by others are governed by their own terms and policies.',
             ],
           },
           {
@@ -109,7 +110,7 @@ export const DOCUMENTS = [
       es: {
         title: 'Términos de uso corporativos',
         summary:
-          'Las condiciones para usar los sitios web corporativos de OnChainFest LLC. Los términos legales de cada producto deben verificarse por separado.',
+          'Las condiciones para usar los sitios web corporativos de OnChainFest LLC. No cubren el uso de los productos de OnChainFest LLC.',
         appliesTo: 'www.onchainfest.xyz y legal.onchainfest.xyz',
         sections: [
           {
@@ -117,7 +118,7 @@ export const DOCUMENTS = [
             heading: 'Alcance',
             body: [
               'Estos Términos de uso aplican a los sitios web corporativos de {{company}}: www.onchainfest.xyz y legal.onchainfest.xyz (los «Sitios corporativos»).',
-              'No rigen el uso de ningún producto. Los productos pueden tener términos y políticas de privacidad propios cuando se hayan publicado y resulten aplicables. Consulta el [directorio legal de productos](~/#products) para los documentos verificados individualmente; no asumas que todos los productos ya los tienen publicados.',
+              'No rigen el uso de ningún producto. Cuando un producto tiene sus propios términos y política de privacidad, estos se publican en el sitio web del producto, se listan en el [directorio legal de productos](~/#products) y rigen el uso de ese producto.',
               '{{review:PRECEDENCE}}',
             ],
           },
@@ -126,7 +127,8 @@ export const DOCUMENTS = [
             heading: 'Quiénes somos',
             body: [
               'Los Sitios corporativos son operados por {{company}}.',
-              'OnChainFest LLC fue constituida en Wyoming, Estados Unidos, el 18 de julio de 2025 (ID de registro de Wyoming 2025-001725151). Los artículos originales nombraban a Registered Agents Inc como agente registrado e indicaban 30 N Gould St, Ste R, Sheridan, WY 82801 como dirección registrada, postal y principal original. Estos son datos históricos de constitución, no una confirmación del agente registrado vigente ni de una dirección actual válida para notificaciones.',
+              'OnChainFest LLC fue constituida en Wyoming, Estados Unidos, el 18 de julio de 2025 (ID de registro de Wyoming 2025-001725151).',
+              'Solo como referencia: el documento constitutivo original (Articles of Organization) presentado en 2025 designaba a Registered Agents Inc como agente registrado, en 30 N Gould St, Ste R, Sheridan, WY 82801. Es información histórica de esa presentación. No se ha confirmado como agente registrado vigente ni como dirección para notificaciones legales.',
               '{{review:ADDRESS}}',
             ],
           },
@@ -148,7 +150,7 @@ export const DOCUMENTS = [
             id: 'information',
             heading: 'Información de los Sitios corporativos',
             body: [
-              'El contenido de los Sitios corporativos describe a {{company}} y sus productos en términos generales. Los términos particulares de cada producto, cuando existan y resulten aplicables, rigen su propia oferta.',
+              'El contenido de los Sitios corporativos describe a {{company}} y sus productos en términos generales. Cuando un producto tiene sus propios términos, estos establecen lo que ofrece ese producto y en qué condiciones.',
               '{{review:DIGITAL_ASSETS}}',
             ],
           },
@@ -163,7 +165,7 @@ export const DOCUMENTS = [
             id: 'links',
             heading: 'Enlaces a otros sitios',
             body: [
-              'Los Sitios corporativos pueden enlazar a sitios web de productos con documentos legales publicados por separado, y a sitios operados por terceros. Los sitios operados por terceros se rigen por sus propios términos y políticas.',
+              'Los Sitios corporativos enlazan a sitios web de productos, que pueden tener sus propios términos, y pueden enlazar a sitios operados por terceros. Los sitios operados por terceros se rigen por sus propios términos y políticas.',
             ],
           },
           {
@@ -206,7 +208,7 @@ export const DOCUMENTS = [
       en: {
         title: 'Corporate Privacy Policy',
         summary:
-          'How OnChainFest LLC handles personal data on its corporate websites and in direct communications. Product privacy notices must be confirmed separately.',
+          'How OnChainFest LLC handles personal data on its corporate websites and in direct communications. It does not cover data processed in OnChainFest LLC products.',
         appliesTo: 'www.onchainfest.xyz, legal.onchainfest.xyz and direct communications',
         sections: [
           {
@@ -214,7 +216,7 @@ export const DOCUMENTS = [
             heading: 'Scope',
             body: [
               'This policy explains how {{company}} handles personal data on its corporate websites, www.onchainfest.xyz and legal.onchainfest.xyz (the “Corporate Sites”), and when you write to us directly.',
-              'It does not cover the products operated by {{company}}. Where published and applicable, a product-specific privacy policy may govern data processed in that product; see the [product legal directory](~/#products) for individually verified documents.',
+              'It does not cover the products operated by {{company}}. Where a product has its own privacy policy, it is published on the product’s website, listed in the [product legal directory](~/#products), and governs the data processed in that product.',
               '{{review:PRECEDENCE}}',
             ],
           },
@@ -223,7 +225,8 @@ export const DOCUMENTS = [
             heading: 'Who is responsible',
             body: [
               '{{company}} is responsible for the processing described in this policy.',
-              'OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025 (Filing ID 2025-001725151). The original Articles named Registered Agents Inc and listed 30 N Gould St, Ste R, Sheridan, WY 82801; these details do not establish current registered-agent or legal-notice contact information.',
+              'OnChainFest LLC was formed in Wyoming, United States, on July 18, 2025 (Wyoming Filing ID 2025-001725151).',
+              'For reference only: the original Articles of Organization filed in 2025 named Registered Agents Inc as registered agent, at 30 N Gould St, Ste R, Sheridan, WY 82801. This is historical information from the original filing. It has not been confirmed as the current registered agent or as an address for legal notices.',
               '{{review:ADDRESS}}',
             ],
           },
@@ -307,7 +310,7 @@ export const DOCUMENTS = [
       es: {
         title: 'Política de privacidad corporativa',
         summary:
-          'Cómo trata OnChainFest LLC los datos personales en sus sitios web corporativos y en las comunicaciones directas. Las políticas de privacidad de cada producto deben confirmarse por separado.',
+          'Cómo trata OnChainFest LLC los datos personales en sus sitios web corporativos y en las comunicaciones directas. No cubre los datos tratados en los productos de OnChainFest LLC.',
         appliesTo: 'www.onchainfest.xyz, legal.onchainfest.xyz y comunicaciones directas',
         sections: [
           {
@@ -315,7 +318,7 @@ export const DOCUMENTS = [
             heading: 'Alcance',
             body: [
               'Esta política explica cómo trata {{company}} los datos personales en sus sitios web corporativos, www.onchainfest.xyz y legal.onchainfest.xyz (los «Sitios corporativos»), y cuando nos escribes directamente.',
-              'No cubre los productos operados por {{company}}. Cuando se haya publicado y resulte aplicable, la política de privacidad de un producto puede regir los datos tratados en él; consulta el [directorio legal de productos](~/#products) para ver los documentos verificados individualmente.',
+              'No cubre los productos operados por {{company}}. Cuando un producto tiene su propia política de privacidad, esta se publica en el sitio web del producto, se lista en el [directorio legal de productos](~/#products) y rige los datos tratados en ese producto.',
               '{{review:PRECEDENCE}}',
             ],
           },
@@ -324,7 +327,8 @@ export const DOCUMENTS = [
             heading: 'Quién es responsable',
             body: [
               '{{company}} es responsable del tratamiento descrito en esta política.',
-              'OnChainFest LLC fue constituida en Wyoming, Estados Unidos, el 18 de julio de 2025 (ID de registro 2025-001725151). Los artículos originales nombraban a Registered Agents Inc e indicaban 30 N Gould St, Ste R, Sheridan, WY 82801; estos datos no acreditan el agente registrado ni el domicilio actual para notificaciones legales.',
+              'OnChainFest LLC fue constituida en Wyoming, Estados Unidos, el 18 de julio de 2025 (ID de registro de Wyoming 2025-001725151).',
+              'Solo como referencia: el documento constitutivo original (Articles of Organization) presentado en 2025 designaba a Registered Agents Inc como agente registrado, en 30 N Gould St, Ste R, Sheridan, WY 82801. Es información histórica de esa presentación. No se ha confirmado como agente registrado vigente ni como dirección para notificaciones legales.',
               '{{review:ADDRESS}}',
             ],
           },

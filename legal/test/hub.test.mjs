@@ -236,7 +236,6 @@ describe('document relationships', () => {
   });
 });
 
-
 describe('verified corporate formation facts', () => {
   it('records formation facts without claiming a current notice address or agent', () => {
     assert.equal(COMPANY.formation.jurisdiction, 'Wyoming, United States');
@@ -253,6 +252,43 @@ describe('verified corporate formation facts', () => {
         assert.match(html, /Registered Agents Inc/);
         assert.match(html, /30 N Gould St/);
         assert.match(html, /class="review"/);
+      }
+    }
+  });
+
+  it('presents the original registered agent only as historical, in both languages', () => {
+    for (const doc of DOCUMENTS) {
+      for (const locale of LOCALES) {
+        const paragraphs = doc.content[locale].sections.flatMap((section) => section.body);
+        const agent = paragraphs.filter(
+          (p) => typeof p === 'string' && p.includes('Registered Agents'),
+        );
+        assert.equal(agent.length, 1, `${doc.id}/${locale}`);
+        assert.match(agent[0], /historical information|información histórica/);
+        assert.match(agent[0], /not been confirmed|No se ha confirmado/);
+        assert.match(agent[0], /Articles of Organization/);
+        assert.ok(
+          paragraphs.includes('{{review:ADDRESS}}'),
+          `${doc.id}/${locale} keeps ADDRESS open`,
+        );
+      }
+    }
+    const overview = { en: files.get('index.html'), es: files.get('es.html') };
+    assert.match(overview.en, /Wyoming Filing ID 2025-001725151/);
+    assert.match(overview.es, /ID de registro de Wyoming/);
+  });
+
+  it('addresses readers, not editors, in public text', () => {
+    for (const doc of DOCUMENTS) {
+      for (const locale of LOCALES) {
+        const content = doc.content[locale];
+        const text = [content.summary, ...content.sections.flatMap((s) => s.body)]
+          .filter((x) => typeof x === 'string')
+          .join(' ');
+        assert.doesNotMatch(
+          text,
+          /must be (verified|confirmed) separately|do not assume|deben (verificarse|confirmarse) por separado|no asumas|artículos originales/i,
+        );
       }
     }
   });

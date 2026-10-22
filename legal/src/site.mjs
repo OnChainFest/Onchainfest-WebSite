@@ -25,7 +25,11 @@ export const COMPANY = {
     originalRegisteredAgent: 'Registered Agents Inc',
     originalAddress: '30 N Gould St, Ste R, Sheridan, WY 82801',
   }),
-  registration: 'Wyoming, United States · July 18, 2025 · Filing ID 2025-001725151',
+  // Shown on the overview, per locale.
+  registration: Object.freeze({
+    en: 'Wyoming, United States · formed July 18, 2025 · Wyoming Filing ID 2025-001725151',
+    es: 'Wyoming, Estados Unidos · constituida el 18 de julio de 2025 · ID de registro de Wyoming 2025-001725151',
+  }),
   // CURRENT notice address and CURRENT registered agent have not been independently verified.
   address: null,
 };
