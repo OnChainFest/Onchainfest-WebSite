@@ -1,5 +1,6 @@
 import type { Mark, Performance, ResultOutcome, ResultVersionContent } from '@br/domain';
 import { validateRulesetSpec } from '../ruleset';
+import { sheetShapeIssues } from './shape';
 import {
   STATUS_OUTCOME,
   type DecidedBy,
@@ -1161,6 +1162,9 @@ export function scoreContest(ctx: ScoringContext, sheet: ScoreSheet): ScoringOut
         },
       ],
     };
+  // WP-P0-2 (D-15, D-18): no executor reads a malformed structure or an out-of-range side.
+  const shape = sheetShapeIssues(sheet);
+  if (shape.length > 0) return { ok: false, issues: shape };
   switch (sheet.family) {
     case 'SETS_OF_GAMES':
       return scoreSets(ctx, sheet);
