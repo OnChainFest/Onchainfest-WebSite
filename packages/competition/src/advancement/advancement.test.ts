@@ -133,6 +133,20 @@ describe('DIRECT_WINNER / DIRECT_LOSER', () => {
       'SOURCE_OCCUPANTS_CHANGED',
     ]);
   });
+  it('WP-P0-1: an official result on a match that was never played (PLANNED / SCHEDULED) advances nobody', () => {
+    const states = ['PLANNED', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VOID'] as const;
+    const out = states.map((contestStatus) => {
+      const r = resolveAdvancementUnit(p, active(A, B), contestUnit({ contestStatus }));
+      return [contestStatus, r.complete, r.assignments.map((a) => a.reason ?? a.participantId)];
+    });
+    expect(out).toEqual([
+      ['PLANNED', false, ['SOURCE_NOT_PLAYED', 'SOURCE_NOT_PLAYED']],
+      ['SCHEDULED', false, ['SOURCE_NOT_PLAYED', 'SOURCE_NOT_PLAYED']],
+      ['IN_PROGRESS', true, [B, A]],
+      ['COMPLETED', true, [B, A]],
+      ['VOID', false, ['SOURCE_CANCELLED', 'SOURCE_CANCELLED']],
+    ]);
+  });
   it('a result without a winner never advances anyone; a withdrawn winner vacates (never back-filled)', () => {
     const draw = {
       ...h2h(A, B),

@@ -67,6 +67,8 @@ const STATUS_FLOOR: Record<string, readonly string[]> = {
 };
 /** CANCELLED and VOID contests decide nothing (ADR-0066): a result they carry is never an input. */
 const SETTLED_CONTEST: ReadonlySet<string> = new Set(['CANCELLED', 'VOID']);
+/** WP-P0-1 (D-14): a contest never started decides nothing yet; a result it carries stays pending. */
+const UNPLAYED_CONTEST: ReadonlySet<string> = new Set(['PLANNED', 'SCHEDULED']);
 
 interface Pinned {
   readonly rulesetVersionId: string;
@@ -631,7 +633,8 @@ export class ScoringStore {
   /**
    * Classification of one stage scope under the pinned template (COMP_VIEW_PRIVATE). Groups must
    * be named for grouped stages. Contests without an admissible current result, or with unresolved
-   * slots, are PENDING (the document says `complete: false`); CANCELLED and VOID contests are
+   * slots, are PENDING (the document says `complete: false`), and so is a PLANNED or SCHEDULED
+   * contest whatever result it carries (WP-P0-1); CANCELLED and VOID contests are
    * neither inputs nor pending, whatever result they carry; a stored result that does not
    * re-validate under the ruleset blocks the whole classification (CONTEST_RESULT_INVALID).
    */
@@ -728,7 +731,12 @@ export class ScoringStore {
         // A CANCELLED or VOID one keeps its entrants in the stage but contributes no result and
         // keeps nothing pending (ONCF-V1 hardening).
         if (!context.vacant)
-          contexts.push({ contestId: c.id, settled: SETTLED_CONTEST.has(c.status), ...context });
+          contexts.push({
+            contestId: c.id,
+            settled: SETTLED_CONTEST.has(c.status),
+            unplayed: UNPLAYED_CONTEST.has(c.status),
+            ...context,
+          });
       }
       const { rows: seeding } = await sql<{ seed_order: string[] }>`
         SELECT seed_order FROM competition.event_seeding WHERE event_id = ${e.id}`.execute(ctx.trx);
@@ -787,7 +795,7 @@ export class ScoringStore {
       [];
     for (const c of counted) {
       const r = current.get(c.contestId);
-      if (c.unresolved || r === undefined) {
+      if (c.unresolved || c.unplayed || r === undefined) {
         pending.push(c.contestId);
         continue;
       }

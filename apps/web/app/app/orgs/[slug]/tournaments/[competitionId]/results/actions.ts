@@ -57,7 +57,12 @@ function failure(r: Failure): AuthErrorCode {
       return 'result_changed';
     case 'INVALID_TRANSITION':
       // ONCF-L6: the category was completed or cancelled meanwhile; its results are frozen.
-      return r.reason === 'RESULTS_FROZEN' ? 'result_frozen' : 'result_blocked';
+      // WP-P0-1: the match is not in progress or completed (not started, cancelled or voided).
+      return r.reason === 'RESULTS_FROZEN'
+        ? 'result_frozen'
+        : r.reason === 'CONTEST_NOT_PLAYABLE'
+          ? 'result_match_not_playable'
+          : 'result_blocked';
     case 'NOT_FOUND':
       return 'result_not_found';
     default:
@@ -170,6 +175,7 @@ export async function transitionAction(form: FormData): Promise<never> {
   if (
     r.kind === 'error' &&
     r.reason !== 'RESULTS_FROZEN' &&
+    r.reason !== 'CONTEST_NOT_PLAYABLE' &&
     ['INVALID_TRANSITION', 'CONCURRENCY_CONFLICT', 'CURRENT_VERSION_CONFLICT'].includes(
       r.code ?? '',
     )

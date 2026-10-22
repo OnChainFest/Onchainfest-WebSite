@@ -161,6 +161,8 @@ export const ERROR_MESSAGES = {
   result_review_changed:
     'The score changed since you checked it. Check the new summary, then record it.',
   result_unsupported: 'This match’s scoring can’t be entered here yet.',
+  result_match_not_playable:
+    'This match isn’t in progress or finished (not started yet, cancelled or voided), so it can’t take a result. Nothing was changed.',
   result_frozen:
     'This category is finished, so its results are frozen: nothing can be entered, accepted or corrected. Nothing was changed.',
   operation_contests_open:

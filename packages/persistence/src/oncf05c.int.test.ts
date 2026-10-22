@@ -21,6 +21,7 @@ import {
   newTestAccount,
   operatorDb,
   ownerDb,
+  playContest,
   uniqueSlug,
 } from '@br/testkit';
 import { sql } from 'kysely';
@@ -333,6 +334,7 @@ async function submit(refId: Uuid, contestId: string, content: ResultVersionCont
 async function score(ev: Ev, refId: Uuid, contestId: string, sheet: ScoreSheet) {
   const v = await scoring.validateScoreSheet({ actorAccountId: ev.actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  await playContest({ db, comps, structure }, ev.actor, contestId);
   const sub = await submit(refId, contestId, v.content);
   expect(sub.contentHash).toBe(v.contentHash); // the ledger computes exactly the validated hash
   return v;
@@ -505,6 +507,7 @@ describe('proof case B — padel doubles, groups → knockout: standings with a 
     if (!v.ok) throw new Error('unexpected');
     const tampered = JSON.parse(JSON.stringify(v.content));
     tampered.entries[0].primaryMark.value = '7';
+    await playContest({ db, comps, structure }, ev.actor, c?.id as string);
     await submit(ref, c?.id as string, tampered);
     await expect(
       scoring.classify({

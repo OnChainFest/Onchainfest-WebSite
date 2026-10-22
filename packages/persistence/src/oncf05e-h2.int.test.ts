@@ -24,6 +24,7 @@ import {
   newTestAccount,
   operatorDb,
   ownerDb,
+  playContest,
   uniqueSlug,
 } from '@br/testkit';
 import { sql, type RawBuilder, type Transaction } from 'kysely';
@@ -1059,6 +1060,7 @@ async function referee(competitionId: string) {
 async function official(actor: string, ref: Uuid, contestId: string, sheet: ScoreSheet) {
   const v = await scoring.validateScoreSheet({ actorAccountId: actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  await playContest({ db, comps, structure }, actor, contestId);
   const result = await ledger.createResult({
     scopeType: 'CONTEST',
     scopeTargetId: contestId as Uuid,

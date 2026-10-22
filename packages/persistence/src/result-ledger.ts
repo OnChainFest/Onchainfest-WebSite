@@ -186,10 +186,35 @@ export interface ResultScopeValidator {
    * ONCF-L6 results freeze (ADR-0078 §2.2): refuses any write to a Result whose target is closed
    * (INVALID_TRANSITION, `RESULTS_FROZEN`). Called inside the command's br_results transaction,
    * after its idempotency replay and before its stream head, so the check and the write are one
-   * transaction and a replay of an earlier success still answers.
+   * transaction and a replay of an earlier success still answers. WP-P0-1 (D-14): given the
+   * `operation`, also refuses a write that would let a match that is not being or has not been
+   * played decide a result (`CONTEST_NOT_PLAYABLE`).
    */
-  assertMutable(ctx: TxContext, scopeType: ResultScopeType, scopeTargetId: string): Promise<void>;
+  assertMutable(
+    ctx: TxContext,
+    scopeType: ResultScopeType,
+    scopeTargetId: string,
+    operation?: ResultWriteOperation,
+  ): Promise<void>;
+  /**
+   * WP-P0-1 (D-14): refuses a classification (`@2`) whose pinned inputs include a result of a
+   * contest that is not being or has not been played (`CONTEST_NOT_PLAYABLE`). Called inside the
+   * T2 transaction once the canonical re-derivation matched; existing versions are never rewritten.
+   */
+  assertInputsPlayed?(ctx: TxContext, contestIds: readonly string[]): Promise<void>;
 }
+
+/**
+ * The result write a scope precondition is asked about: submit (T2), accept (T3), reject (T4),
+ * declare official (T5) and correct (T7).
+ */
+export type ResultWriteOperation = 'SUBMIT' | 'ACCEPT' | 'REJECT' | 'DECLARE_OFFICIAL' | 'CORRECT';
+
+const TRANSITION_OPERATION: Record<TransitionInput['toStatus'], ResultWriteOperation> = {
+  PROVISIONAL: 'ACCEPT',
+  REJECTED: 'REJECT',
+  OFFICIAL: 'DECLARE_OFFICIAL',
+};
 
 /**
  * The read-only classification proposal inside the caller's br_results transaction (ADR-0047 §3 step
@@ -244,6 +269,7 @@ export class ResultLedger {
     ctx: TxContext,
     resultId: string,
     scope: AuthorityScope,
+    operation: ResultWriteOperation,
   ): Promise<void> {
     if (this.scopeValidator === undefined) return;
     const r = await ctx.trx
@@ -264,6 +290,7 @@ export class ResultLedger {
       ctx,
       r.scope_type as ResultScopeType,
       r.scope_target_id,
+      operation,
     );
   }
 
@@ -411,7 +438,7 @@ export class ResultLedger {
       if (draft.submitted_version_id !== null) {
         throw new DomainError(DomainErrorCode.IMMUTABLE, 'draft was already submitted');
       }
-      await this.assertResultScope(ctx, draft.result_id, input.scope);
+      await this.assertResultScope(ctx, draft.result_id, input.scope, 'SUBMIT');
 
       const decision = await authorizeIn(
         ctx,
@@ -612,7 +639,12 @@ export class ResultLedger {
         .executeTakeFirst();
       if (version === undefined)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'result version not found');
-      await this.assertResultScope(ctx, version.result_id, input.scope);
+      await this.assertResultScope(
+        ctx,
+        version.result_id,
+        input.scope,
+        TRANSITION_OPERATION[input.toStatus],
+      );
 
       const decision = await authorizeIn(
         ctx,
@@ -767,7 +799,7 @@ export class ResultLedger {
           DomainErrorCode.INVALID_INPUT,
           'a derived classification is corrected by re-derivation, not by a correction draft',
         );
-      await this.assertResultScope(ctx, draft.result_id, input.scope);
+      await this.assertResultScope(ctx, draft.result_id, input.scope, 'CORRECT');
       const authorize = async (capability: Capability) => {
         const d = await authorizeIn(
           ctx,
@@ -1024,6 +1056,12 @@ export class ResultLedger {
         'submitted classification differs from the canonical derivation',
         { canonicalContentHash: proposal.contentHash },
       );
+    // WP-P0-1 (D-14): a result of an unplayed, cancelled or voided match is never pinned.
+    const pinned = new Set(proposal.content.derivation.derivedFrom.map((i) => i.resultVersionId));
+    await this.scopeValidator?.assertInputsPlayed?.(
+      ctx,
+      assembly.input.inputs.filter((i) => pinned.has(i.resultVersionId)).map((i) => i.contestId),
+    );
     // A classification that already has a current version is replaced only by a T7 correction,
     // which has no producer (ADR-0047 §6). The identical content was handled as a duplicate above.
     const { rows } = await sql<{ id: string; content_hash: string }>`

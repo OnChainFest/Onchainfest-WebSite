@@ -9,10 +9,12 @@ import { newId } from '@br/domain';
 import {
   CatalogStore,
   CompetitionReader,
+  CompetitionStore,
   IdentityStore,
   ResultAuthorityGovernance,
+  StructureStore,
 } from '@br/persistence';
-import { apiDb, newTestAccount, operatorDb, uniqueSlug } from '@br/testkit';
+import { apiDb, newTestAccount, operatorDb, playContest, uniqueSlug } from '@br/testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDevTokenAuth, mintDevToken } from './auth';
 import { buildServer } from './server';
@@ -33,6 +35,8 @@ const app = buildServer({ db, operatorDb: operator, resultParticipationIndex: tr
 // The pre-LAUNCH-02 production composition: no participation source at all.
 const failClosed = buildServer({ db, auth });
 const governance = new ResultAuthorityGovernance(db);
+const comps = new CompetitionStore(db);
+const structure = new StructureStore(db);
 afterAll(async () => {
   await Promise.all([app.close(), failClosed.close()]);
   await Promise.all([db.destroy(), operator.destroy()]);
@@ -239,6 +243,9 @@ describe('LAUNCH-02 · governance-issued result authority over the API', () => {
     ).toBe(200);
     const bracket = await call('GET', `/v1/competitions/${A.slug}/events/singles/bracket`);
     const [sf1, sf2] = bracket.body?.rounds[0]?.contests as Json[];
+    // WP-P0-1: a result needs a match in progress or completed.
+    for (const sf of [sf1, sf2])
+      await playContest({ db, comps, structure }, A.accountId, sf?.contestId as string);
 
     const admin = await person('l02-admin');
     const adminStaffId = await staff(A, admin.personId, 'ADMIN');

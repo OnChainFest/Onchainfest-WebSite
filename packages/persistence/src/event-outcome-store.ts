@@ -46,6 +46,8 @@ export const PUBLIC_COMPETITION_OUTCOME_SCHEMA = 'br:public-competition-outcome@
 const OFFICIAL = new Set(['OFFICIAL', 'FINAL']);
 const OPEN_CONTEST = new Set(['PLANNED', 'SCHEDULED', 'IN_PROGRESS']);
 const SETTLED_CONTEST = new Set(['CANCELLED', 'VOID']);
+/** WP-P0-1 (D-14): a contest never started decides nothing yet, whatever result it carries. */
+const UNPLAYED_CONTEST = new Set(['PLANNED', 'SCHEDULED']);
 
 export interface EventSettlement {
   readonly contests: readonly {
@@ -462,8 +464,11 @@ export class EventOutcomeStore {
   private async deriveOnce(eventId: string): Promise<DerivedEventOutcome> {
     const s = await this.structure(eventId);
     // A CANCELLED or VOID contest decides nothing: a result it carries is never read as evidence,
-    // so it reaches neither a placement nor the public match list (ONCF-V1 hardening).
-    const ids = s.contests.filter((c) => !SETTLED_CONTEST.has(c.status)).map((c) => c.id);
+    // so it reaches neither a placement nor the public match list (ONCF-V1 hardening); nor does a
+    // PLANNED or SCHEDULED one (WP-P0-1, D-14).
+    const ids = s.contests
+      .filter((c) => !SETTLED_CONTEST.has(c.status) && !UNPLAYED_CONTEST.has(c.status))
+      .map((c) => c.id);
     const evidence = await this.evidence(ids);
     const classifications = await this.classifications(s);
     // Fail closed: every result read is the contest's current OFFICIAL / FINAL version of the

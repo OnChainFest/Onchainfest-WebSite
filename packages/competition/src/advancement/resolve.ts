@@ -170,6 +170,8 @@ export interface AdvancementResolution {
 
 const WIN: readonly ResultOutcome[] = ['WIN', 'WALKOVER_WIN'];
 const CANCELLED = new Set(['CANCELLED', 'VOID']);
+/** WP-P0-1 (D-14): a match never started decides nothing, whatever result it carries. */
+const NOT_PLAYED = new Set(['PLANNED', 'SCHEDULED']);
 
 /**
  * The one winner rule of a head-to-head contest (shared with event-outcome/1, ONCF-L6): the entry
@@ -346,6 +348,7 @@ class Ctx {
         },
       }));
     if (CANCELLED.has(u.contestStatus)) return pending('SOURCE_CANCELLED');
+    if (NOT_PLAYED.has(u.contestStatus)) return pending('SOURCE_NOT_PLAYED');
     if (u.upstreamStale) return pending('UPSTREAM_STALE');
     if (u.evidence === undefined)
       return pending(u.belowPolicyStatus === undefined ? 'RESULT_MISSING' : 'RESULT_NOT_OFFICIAL');

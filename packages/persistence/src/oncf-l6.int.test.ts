@@ -34,6 +34,7 @@ import { EventOutcomeStore } from './event-outcome-store';
 import { IdentityStore } from './identity-store';
 import { OrganizationStore } from './organization-store';
 import { ResourceStore } from './resource-store';
+import { ResultLedger } from './result-ledger';
 import { ScheduleStore } from './schedule-store';
 import { ScoringStore } from './scoring-store';
 import { inTransaction, ModuleRole } from './tx';
@@ -69,6 +70,8 @@ const schedule = new ScheduleStore(db);
 const authority = new AuthorityStore(db, { conflictChecker: declaredNoParticipation });
 const ledger = createCompetitionResultLedger(db, { conflictChecker: declaredNoParticipation });
 const ledger2 = createCompetitionResultLedger(db2, { conflictChecker: declaredNoParticipation });
+/** WP-P0-1: a ledger without the contest-lifecycle gate, to set up results written before it. */
+const legacy = new ResultLedger(db, { conflictChecker: declaredNoParticipation });
 const resolver = new CompetitionHierarchyResolver(db);
 const k = () => `k-${newId()}`;
 
@@ -343,13 +346,19 @@ const sets = (firstWins = true): ScoreSheet => ({
 const scopeOf = (contestId: string) =>
   resolver.scopeOf('CONTEST', contestId, { recognitionLevel: 'PLATFORM' });
 
-async function draftFor(comp: Comp, contestId: string, sheet: ScoreSheet, resultId?: string) {
+async function draftFor(
+  comp: Comp,
+  contestId: string,
+  sheet: ScoreSheet,
+  resultId?: string,
+  via: ResultLedger = ledger,
+) {
   const v = await scoring.validateScoreSheet({ actorAccountId: comp.actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
   const rid =
     resultId ??
-    (await ledger.createResult({ scopeType: 'CONTEST', scopeTargetId: contestId as Uuid })).id;
-  const { draftId } = await ledger.saveDraft({
+    (await via.createResult({ scopeType: 'CONTEST', scopeTargetId: contestId as Uuid })).id;
+  const { draftId } = await via.saveDraft({
     resultId: rid as Uuid,
     authorPrincipalId: comp.ref,
     disciplineVersionRef: 'oncf-l6@1',
@@ -358,17 +367,18 @@ async function draftFor(comp: Comp, contestId: string, sheet: ScoreSheet, result
   return { resultId: rid, draftId };
 }
 
-/** A result through the ResultLedger, up to `upTo` (SUBMITTED, PROVISIONAL or OFFICIAL). */
+/** A result through `via` (the ResultLedger, or `legacy`), up to `upTo` (SUBMITTED / PROVISIONAL / OFFICIAL). */
 async function result(
   comp: Comp,
   contestId: string,
   upTo: 'SUBMITTED' | 'PROVISIONAL' | 'OFFICIAL' = 'OFFICIAL',
   firstWins = true,
+  via: ResultLedger = ledger,
 ) {
-  const { resultId, draftId } = await draftFor(comp, contestId, sets(firstWins));
+  const { resultId, draftId } = await draftFor(comp, contestId, sets(firstWins), undefined, via);
   const scope = await scopeOf(contestId);
   const submitKey = k();
-  const sub = await ledger.submitDraft({
+  const sub = await via.submitDraft({
     draftId,
     actorPrincipalId: comp.ref,
     scope,
@@ -376,7 +386,7 @@ async function result(
   });
   for (const toStatus of ['PROVISIONAL', 'OFFICIAL'] as const) {
     if (upTo === 'SUBMITTED' || (upTo === 'PROVISIONAL' && toStatus === 'OFFICIAL')) break;
-    await ledger.transition({
+    await via.transition({
       resultVersionId: sub.resultVersionId,
       toStatus,
       actorPrincipalId: comp.ref,
@@ -684,12 +694,13 @@ describe('V1 hardening: a CANCELLED or VOID match contributes nothing (ADR-0066)
   it('B1. a match cancelled with an OFFICIAL result on it leaves standings, podium and public outcome', async () => {
     const r = await cycle();
     const { cat, a, b, c, ab, bc, ca, won } = r;
-    // The ledger has no contest-lifecycle gate: a result can be declared before the match is played.
-    await result(comp, ca.id, 'OFFICIAL', won(ca, c));
+    // A result declared before the match was played (written before the WP-P0-1 lifecycle gate).
+    await result(comp, ca.id, 'OFFICIAL', won(ca, c), legacy);
     await played(comp, [ab.id, bc.id]);
     await result(comp, ab.id, 'OFFICIAL', won(ab, a));
     await result(comp, bc.id, 'OFFICIAL', won(bc, b));
-    expect(await inputIds(cat.eventId)).toEqual([ab.id, bc.id, ca.id].sort());
+    // WP-P0-1: a result on a match never played is no input, even before the cancellation.
+    expect(await inputIds(cat.eventId)).toEqual([ab.id, bc.id].sort());
     await structure.cancelContest({ actorAccountId: comp.actor, contestId: ca.id, reason: 'rain' });
     expect(await contestStatus(ca.id)).toBe('CANCELLED');
     expect((await currentVersion(ca.id))?.status).toBe('OFFICIAL');

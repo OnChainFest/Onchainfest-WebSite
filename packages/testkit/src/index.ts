@@ -511,6 +511,55 @@ export async function publishSchedule(
 }
 
 /**
+ * Test helper (WP-P0-1, D-14): brings a contest to IN_PROGRESS so it can take a result. Activates a
+ * PUBLISHED competition and starts a FIELD_LOCKED event through the stores; a PLANNED contest gets
+ * its SCHEDULED fact directly (scheduling — windows, resources, rest — is not what the callers
+ * test, and publishing a schedule would move their own schedule versions); the start itself is the
+ * real lifecycle command. A contest already IN_PROGRESS or COMPLETED is left as it is.
+ */
+export async function playContest(
+  deps: { db: Db; comps: CompetitionStore; structure: StructureStore },
+  actorAccountId: string,
+  contestId: string,
+): Promise<void> {
+  const read = () =>
+    inTransaction(deps.db, ModuleRole.competition, async (ctx) => {
+      const { rows } = await sql<{
+        status: string;
+        event_id: string;
+        event_status: string;
+        competition_id: string;
+        competition_status: string;
+      }>`
+        SELECT cv.status, c.event_id, ev.status AS event_status, e.competition_id,
+               cc.status AS competition_status
+        FROM competition.contest c
+        JOIN competition.event e ON e.id = c.event_id
+        JOIN competition.v_contest_current cv ON cv.contest_id = c.id
+        JOIN competition.v_event_current ev ON ev.event_id = c.event_id
+        JOIN competition.v_competition_current cc ON cc.competition_id = e.competition_id
+        WHERE c.id = ${contestId}`.execute(ctx.trx);
+      if (rows[0] === undefined) throw new Error(`no contest ${contestId}`);
+      return rows[0];
+    });
+  const c = await read();
+  if (c.status === 'IN_PROGRESS' || c.status === 'COMPLETED') return;
+  if (c.competition_status === 'PUBLISHED')
+    await deps.comps.activateCompetition({ actorAccountId, competitionId: c.competition_id });
+  if (c.event_status === 'FIELD_LOCKED')
+    await deps.comps.startEvent({ actorAccountId, eventId: c.event_id });
+  if (c.status === 'PLANNED')
+    await inTransaction(deps.db, ModuleRole.competition, async (ctx) => {
+      await sql`INSERT INTO competition.contest_status_change (id, contest_id, status, actor_account_id, recorded_at)
+        VALUES (${newId()}, ${contestId}, 'SCHEDULED', ${actorAccountId}, ${ctx.txTime})`.execute(
+        ctx.trx,
+      );
+    });
+  else if (c.status !== 'SCHEDULED') throw new Error(`contest ${contestId} is ${c.status}`);
+  await deps.structure.startContest({ actorAccountId, contestId });
+}
+
+/**
  * Test helper (ONCF-05E-H-1): the contest's last schedule fact as a client reads it before a manual
  * edit (ADR-0070 §9 amendment), or null for "none". With `versionId`: its current fact in that
  * version. Without: the legacy route's expectation — the fact in the open draft, or, when no draft
@@ -646,28 +695,28 @@ export async function newContestResult(deps: {
     };
   });
 
-  if (deps.timed !== undefined) {
-    if (existing === undefined)
-      await deps.comps.activateCompetition({ actorAccountId: org.ownerAccountId, competitionId });
-    await deps.comps.startEvent({ actorAccountId: org.ownerAccountId, eventId });
-    await deps.structure.scheduleContest({
-      actorAccountId: org.ownerAccountId,
-      contestId: contest.contestId,
-      // Schedule instants are whole seconds (ONCF-05E-C).
-      scheduledStart: new Date(Math.ceil((Date.now() + 60_000) / 1000) * 1000),
-      // A freshly generated contest has no assignment yet (ADR-0070 §9 amendment).
-      expectedLastFactId: null,
-      idempotencyKey: k(),
-    });
-    // The route edits a draft; the contest becomes SCHEDULED when the draft is published.
-    await publishSchedule(deps.db, org.ownerAccountId, competitionId);
-    if (deps.timed.startAfter !== undefined)
-      await awaitDbTimePast(deps.db, deps.timed.startAfter, 15_000);
-    await deps.structure.startContest({
-      actorAccountId: org.ownerAccountId,
-      contestId: contest.contestId,
-    });
-  }
+  // WP-P0-1 (D-14): a result needs a match in progress or completed, so the contest is scheduled
+  // and started first (BRT-09 timed contests also need the start as their sporting occurrence).
+  if (existing === undefined)
+    await deps.comps.activateCompetition({ actorAccountId: org.ownerAccountId, competitionId });
+  await deps.comps.startEvent({ actorAccountId: org.ownerAccountId, eventId });
+  await deps.structure.scheduleContest({
+    actorAccountId: org.ownerAccountId,
+    contestId: contest.contestId,
+    // Schedule instants are whole seconds (ONCF-05E-C).
+    scheduledStart: new Date(Math.ceil((Date.now() + 60_000) / 1000) * 1000),
+    // A freshly generated contest has no assignment yet (ADR-0070 §9 amendment).
+    expectedLastFactId: null,
+    idempotencyKey: k(),
+  });
+  // The route edits a draft; the contest becomes SCHEDULED when the draft is published.
+  await publishSchedule(deps.db, org.ownerAccountId, competitionId);
+  if (deps.timed?.startAfter !== undefined)
+    await awaitDbTimePast(deps.db, deps.timed.startAfter, 15_000);
+  await deps.structure.startContest({
+    actorAccountId: org.ownerAccountId,
+    contestId: contest.contestId,
+  });
   const platform = await deps.authority.registerPrincipal({
     principalType: 'PLATFORM',
     label: 'platform (evidence fixture)',
