@@ -42,4 +42,5 @@ plain semver `version` and the real `effectiveDate`. When nothing is open anywhe
 
 Product documents are never copied here: the product's own site is canonical.
 
-Deployment, DNS and Stripe: `docs/operations/ONCF-LEGAL-01-LEGAL-HUB.md`.
+Deployment (`legal-hub.yml` builds, `legal-hub-deploy.yml` verifies and deploys), DNS and
+Stripe: `docs/operations/ONCF-LEGAL-01-LEGAL-HUB.md`.
