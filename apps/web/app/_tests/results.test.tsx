@@ -1186,6 +1186,15 @@ describe('accepting and declaring official', () => {
     expect(writes().filter((c) => c.path.endsWith('/accept'))).toHaveLength(4);
   });
 
+  it('WP-P0-1: a match that is not in progress or finished is named as such, not re-read as "already done"', async () => {
+    platform();
+    routes[`POST /v1/result-versions/${V(1)}/accept`] = () =>
+      json(409, { error: { code: 'INVALID_TRANSITION', reason: 'CONTEST_NOT_PLAYABLE' } });
+    results[K(4)] = [version(1, 'PROVISIONAL', QF4)];
+    expect(await run({ step: 'accept' })).toBe(`${BACK}?error=result_match_not_playable`);
+    expect(ERROR_MESSAGES.result_match_not_playable).toContain('Nothing was changed');
+  });
+
   it('words every result and refusal it can come back with', () => {
     const src = [
       readFileSync(

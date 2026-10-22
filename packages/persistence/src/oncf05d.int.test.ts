@@ -22,6 +22,7 @@ import {
   newTestAccount,
   operatorDb,
   ownerDb,
+  playContest,
   uniqueSlug,
 } from '@br/testkit';
 import { sql } from 'kysely';
@@ -319,6 +320,7 @@ const scopeOf = (contestId: string) =>
 async function score(ev: Ev, ref: Uuid, contestId: string, sheet: ScoreSheet, official = true) {
   const v = await scoring.validateScoreSheet({ actorAccountId: ev.actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  await playContest({ db, comps, structure }, ev.actor, contestId);
   const result = await ledger.createResult({
     scopeType: 'CONTEST',
     scopeTargetId: contestId as Uuid,
@@ -437,9 +439,18 @@ describe('proof case A — tennis singles knockout: official result → winner �
     const [sf1, sf2] = await contests(ev, 's1');
     const contestUnit = `contest:${sf1?.id}`;
 
-    // 4 · unresolved source / 5 · missing result
+    // 4 · unresolved source: WP-P0-1 — an unplayed source decides nothing, whatever its result
     let s = await stateOf(ev);
     expect(s.advancement).toBe('REQUIRED');
+    expect(
+      unit(s, contestUnit).targets.map((t) => [t.state, t.proposed.state, t.proposed.reason]),
+    ).toEqual([
+      ['UNRESOLVED', 'PENDING', 'SOURCE_NOT_PLAYED'],
+      ['UNRESOLVED', 'PENDING', 'SOURCE_NOT_PLAYED'],
+    ]);
+    // 5 · missing result: the match is being played, no result yet
+    await playContest({ db, comps, structure }, ev.actor, sf1?.id as string);
+    s = await stateOf(ev);
     expect(
       unit(s, contestUnit).targets.map((t) => [t.state, t.proposed.state, t.proposed.reason]),
     ).toEqual([
@@ -990,7 +1001,8 @@ describe('14 · multiple source stages: a stepladder match is fed by a qualifyin
     expect(ranks.targets.every((t) => t.proposed.state === 'RESOLVED')).toBe(true);
     // The second stepladder match: one slot from stage s1 (rank), one from stage s2 (winner of match 1).
     const fromS2 = s.units.find((x) => x.kind === 'CONTEST');
-    expect(fromS2?.targets[0]?.proposed.reason).toBe('RESULT_MISSING');
+    // WP-P0-1: stepladder match 1 cannot start before its rank slots commit, so it is not played.
+    expect(fromS2?.targets[0]?.proposed.reason).toBe('SOURCE_NOT_PLAYED');
     expect(new Set(s.units.flatMap((x) => x.targets.map((t) => t.label.stageKey)))).toEqual(
       new Set(['s2']),
     );

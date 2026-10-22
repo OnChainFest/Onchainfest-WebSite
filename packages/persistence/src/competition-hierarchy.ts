@@ -121,6 +121,15 @@ const LEVEL_OF: Readonly<Record<ResultScopeType, HierarchyLevel>> = {
   COMPETITION_CLASSIFICATION: 'COMPETITION',
 };
 
+/** WP-P0-1: the match states in which a result can be submitted, accepted, declared or corrected. */
+const PLAYED_CONTEST: ReadonlySet<string> = new Set(['IN_PROGRESS', 'COMPLETED']);
+const NOT_PLAYABLE_MESSAGE: Readonly<Record<string, string>> = {
+  PLANNED: 'the match has not started; a result needs a match in progress or completed',
+  SCHEDULED: 'the match has not started; a result needs a match in progress or completed',
+  CANCELLED: 'the match was cancelled; it decides no result',
+  VOID: 'the match was voided; it decides no result',
+};
+
 /**
  * Result ↔ competition linkage (BRT-05 §44). Contest becomes a legitimate Result scope: the
  * target must exist, and any authority scope used on that Result must state exactly its resolved
@@ -159,7 +168,7 @@ export const competitionResultScopeValidator: ResultScopeValidator = {
    * (`withModuleRole`; the login holds SET on both roles, no grant is widened). Classification
    * scopes are not frozen: deriving from a finished event stays legitimate (V2).
    */
-  async assertMutable(ctx, scopeType, scopeTargetId) {
+  async assertMutable(ctx, scopeType, scopeTargetId, operation) {
     if (scopeType !== 'CONTEST') return;
     const path = await resolveHierarchy(ctx, 'CONTEST', scopeTargetId);
     if (path?.eventId === undefined)
@@ -169,18 +178,58 @@ export const competitionResultScopeValidator: ResultScopeValidator = {
       );
     const eventId = path.eventId;
     await lockKeys(ctx, `contest:${scopeTargetId}`);
-    const status = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
-      const { rows } = await sql<{ status: string }>`
-        SELECT status FROM competition.v_event_current WHERE event_id = ${eventId}`.execute(
-        cctx.trx,
-      );
-      return rows[0]?.status;
-    });
+    const { status, contestStatus } = await withModuleRole(
+      ctx,
+      ModuleRole.competition,
+      async (cctx) => {
+        const { rows } = await sql<{ status: string; contest_status: string | null }>`
+          SELECT e.status, (SELECT c.status FROM competition.v_contest_current c
+                            WHERE c.contest_id = ${scopeTargetId}) AS contest_status
+          FROM competition.v_event_current e WHERE e.event_id = ${eventId}`.execute(cctx.trx);
+        return { status: rows[0]?.status, contestStatus: rows[0]?.contest_status ?? undefined };
+      },
+    );
     if (status === 'COMPLETED' || status === 'CANCELLED')
       throw new DomainError(
         DomainErrorCode.INVALID_TRANSITION,
         'the event is finished; its results are frozen',
         { reason: 'RESULTS_FROZEN', eventStatus: status },
+      );
+    // WP-P0-1 (D-14): only a match being or having been played decides a result. Read under the
+    // same `contest:<id>` lock that start / complete / cancel / void hold, so a lifecycle change
+    // and a result write never interleave. Rejecting a pending candidate decides nothing and stays
+    // possible (clean-up of a cancelled or voided match).
+    if (
+      operation !== undefined &&
+      operation !== 'REJECT' &&
+      !PLAYED_CONTEST.has(contestStatus ?? '')
+    )
+      throw new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        NOT_PLAYABLE_MESSAGE[contestStatus ?? ''] ?? 'the match cannot take a result',
+        { reason: 'CONTEST_NOT_PLAYABLE', contestStatus: contestStatus ?? 'UNKNOWN' },
+      );
+  },
+
+  /**
+   * WP-P0-1 (D-14): a classification pins only results of matches in progress or completed. The
+   * statuses are read under the inputs' `contest:<id>` locks (one call, key order, taken last), so
+   * no lifecycle change interleaves with the pinning.
+   */
+  async assertInputsPlayed(ctx, contestIds) {
+    if (contestIds.length === 0) return;
+    await lockKeys(ctx, ...contestIds.map((id) => `contest:${id}`));
+    const unplayed = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
+      const { rows } = await sql<{ status: string }>`
+        SELECT status FROM competition.v_contest_current
+        WHERE contest_id = ANY(${[...contestIds]}::uuid[]) ORDER BY contest_id`.execute(cctx.trx);
+      return rows.find((r) => !PLAYED_CONTEST.has(r.status));
+    });
+    if (unplayed !== undefined)
+      throw new DomainError(
+        DomainErrorCode.INVALID_TRANSITION,
+        'a classification input is the result of a match not in progress or completed',
+        { reason: 'CONTEST_NOT_PLAYABLE', contestStatus: unplayed.status },
       );
   },
 };

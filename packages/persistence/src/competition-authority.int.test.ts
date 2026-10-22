@@ -18,6 +18,7 @@ import {
   uniqueSlug,
   type TestCatalog,
   lastScheduleFact,
+  playContest,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -464,6 +465,7 @@ describe('Result ↔ Contest linkage (no redesign; validator port)', () => {
 
   it('authority scope used on a contest Result must be its exact hierarchy (no borrowed ancestry); nothing is auto-accepted', async () => {
     const referee = await grantee({ competition: [t.C2 as Uuid] }, ['SUBMIT_RESULT']);
+    await playContest({ db: api, comps, structure }, t.organizer.ownerAccountId, t.A);
     const result = await ledger.createResult({ scopeType: 'CONTEST', scopeTargetId: t.A as Uuid });
     const { rows: ps } = await sql<{
       participant_id: string;

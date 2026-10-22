@@ -6,12 +6,20 @@ import {
   type DisciplineVersionSpec,
 } from '@br/competition';
 import { newId, type Uuid } from '@br/domain';
-import { AuthorityStore, CatalogStore, CompetitionReader, IdentityStore } from '@br/persistence';
+import {
+  AuthorityStore,
+  CatalogStore,
+  CompetitionReader,
+  CompetitionStore,
+  IdentityStore,
+  StructureStore,
+} from '@br/persistence';
 import {
   apiDb,
   declaredNoParticipation,
   newTestAccount,
   operatorDb,
+  playContest,
   uniqueSlug,
 } from '@br/testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -28,6 +36,8 @@ type Json = Record<string, any>;
 
 const SECRET = 'oncf05d-api-int-secret-0123456789abcdef';
 const db = apiDb();
+const comps = new CompetitionStore(db);
+const structure = new StructureStore(db);
 const operator = operatorDb();
 const app = buildServer({
   db,
@@ -241,6 +251,9 @@ describe('ONCF-05D over the API', () => {
     const bracket = await call('GET', `/v1/competitions/${A.slug}/events/singles/bracket`);
     const sf1 = bracket.body?.rounds[0]?.contests[0];
     const lanes = sf1.slots.map((x: Json) => x.participantId as string);
+    // WP-P0-1: a result needs a match in progress or completed.
+    const owner = (await call('GET', '/v1/me', A.h)).body?.accountId as string;
+    await playContest({ db, comps, structure }, owner, sf1.contestId);
     const sheet = { family: 'SETS_OF_GAMES', sets: [{ games: [6, 1] }, { games: [6, 2] }] };
 
     // Operational permission never becomes sporting authority: staff without a grant are refused.

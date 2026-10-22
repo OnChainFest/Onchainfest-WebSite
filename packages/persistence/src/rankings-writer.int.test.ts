@@ -32,7 +32,7 @@ import {
   rankingWorkerDb,
   type RankingFixtureDatabase,
 } from '@br/testkit/rankings';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthorityStore } from './authority-store';
 import { CatalogStore } from './catalog-store';
@@ -49,7 +49,7 @@ import {
   rankingOperatorDatabaseUrl,
   rankingWorkerDatabaseUrl,
 } from './config';
-import { createDb, type Db } from './db';
+import { createDb, type Database, type Db } from './db';
 import { IdentityStore } from './identity-store';
 import { OrganizationStore } from './organization-store';
 import { RankingDefinitionStore } from './ranking-definition-store';
@@ -79,6 +79,48 @@ const futureIso = (seconds: number) => new Date(Date.now() + seconds * 1000).toI
 const randomHash = () => `sha256:${newId().replace(/-/g, '').repeat(2)}`;
 const countOf = async (db: Db, q: ReturnType<typeof sql<{ n: string }>>) =>
   Number((await q.execute(db)).rows[0]?.n ?? -1);
+
+/** WP-P0-1 race repetitions (`ONCF_P01_RACE_RUNS=50` for the release evidence run). */
+const P01_RUNS = Number(process.env['ONCF_P01_RACE_RUNS'] ?? '2');
+const lockId = (key: string) => sql`hashtextextended(${key}, 0)`;
+const waitingOn = async (trx: Transaction<Database>, key: string) =>
+  (
+    await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM pg_locks
+      WHERE locktype = 'advisory' AND NOT granted
+        AND ((classid::bigint << 32) | objid::bigint) = ${lockId(key)}`.execute(trx)
+  ).rows[0]?.n ?? 0;
+/**
+ * WP-P0-1: a third connection holds the advisory lock `key`; `first` must queue on it, then
+ * `second`, then the lock is released — the race is forced into that serialization (the
+ * oncf-p0-1 barrier).
+ */
+async function ordered<A, B>(key: string, first: () => Promise<A>, second: () => Promise<B>) {
+  let out: Promise<[PromiseSettledResult<A>, PromiseSettledResult<B>]> | undefined;
+  await owner.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(${lockId(key)})`.execute(trx);
+    let done = false;
+    const a = Promise.allSettled([first()]).then(([r]) => {
+      done = true;
+      return r as PromiseSettledResult<A>;
+    });
+    for (let i = 0; i < 400 && !done && (await waitingOn(trx, key)) < 1; i++)
+      await new Promise((r) => setTimeout(r, 25));
+    const b = Promise.allSettled([second()]).then(([r]) => {
+      done = true;
+      return r as PromiseSettledResult<B>;
+    });
+    for (let i = 0; i < 400 && !done && (await waitingOn(trx, key)) < 2; i++)
+      await new Promise((r) => setTimeout(r, 25));
+    out = Promise.all([a, b]);
+  });
+  return out as Promise<[PromiseSettledResult<A>, PromiseSettledResult<B>]>;
+}
+const reasonOf = (r: PromiseSettledResult<unknown>) =>
+  r.status === 'rejected'
+    ? ((r.reason as { details?: { reason?: string } }).details?.reason ??
+      String((r.reason as Error).message))
+    : 'fulfilled';
 
 /** `@2` content as a test may tamper with it (members optional so they can be deleted). */
 interface MutableEntry {
@@ -598,6 +640,109 @@ describe('classification @2 through the ResultLedger (re-derive and compare)', (
       details: { reason: 'DERIVATION_BLOCKED', blockers: ['CLASSIFICATION_INPUT_MISSING'] },
     });
   });
+
+  it('WP-P0-1 (D-14). a result on a VOID match is never pinned by a classification; nothing is rewritten', async () => {
+    const w2 = await contestWorld('10950', '11150');
+    const scope2 = await scopeOf('CONTEST', w2.contestId);
+    await accept(w2.resultVersionId, scope2, w2.acceptorId);
+    await new StructureStore(api).voidContest({
+      actorAccountId: w2.organizer.ownerAccountId,
+      contestId: w2.contestId,
+      reason: 'fixture: wrong entrant',
+    });
+    const r = await ledger.createResult({
+      scopeType: 'EVENT_CLASSIFICATION',
+      scopeTargetId: w2.eventId as Uuid,
+    });
+    // The read-only proposal still sees the (unrewritten) PROVISIONAL version ...
+    const p = await ledger.proposeClassification(r.id);
+    if (p.state !== 'PROPOSED' || p.outcome.proposal === undefined) throw new Error('no proposal');
+    // ... but submitting it is refused: a VOID match decides nothing.
+    await expect(
+      submit(w2, r.id, p.outcome.proposal.content, await scopeOf('EVENT', w2.eventId)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+      details: { reason: 'CONTEST_NOT_PLAYABLE' },
+    });
+    expect(
+      await countOf(
+        owner,
+        sql<{
+          n: string;
+        }>`SELECT count(*) AS n FROM results.result_version WHERE result_id = ${r.id}`,
+      ),
+    ).toBe(0);
+    const { rows } = await sql<{ status: string }>`
+      SELECT current_status AS status FROM results.result_version_state
+      WHERE result_version_id = ${w2.resultVersionId}`.execute(owner);
+    expect(rows[0]?.status).toBe('PROVISIONAL');
+  });
+
+  it(
+    `WP-P0-1 (D-14). void vs classification submit serialize on the match lock (${P01_RUNS} runs)`,
+    async () => {
+      const api2 = apiDb();
+      try {
+        const structure2 = new StructureStore(api2);
+        const build = async () => {
+          const w2 = await contestWorld('10960', '11160');
+          await accept(w2.resultVersionId, await scopeOf('CONTEST', w2.contestId), w2.acceptorId);
+          const r = await ledger.createResult({
+            scopeType: 'EVENT_CLASSIFICATION',
+            scopeTargetId: w2.eventId as Uuid,
+          });
+          const p = await ledger.proposeClassification(r.id);
+          if (p.state !== 'PROPOSED' || p.outcome.proposal === undefined)
+            throw new Error('no proposal');
+          const scope = await scopeOf('EVENT', w2.eventId);
+          return {
+            w2,
+            resultId: r.id,
+            voided: () =>
+              structure2.voidContest({
+                actorAccountId: w2.organizer.ownerAccountId,
+                contestId: w2.contestId,
+                reason: 'race',
+              }),
+            submitted: () => submit(w2, r.id, p.outcome.proposal?.content, scope),
+          };
+        };
+        // Fixture set-up only: authority is evaluated as of the database clock, which steps back
+        // locally (WSL); a principal used right after it was recorded can then read as unknown.
+        const ready = async () => {
+          for (let attempt = 1; ; attempt++)
+            try {
+              return await build();
+            } catch (err) {
+              if (attempt >= 3 || !/UNKNOWN_PRINCIPAL|PRINCIPAL_UNKNOWN/.test(String(err)))
+                throw err;
+            }
+        };
+        const versionsOf = (resultId: string) =>
+          countOf(
+            owner,
+            sql<{
+              n: string;
+            }>`SELECT count(*) AS n FROM results.result_version WHERE result_id = ${resultId}`,
+          );
+        for (let i = 0; i < P01_RUNS; i++) {
+          // void first: the classification is refused, nothing is pinned
+          const a = await ready();
+          const [v1, s1] = await ordered(`contest:${a.w2.contestId}`, a.voided, a.submitted);
+          expect([reasonOf(v1), reasonOf(s1)]).toEqual(['fulfilled', 'CONTEST_NOT_PLAYABLE']);
+          expect(await versionsOf(a.resultId)).toBe(0);
+          // submit first: it pins the result of a match then in progress; the void lands after it
+          const b = await ready();
+          const [s2, v2] = await ordered(`contest:${b.w2.contestId}`, b.submitted, b.voided);
+          expect([reasonOf(s2), reasonOf(v2)]).toEqual(['fulfilled', 'fulfilled']);
+          expect(await versionsOf(b.resultId)).toBe(1);
+        }
+      } finally {
+        await api2.destroy();
+      }
+    },
+    300_000 + P01_RUNS * 60_000,
+  );
 
   it('policy binding is unique-or-fail: none ⇒ POLICY_UNAVAILABLE; two ⇒ CLASSIFICATION_POLICY_AMBIGUOUS', async () => {
     const r = await ledger.createResult({

@@ -8,18 +8,22 @@ import {
   CompetitionHierarchyResolver,
   createCompetitionResultLedger,
 } from '../competition-hierarchy';
+import { CompetitionStore } from '../competition-store';
+import { StructureStore } from '../competition-structure-store';
 import { databaseUrls } from '../config';
 import { createDb } from '../db';
 import { EvidenceStore } from '../evidence-store';
 import { IdentityStore } from '../identity-store';
 import { PrincipalKeyCeremony } from '../key-ceremony-store';
+import { ScheduleStore } from '../schedule-store';
 import { inTransaction, ModuleRole } from '../tx';
 
 /**
  * BRT-06 development seed. ALL DATA IS FICTIONAL. Builds on `pnpm db:seed:competition` (the
  * Fictional Padel Open): a submitted ResultVersion for its first contest, a fictional score-sheet
  * EvidenceItem attached to it, and a cryptographically signed RESULT_ACCURATE claim by the
- * fictional organizer's ORGANIZATION principal.
+ * fictional organizer's ORGANIZATION principal. WP-P0-1: a result needs a match in progress or
+ * completed, so the first run activates the competition, starts the event and starts that contest.
  *
  * Idempotent: fixed idempotency keys and "already done" detection, so re-running prints the same
  * output. The signing key is generated IN MEMORY on the first run only (its private half is never
@@ -44,6 +48,63 @@ const resolver = new CompetitionHierarchyResolver(db);
 const evidence = new EvidenceStore(db, { blobStore });
 const attestations = new AttestationStore(db, { audience: AUDIENCE });
 const ceremony = new PrincipalKeyCeremony(db, { audience: AUDIENCE });
+const comps = new CompetitionStore(db);
+const structure = new StructureStore(db);
+const schedule = new ScheduleStore(db);
+
+/** Brings the seeded contest to IN_PROGRESS; each step only runs from the state before it. */
+async function playContest(actorAccountId: string, competitionId: string, contestId: string) {
+  const status = () =>
+    inTransaction(db, ModuleRole.competition, async (ctx) => {
+      const { rows } = await sql<{
+        contest: string;
+        event: string;
+        event_id: string;
+        competition: string;
+      }>`
+        SELECT cv.status AS contest, ev.status AS event, c.event_id, cc.status AS competition
+        FROM competition.contest c
+        JOIN competition.event e ON e.id = c.event_id
+        JOIN competition.v_contest_current cv ON cv.contest_id = c.id
+        JOIN competition.v_event_current ev ON ev.event_id = c.event_id
+        JOIN competition.v_competition_current cc ON cc.competition_id = e.competition_id
+        WHERE c.id = ${contestId}`.execute(ctx.trx);
+      if (rows[0] === undefined) throw new Error('seeded contest not found');
+      return rows[0];
+    });
+  let s = await status();
+  if (s.contest === 'IN_PROGRESS' || s.contest === 'COMPLETED') return;
+  if (s.competition === 'PUBLISHED')
+    await comps.activateCompetition({ actorAccountId, competitionId });
+  if (s.event === 'FIELD_LOCKED') await comps.startEvent({ actorAccountId, eventId: s.event_id });
+  if (s.contest === 'PLANNED') {
+    await structure.scheduleContest({
+      actorAccountId,
+      contestId,
+      scheduledStart: '2027-03-01T10:00:00Z',
+      // The seeded contest has no schedule assignment yet (ADR-0070 §9 amendment).
+      expectedLastFactId: null,
+      idempotencyKey: 'seed:evidence:schedule',
+    });
+    const { items } = await schedule.listVersions({ actorAccountId, competitionId });
+    const draft = items.find((v) => v.status === 'DRAFT');
+    if (draft === undefined) throw new Error('no open schedule draft');
+    const report = await schedule.validate({ actorAccountId, versionId: draft.versionId });
+    await schedule.publish({
+      actorAccountId,
+      versionId: draft.versionId,
+      baseVersionId: draft.baseVersionId,
+      reportHash: report.reportHash,
+      acknowledgedConflictKeys: report.conflicts
+        .filter((c) => c.severity === 'SOFT')
+        .map((c) => c.conflictKey),
+      idempotencyKey: 'seed:evidence:publish-schedule',
+    });
+    s = await status();
+  }
+  if (s.contest !== 'SCHEDULED') throw new Error(`the seeded contest is ${s.contest}`);
+  await structure.startContest({ actorAccountId, contestId });
+}
 
 try {
   const { accountId: organizer } = await identity.signIn({
@@ -123,6 +184,7 @@ try {
       scope: { recognitionLevel: ['PLATFORM'], competition: [found.competitionId as Uuid] },
       delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
     });
+    await playContest(organizer, found.competitionId, found.contestId);
     const [winner, loser] = found.participants as [string, string];
     const { draftId } = await ledger.saveDraft({
       resultId: result.id,

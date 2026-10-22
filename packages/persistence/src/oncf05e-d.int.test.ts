@@ -12,13 +12,14 @@ import { DomainErrorCode, newId, type Uuid } from '@br/domain';
 import {
   apiDb,
   declaredNoParticipation,
+  lastScheduleFact,
   newAthlete,
   newOrganizer,
   newTestAccount,
   operatorDb,
   ownerDb,
+  playContest,
   uniqueSlug,
-  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -240,6 +241,7 @@ const scopeOf = (contestId: string) =>
 async function official(actor: string, ref: Uuid, contestId: string, sheet: ScoreSheet) {
   const v = await scoring.validateScoreSheet({ actorAccountId: actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  await playContest({ db, comps, structure }, actor, contestId);
   const result = await ledger.createResult({
     scopeType: 'CONTEST',
     scopeTargetId: contestId as Uuid,
@@ -384,7 +386,9 @@ describe('validate and publish run the 05E-D engine — the only validator in fo
         fact,
         idempotencyKey: k(),
       });
-    const { versionId } = await schedule.openDraft({
+    // WP-P0-1: the semifinals are played before they take a result, so the plan is published first
+    // (the semifinals become SCHEDULED); every report below reads a fresh draft on top of it.
+    const { versionId: planned } = await schedule.openDraft({
       actorAccountId: t.actor,
       competitionId: t.competitionId,
       idempotencyKey: k(),
@@ -396,12 +400,27 @@ describe('validate and publish run the 05E-D engine — the only validator in fo
     ] as const)
       await schedule.setAssignment({
         actorAccountId: t.actor,
-        versionId,
+        versionId: planned,
         contestId,
         assignment: { resourceId, startsAt: at(h) },
-        expectedLastFactId: await lastScheduleFact(db, contestId, versionId),
+        expectedLastFactId: await lastScheduleFact(db, contestId, planned),
         idempotencyKey: k(),
       });
+    const plan = await schedule.validate({ actorAccountId: t.actor, versionId: planned });
+    expect(plan.conflicts).toEqual([]);
+    await schedule.publish({
+      actorAccountId: t.actor,
+      versionId: planned,
+      baseVersionId: null,
+      reportHash: plan.reportHash,
+      acknowledgedConflictKeys: [],
+      idempotencyKey: k(),
+    });
+    const { versionId } = await schedule.openDraft({
+      actorAccountId: t.actor,
+      competitionId: t.competitionId,
+      idempotencyKey: k(),
+    });
     const unresolved = await schedule.validate({ actorAccountId: t.actor, versionId });
     expect(unresolved.conflicts).toEqual([]);
 
@@ -457,7 +476,7 @@ describe('validate and publish run the 05E-D engine — the only validator in fo
       schedule.publish({
         actorAccountId: t.actor,
         versionId,
-        baseVersionId: null,
+        baseVersionId: planned,
         reportHash: resolved.reportHash,
         acknowledgedConflictKeys: [],
         idempotencyKey: k(),

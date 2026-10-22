@@ -138,6 +138,8 @@ const L6_TRANSITION_REASONS: ReadonlySet<string> = new Set([
   'EVENTS_OPEN',
   'NO_COMPLETED_EVENT',
   'EVENT_FINISHED',
+  // WP-P0-1 (D-14): a result write on a match that is not in progress or completed.
+  'CONTEST_NOT_PLAYABLE',
 ]);
 
 /** Error body: stable code + safe message. Never echoes request values, SQL details or PII. */

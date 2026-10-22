@@ -20,13 +20,14 @@ import { CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import {
   apiDb,
   declaredNoParticipation,
+  lastScheduleFact,
   newAthlete,
   newOrganizer,
   newTestAccount,
   operatorDb,
   ownerDb,
+  playContest,
   uniqueSlug,
-  lastScheduleFact,
 } from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -1657,6 +1658,7 @@ async function referee(competitionId: string) {
 async function official(actor: string, ref: Uuid, contestId: string, sheet: ScoreSheet) {
   const v = await scoring.validateScoreSheet({ actorAccountId: actor, contestId, sheet });
   if (!v.ok) throw new Error(JSON.stringify(v.issues));
+  await playContest({ db, comps, structure }, actor, contestId);
   const result = await ledger.createResult({
     scopeType: 'CONTEST',
     scopeTargetId: contestId as Uuid,
@@ -1897,11 +1899,28 @@ describe('ONCF-05E-F-4: 05D bracket and results changes between preview and comm
       formatConfig: { drawSize: 4 },
       entrants: 4,
     });
+    const courts: string[] = [];
     for (const label of ['Court 1', 'Court 2', 'Court 3', 'Court 4'])
-      await resource(comp, 'TENNIS_COURT', label);
+      courts.push(await resource(comp, 'TENNIS_COURT', label));
     await openAllWeek(comp);
-    const versionId = await draft(comp);
     const [sf1, sf2, final] = ko.contests.map((c) => c.id) as [string, string, string];
+    // WP-P0-1: the semifinals are played before they take a result, so they are placed and
+    // published first; the proposal under test runs on a fresh draft on top of that schedule.
+    const first = await draft(comp);
+    for (const [contestId, court] of [
+      [sf1, courts[0]],
+      [sf2, courts[1]],
+    ] as const)
+      await schedule.setAssignment({
+        actorAccountId: comp.actor,
+        versionId: first,
+        contestId,
+        assignment: { resourceId: court as string, startsAt: '2027-09-02T12:00:00Z' },
+        expectedLastFactId: await lastScheduleFact(db, contestId, first),
+        idempotencyKey: k(),
+      });
+    await publishDraft(comp, first);
+    const versionId = await draft(comp);
     const win: ScoreSheet = {
       family: 'SETS_OF_GAMES',
       sets: [{ games: [6, 2] }, { games: [6, 3] }],
@@ -1955,6 +1974,11 @@ describe('ONCF-05E-F-4: 05D bracket and results changes between preview and comm
     });
     await resource(comp, 'GOLF_COURSE', 'Course', { capacity: 144 });
     await openAllWeek(comp);
+    // WP-P0-1: rounds 1 and 2 are played before they take a result, so they are placed and
+    // published first; the proposal under test runs on a fresh draft on top of that schedule.
+    const first = await draft(comp);
+    await commitsAfresh(comp, first);
+    await publishDraft(comp, first);
     const versionId = await draft(comp);
 
     // Rounds 1 and 2 are OFFICIAL: three players make the cut (a tie at the line), one DNF.

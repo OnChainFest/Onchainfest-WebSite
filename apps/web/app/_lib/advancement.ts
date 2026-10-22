@@ -134,6 +134,7 @@ const REASON_LABEL: Record<string, string> = {
   RESULT_MISSING: 'No result yet',
   RESULT_NOT_OFFICIAL: 'Result not official yet',
   SOURCE_CANCELLED: 'Source contest cancelled — needs a decision',
+  SOURCE_NOT_PLAYED: 'Source contest not played yet',
   UPSTREAM_STALE: 'An earlier slot changed — resolve it first',
   SOURCE_OCCUPANTS_CHANGED: 'The source contest’s entrants changed',
   NO_WINNER: 'The result names no winner — needs a decision',
