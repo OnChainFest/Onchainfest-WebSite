@@ -1,6 +1,6 @@
 name: legal-hub-deploy
 
-# ONCHAINFEST-LEGAL-04 · legal.onchainfest.xyz — legal hub DEPLOY (trusted side).
+# ONCHAINFEST-LEGAL-04/06 · legal.onchainfest.xyz — legal hub DEPLOY (trusted side).
 #
 # Trigger: `workflow_run` of legal-hub (the build). GitHub always runs this file from the default
 # branch, so a pull request cannot change these steps. The jobs never check out or execute the
@@ -20,6 +20,12 @@ name: legal-hub-deploy
 #      verified files; `vercel build` only copies them (no token), and the output is checked to be
 #      exactly those files before `vercel deploy --prebuilt` (token) runs.
 #   5. Production deploys only a commit that is on main.
+#   6. Vercel decides the real target server-side: a project's FIRST deployment becomes production
+#      (with its public production domains) whatever the CLI asked for (LEGAL-05). Before a
+#      preview, the project must already have a production deployment and Vercel Authentication;
+#      after any deploy, the server-side target is read back from the API and, for a preview, every
+#      URL of the deployment must refuse an anonymous visitor. A failure is a security error with
+#      a manual remediation (runbook §3.6); nothing is deleted automatically.
 
 on:
   workflow_run:
@@ -137,7 +143,21 @@ jobs:
         run: >-
           python3 -I .github/legal-hub/artifact.py check-output
           --output "$RUNNER_TEMP/site/.vercel/output" --public "$RUNNER_TEMP/site/public" --target preview
+      - name: Guard preview target (an existing production deployment, Vercel Authentication on)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          team=$(jq -r '.orgId' "$RUNNER_TEMP/site/.vercel/project.json")
+          [[ "$team" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::malformed Vercel team id"; exit 1; }
+          curl -fsS --proto '=https' --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -o "$RUNNER_TEMP/vercel-project.json" \
+            "https://api.vercel.com/v9/projects/$VC_PROJECT?teamId=$team"
+          python3 -I .github/legal-hub/artifact.py check-project \
+            --project-api "$RUNNER_TEMP/vercel-project.json" --project-id "$VC_PROJECT"
       - name: Deploy (preview)
+        id: deploy
         working-directory: ${{ runner.temp }}/site
         timeout-minutes: 10
         env:
@@ -149,6 +169,40 @@ jobs:
           echo "Preview deployment: $url"
           echo "### Legal hub preview deployment ($HEAD_SHA)" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]] || { echo "::error::unexpected deployment URL"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      # The CLI's request is not the outcome: read the deployment back from Vercel.
+      - name: Verify deployment (server-side target, aliases, Vercel Authentication)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          team=$(jq -r '.orgId' "$RUNNER_TEMP/site/.vercel/project.json")
+          [[ "$team" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::malformed Vercel team id"; exit 1; }
+          api() {
+            curl -fsS --proto '=https' --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -o "$2" "https://api.vercel.com$1?teamId=$team"
+          }
+          api "/v13/deployments/${DEPLOYMENT_URL#https://}" "$RUNNER_TEMP/deployment.json"
+          id=$(jq -r '.id' "$RUNNER_TEMP/deployment.json")
+          [[ "$id" =~ ^dpl_[A-Za-z0-9]+$ ]] || { echo "::error::malformed deployment id"; exit 1; }
+          api "/v2/deployments/$id/aliases" "$RUNNER_TEMP/aliases.json"
+          : > "$RUNNER_TEMP/probes.tsv"
+          if [ "$MODE" = preview ]; then
+            # Without any Vercel credential: what an anonymous visitor gets from every URL.
+            hosts=$(jq -r '.url' "$RUNNER_TEMP/deployment.json"; jq -r '.aliases[]?.alias' "$RUNNER_TEMP/aliases.json")
+            for host in $(sort -u <<<"$hosts"); do
+              [[ "$host" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::malformed host"; exit 1; }
+              result=$(curl -s -o /dev/null --proto '=https' --max-time 20 \
+                -w '%{http_code}\t%{redirect_url}' "https://$host/" || true)
+              printf '%s\t%s\n' "$host" "$result" | tee -a "$RUNNER_TEMP/probes.tsv"
+            done
+          fi
+          python3 -I .github/legal-hub/artifact.py check-deployment \
+            --deployment "$RUNNER_TEMP/deployment.json" --aliases "$RUNNER_TEMP/aliases.json" \
+            --probes "$RUNNER_TEMP/probes.tsv" --project-id "$VC_PROJECT" --mode "$MODE"
 
   production:
     name: legal hub production deploy
@@ -267,6 +321,7 @@ jobs:
           python3 -I .github/legal-hub/artifact.py check-output
           --output "$RUNNER_TEMP/site/.vercel/output" --public "$RUNNER_TEMP/site/public" --target production
       - name: Deploy (production)
+        id: deploy
         working-directory: ${{ runner.temp }}/site
         timeout-minutes: 10
         env:
@@ -278,3 +333,37 @@ jobs:
           echo "Production deployment: $url"
           echo "### Legal hub production deployment ($HEAD_SHA)" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]] || { echo "::error::unexpected deployment URL"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      # The CLI's request is not the outcome: read the deployment back from Vercel.
+      - name: Verify deployment (server-side target, aliases, Vercel Authentication)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_LEGAL_TOKEN }}
+          VC_PROJECT: ${{ secrets.VERCEL_LEGAL_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          team=$(jq -r '.orgId' "$RUNNER_TEMP/site/.vercel/project.json")
+          [[ "$team" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::malformed Vercel team id"; exit 1; }
+          api() {
+            curl -fsS --proto '=https' --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -o "$2" "https://api.vercel.com$1?teamId=$team"
+          }
+          api "/v13/deployments/${DEPLOYMENT_URL#https://}" "$RUNNER_TEMP/deployment.json"
+          id=$(jq -r '.id' "$RUNNER_TEMP/deployment.json")
+          [[ "$id" =~ ^dpl_[A-Za-z0-9]+$ ]] || { echo "::error::malformed deployment id"; exit 1; }
+          api "/v2/deployments/$id/aliases" "$RUNNER_TEMP/aliases.json"
+          : > "$RUNNER_TEMP/probes.tsv"
+          if [ "$MODE" = preview ]; then
+            # Without any Vercel credential: what an anonymous visitor gets from every URL.
+            hosts=$(jq -r '.url' "$RUNNER_TEMP/deployment.json"; jq -r '.aliases[]?.alias' "$RUNNER_TEMP/aliases.json")
+            for host in $(sort -u <<<"$hosts"); do
+              [[ "$host" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::malformed host"; exit 1; }
+              result=$(curl -s -o /dev/null --proto '=https' --max-time 20 \
+                -w '%{http_code}\t%{redirect_url}' "https://$host/" || true)
+              printf '%s\t%s\n' "$host" "$result" | tee -a "$RUNNER_TEMP/probes.tsv"
+            done
+          fi
+          python3 -I .github/legal-hub/artifact.py check-deployment \
+            --deployment "$RUNNER_TEMP/deployment.json" --aliases "$RUNNER_TEMP/aliases.json" \
+            --probes "$RUNNER_TEMP/probes.tsv" --project-id "$VC_PROJECT" --mode "$MODE"

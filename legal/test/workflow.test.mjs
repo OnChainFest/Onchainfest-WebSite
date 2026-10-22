@@ -1,4 +1,4 @@
-// ONCHAINFEST-LEGAL-03/04 · Deployment controls of the legal hub workflows (node:test, no
+// ONCHAINFEST-LEGAL-03/04/06 · Deployment controls of the legal hub workflows (node:test, no
 // dependencies):
 //   .github/workflows/legal-hub.yml         BUILD: untrusted, no secrets, uploads the artifact
 //   .github/workflows/legal-hub-deploy.yml  DEPLOY: workflow_run from the default branch,
@@ -150,6 +150,14 @@ describe('preview job', () => {
     assert.match(preview, /\n {4}environment: legal-hub-preview\n/);
   });
 
+  it('refuses to deploy into a project without a production deployment or protection', () => {
+    const guard = step(preview, 'Guard preview target');
+    assert.match(guard, /api\.vercel\.com\/v9\/projects\/\$VC_PROJECT/);
+    assert.match(guard, /artifact\.py check-project/);
+    assert.ok(index(preview, 'Verify prebuilt output') < index(preview, 'Guard preview target'));
+    assert.ok(index(preview, 'Guard preview target') < index(preview, 'Deploy'));
+  });
+
   it('checks out only trusted tooling from the default branch', () => {
     const checkout = step(preview, 'Check out trusted tooling');
     assert.match(checkout, /ref: \$\{\{ github\.sha \}\}/);
@@ -194,6 +202,10 @@ describe('production job', () => {
     );
   });
 
+  it('has no preview-target guard (production is the intended target)', () => {
+    assert.equal(index(production, 'Guard preview target'), -1);
+  });
+
   it('verifies the artifact with production rules (second legal gate)', () => {
     assert.match(step(production, 'Fetch and verify'), /--mode "\$MODE"/);
     assert.match(production, /\n {6}MODE: production\n/);
@@ -235,6 +247,7 @@ describe('deploy job procedure (both jobs)', () => {
         'Build prebuilt output',
         'Verify prebuilt output',
         'Deploy',
+        'Verify deployment',
       ].map((prefix) => index(job, prefix));
       assert.ok(
         order.every((i) => i >= 0),
@@ -246,13 +259,43 @@ describe('deploy job procedure (both jobs)', () => {
       );
     });
 
-    it(`${id}: the Vercel token only on pull and deploy; build without a token`, () => {
+    it(`${id}: the Vercel token only on pull, deploy and its API checks; build without a token`, () => {
+      const withToken = ['Pull Vercel', 'Guard preview target', 'Deploy', 'Verify deployment'];
       for (const [name, text] of steps(job)) {
-        const allowed = name.startsWith('Pull Vercel') || name.startsWith('Deploy');
+        const allowed = withToken.some((prefix) => name.startsWith(prefix));
         assert.equal(/VERCEL_LEGAL_TOKEN/.test(text), allowed, name);
       }
       assert.doesNotMatch(step(job, 'Build prebuilt output'), /--token|secrets\./);
       assert.doesNotMatch(job.slice(0, job.indexOf('\n    steps:\n')), /secrets\./);
+    });
+
+    it(`${id}: reads the deployment back and checks its server-side target`, () => {
+      const deploy = step(job, 'Deploy');
+      assert.match(deploy, /\n {8}id: deploy\n/);
+      assert.match(deploy, /echo "url=\$url" >> "\$GITHUB_OUTPUT"/);
+      const verify = step(job, 'Verify deployment');
+      assert.match(verify, /DEPLOYMENT_URL: \$\{\{ steps\.deploy\.outputs\.url \}\}/);
+      assert.match(verify, /\/v13\/deployments\//);
+      assert.match(verify, /\/v2\/deployments\/\$id\/aliases/);
+      assert.match(verify, /artifact\.py check-deployment[\s\S]*--mode "\$MODE"/);
+      // The only tolerated failure is an anonymous probe's (an error there is reported as 000).
+      const outsideProbe = verify.replace(/result=\$\(curl [^)]*\)/, '');
+      assert.doesNotMatch(outsideProbe, /\|\|\s*(true|:)|set \+e/);
+      assert.match(verify, /set -euo pipefail/);
+      assert.doesNotMatch(job, /continue-on-error/);
+    });
+
+    it(`${id}: probes every URL of a preview without credentials`, () => {
+      const verify = step(job, 'Verify deployment');
+      const probe = verify.match(/result=\$\(curl [^)]*\)/)?.[0];
+      assert.ok(probe, 'anonymous probe');
+      assert.doesNotMatch(probe, /TOKEN|Authorization|bypass/i);
+      assert.match(verify, /\.aliases\[\]\?\.alias/);
+      assert.match(verify, /if \[ "\$MODE" = preview \]/);
+    });
+
+    it(`${id}: never deletes or re-aliases deployments automatically`, () => {
+      assert.doesNotMatch(job, /vercel (remove|rm|alias|promote|rollback)|-X DELETE/);
     });
 
     it(`${id}: project ids are checked before the pull and the link after it`, () => {

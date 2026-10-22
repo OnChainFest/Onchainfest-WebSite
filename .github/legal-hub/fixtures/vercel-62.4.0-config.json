@@ -1,0 +1,84 @@
+{
+  "version": 3,
+  "routes": [
+    {
+      "src": "^/(?:(.+)/)?index(?:\\.html)?/?$",
+      "headers": {
+        "Location": "/$1"
+      },
+      "status": 308
+    },
+    {
+      "src": "^/(.*)\\.html/?$",
+      "headers": {
+        "Location": "/$1"
+      },
+      "status": 308
+    },
+    {
+      "src": "^/(.*)/$",
+      "headers": {
+        "Location": "/$1"
+      },
+      "status": 308
+    },
+    {
+      "src": "^(?:/(.*))$",
+      "headers": {
+        "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "Strict-Transport-Security": "max-age=63072000",
+        "X-Robots-Tag": "noindex, nofollow"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/$",
+      "dest": "/index",
+      "check": true
+    },
+    {
+      "handle": "error"
+    },
+    {
+      "status": 404,
+      "src": "^(?!/api).*$",
+      "dest": "/404"
+    }
+  ],
+  "overrides": {
+    "es/products/listalaboda.html": {
+      "path": "es/products/listalaboda"
+    },
+    "es/privacy.html": {
+      "path": "es/privacy"
+    },
+    "es/terms.html": {
+      "path": "es/terms"
+    },
+    "products/listalaboda.html": {
+      "path": "products/listalaboda"
+    },
+    "404.html": {
+      "path": "404"
+    },
+    "es.html": {
+      "path": "es"
+    },
+    "index.html": {
+      "path": "index"
+    },
+    "privacy.html": {
+      "path": "privacy"
+    },
+    "terms.html": {
+      "path": "terms"
+    }
+  },
+  "crons": []
+}
