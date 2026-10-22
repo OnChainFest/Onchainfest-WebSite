@@ -236,6 +236,34 @@ describe('document relationships', () => {
   });
 });
 
+
+  it('records formation facts without claiming a current notice address or agent', () => {
+    assert.equal(COMPANY.formation.jurisdiction, 'Wyoming, United States');
+    assert.equal(COMPANY.formation.date, '2025-07-18');
+    assert.equal(COMPANY.formation.filingId, '2025-001725151');
+    assert.equal(COMPANY.formation.originalRegisteredAgent, 'Registered Agents Inc');
+    assert.equal(COMPANY.formation.originalAddress, '30 N Gould St, Ste R, Sheridan, WY 82801');
+    assert.equal(COMPANY.address, null);
+    for (const locale of LOCALES) {
+      const prefix = locale === 'en' ? '' : 'es/';
+      for (const doc of DOCUMENTS) {
+        const html = files.get(`${prefix}${doc.path.slice(1)}.html`);
+        assert.match(html, /2025-001725151/);
+        assert.match(html, /Registered Agents Inc/);
+        assert.match(html, /30 N Gould St/);
+        assert.match(html, /class="review"/);
+      }
+    }
+  });
+
+  it('does not claim that every product already has its own legal documents', () => {
+    for (const doc of DOCUMENTS) for (const locale of LOCALES) {
+      const paragraphs = doc.content[locale].sections.flatMap((section) => section.body).filter((x) => typeof x === 'string');
+      const text = [doc.content[locale].summary, ...paragraphs].join(' ');
+      assert.doesNotMatch(text, /Each product has its own|Cada producto tiene su propi[oa]/i);
+    }
+  });
+
 describe('draft and approval model', () => {
   const approved = (overrides = {}) => ({
     ...DOCUMENTS[0],
@@ -300,7 +328,7 @@ describe('draft and approval model', () => {
 
   it('keeps the hub unindexed and refuses a production build while anything is open', async () => {
     assert.ok(blockers.length > 0);
-    assert.deepEqual(blockers, publishBlockers(DOCUMENTS, ['REGISTRATION', 'ADDRESS']));
+    assert.deepEqual(blockers, publishBlockers(DOCUMENTS, ['ADDRESS']));
     assert.equal(files.get('robots.txt'), 'User-agent: *\nDisallow: /\n');
     for (const [file, html] of pages) assert.match(html, /content="noindex, nofollow"/, file);
     const config = JSON.parse(readFileSync(join(LEGAL_DIR, 'vercel.json'), 'utf8'));
