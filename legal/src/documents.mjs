@@ -61,7 +61,7 @@ export const DOCUMENTS = [
             id: 'information',
             heading: 'Information on the Corporate Sites',
             body: [
-              'Content on the Corporate Sites describes {{company}} and its products in general terms. Any applicable product-specific terms, where published, govern the product's own offering.',
+              'Content on the Corporate Sites describes {{company}} and its products in general terms. Any applicable product-specific terms, where published, govern the applicable product offering.',
               '{{review:DIGITAL_ASSETS}}',
             ],
           },
@@ -214,7 +214,7 @@ export const DOCUMENTS = [
             heading: 'Scope',
             body: [
               'This policy explains how {{company}} handles personal data on its corporate websites, www.onchainfest.xyz and legal.onchainfest.xyz (the “Corporate Sites”), and when you write to us directly.',
-              'It does not cover the products operated by {{company}}. Where published and applicable, a product's own privacy policy may govern data processed in that product; see the [product legal directory](~/#products) for individually verified documents.',
+              'It does not cover the products operated by {{company}}. Where published and applicable, a product-specific privacy policy may govern data processed in that product; see the [product legal directory](~/#products) for individually verified documents.',
               '{{review:PRECEDENCE}}',
             ],
           },
