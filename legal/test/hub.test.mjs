@@ -237,6 +237,7 @@ describe('document relationships', () => {
 });
 
 
+describe('verified corporate formation facts', () => {
   it('records formation facts without claiming a current notice address or agent', () => {
     assert.equal(COMPANY.formation.jurisdiction, 'Wyoming, United States');
     assert.equal(COMPANY.formation.date, '2025-07-18');
@@ -257,12 +258,17 @@ describe('document relationships', () => {
   });
 
   it('does not claim that every product already has its own legal documents', () => {
-    for (const doc of DOCUMENTS) for (const locale of LOCALES) {
-      const paragraphs = doc.content[locale].sections.flatMap((section) => section.body).filter((x) => typeof x === 'string');
-      const text = [doc.content[locale].summary, ...paragraphs].join(' ');
-      assert.doesNotMatch(text, /Each product has its own|Cada producto tiene su propi[oa]/i);
+    for (const doc of DOCUMENTS) {
+      for (const locale of LOCALES) {
+        const paragraphs = doc.content[locale].sections
+          .flatMap((section) => section.body)
+          .filter((x) => typeof x === 'string');
+        const text = [doc.content[locale].summary, ...paragraphs].join(' ');
+        assert.doesNotMatch(text, /Each product has its own|Cada producto tiene su propi[oa]/i);
+      }
     }
   });
+});
 
 describe('draft and approval model', () => {
   const approved = (overrides = {}) => ({
