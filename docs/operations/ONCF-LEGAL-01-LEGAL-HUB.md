@@ -9,14 +9,19 @@ project**.
 | [`legal-hub.yml`](../../.github/workflows/legal-hub.yml) | **Build**. Untrusted, with no secrets. |
 | [`legal-hub-deploy.yml`](../../.github/workflows/legal-hub-deploy.yml) | **Deploy**. Trusted: runs on `workflow_run` from the default branch. |
 
-Status after ONCHAINFEST-LEGAL-04: merged code only. **Not deployed.**
+Status after ONCHAINFEST-LEGAL-06: previews enabled, **production disabled**.
 
-- No Vercel project, token, GitHub secret, variable, environment or DNS record exists for the
-  hub yet.
+- Project `onchainfest-legal` (no Git, no domain, Vercel Authentication), environment
+  `legal-hub-preview` and `LEGAL_HUB_PREVIEW_ENABLED=true` exist. Nothing exists for production:
+  no `legal-hub-production` environment, token, variable or DNS record.
 - Both corporate documents are drafts, so production is refused until they are approved (§5).
 - History:
   - LEGAL-03 split preview and production into independent switches.
   - LEGAL-04 split build and deploy across a trust boundary (§2).
+  - LEGAL-05 ran the first preview (PR #35). Being the project's first deployment, Vercel made it
+    a **production** deployment, and its production domain `onchainfest-legal.vercel.app`
+    served the drafts without authentication until the owner removed it (§3.6).
+  - LEGAL-06 serves `/` (it answered 404) and verifies Vercel's server-side target (§2).
 
 ## 1. Isolation from www.onchainfest.xyz
 
@@ -45,7 +50,10 @@ pull_request / push to main           workflow_run (definition always from main)
 │   "legal-hub-site" + manifest      │   │ → workspace (trusted vercel.json + files)       │
 └────────────────────────────────────┘   │ → check-ids → pull (token) → check-link         │
                                           │ → vercel build (no token, copies only)          │
-                                          │ → check-output → deploy --prebuilt (token)      │
+                                          │ → check-output (files, routing)                 │
+                                          │ → preview: project has production + protection  │
+                                          │ → deploy --prebuilt (token) → read back target, │
+                                          │   aliases; preview: anonymous probe of each URL │
                                           └─────────────────────────────────────────────────┘
 ```
 
@@ -108,8 +116,8 @@ credentials, `.github/legal-hub/`, `legal/vercel.json` and `.nvmrc`:
    `robots.txt`. That is the second legal gate, and it does not depend on any repository code.
    Nothing is written until everything passed.
 6. **Workspace:** the trusted `legal/vercel.json` without its `buildCommand`, serving `public/`
-   (the verified files). Keys that could add code or routing (`rewrites`, `functions`, `builds`,
-   a framework) are refused.
+   (the verified files). Keys that could add code or routing (`functions`, `builds`, `routes`,
+   `redirects`, a framework) are refused, and `rewrites` must be exactly `/` → `/index`.
 7. **`check-ids`:** the legal project id exists, is well formed and is **not**
    `VERCEL_PROJECT_ID` (the website). This runs before any credential is used.
 8. **`vercel pull`**, with the legal token, into a temporary directory outside any checkout.
@@ -120,8 +128,20 @@ credentials, `.github/legal-hub/`, `legal/vercel.json` and `.nvmrc`:
 10. **`vercel build`**, without a token. It only copies `public/` (builder `@vercel/static`) and
     compiles the trusted headers and `cleanUrls`.
 11. **`check-output`:** no functions; `builds.json` target is `preview` / `production`;
-    `static/` is byte-identical to the verified files.
-12. **`vercel deploy --prebuilt`** (`--prod` only in the production job), with the legal token.
+    `static/` is byte-identical to the verified files; and `config.json` routes every page to its
+    clean URL, `/` to `index.html`, `/index` to a redirect to `/`, and unknown paths to the 404
+    page. Unknown route shapes fail closed.
+12. **Preview only, `check-project`** (token, `GET /v9/projects`): the project already has a
+    production deployment and Vercel Authentication is on. Vercel assigns a project's **first**
+    deployment to production whatever the CLI asks for (LEGAL-05), so a preview into an empty
+    project is refused.
+13. **`vercel deploy --prebuilt`** (`--prod` only in the production job), with the legal token.
+14. **`check-deployment`** (token, `GET /v13/deployments`, `/v2/deployments/{id}/aliases`): the
+    deployment belongs to the legal project and is READY, and its **server-side** target is
+    `production` for production, `null`/`preview` for a preview. For a preview, the deployment URL
+    and every alias are then requested **without credentials** and each must answer 401 or a
+    redirect to `https://vercel.com/sso-api`. Anything else fails the job with a `SECURITY:`
+    error naming the URLs, and §3.6 applies. Nothing is deleted or re-aliased automatically.
 
 ### Handoff proof (LEGAL-04)
 
@@ -153,7 +173,12 @@ credentials, `.github/legal-hub/`, `legal/vercel.json` and `.nvmrc`:
   production, a wrong or overlapping project id, a non-empty build setting, a wrong target and
   extra output files.
 - **`legal/test/hub.test.mjs`:** content, links, localization, accessibility, the approval model
-  and isolation.
+  and isolation. Links are resolved as Vercel serves them with `cleanUrls` (no implicit `/`).
+- **`.github/legal-hub/fixtures/`:** the `config.json` that CLI 62.4.0 really emits for the hub,
+  with and without the root rewrite. Routing tests run on them; the routing model reproduces what
+  the LEGAL-05 deployment answered (`/` 404, `/index` → `/`, `/es/` → `/es`).
+- LEGAL-06 checks were also run against the real LEGAL-05 deployment: `check-deployment` fails it
+  (`server-side target 'production'`), and fails a simulated public alias (`200`).
 
 ### Remaining limits
 
@@ -185,6 +210,10 @@ credentials, `.github/legal-hub/`, `legal/vercel.json` and `.nvmrc`:
      value.
    - **Do not connect Git.**
    - Deployment Protection: Vercel Authentication on previews.
+   - A new project's first deployment becomes production with a public `*.vercel.app` domain,
+     whatever the CLI asks for. The preview job therefore refuses a project without a production
+     deployment (`check-project`). `onchainfest-legal` already has one (LEGAL-05, behind
+     authentication); a re-created project would need its first deployment made deliberately.
 3. **Create the tokens.** Account Tokens → *Scope*: the team, then **the project**
    `onchainfest-legal` (a project-scoped token, prefix `vcp_`). Vercel documents project scope
    for access tokens at `vercel.com/docs/accounts/access-tokens` (checked 2026-10-21).
@@ -240,7 +269,8 @@ Settings → Rules → Rulesets → New branch ruleset, target `main`:
    `LEGAL_HUB_PRODUCTION_ENABLED` **undefined**.
 2. Open a PR that touches `legal/**`. `legal-hub` builds, then `legal-hub-deploy` → `preview`
    runs.
-3. Check that the run passed every guard. Then check the preview URL:
+3. Check that the run passed every guard, including `check-project` and `check-deployment`.
+   Then check the preview URL:
    - Vercel Authentication;
    - the 8 routes plus the 404;
    - CSP and `X-Robots-Tag: noindex`;
@@ -255,8 +285,33 @@ Settings → Rules → Rulesets → New branch ruleset, target `main`:
 4. **Plan:** Vercel's Hobby plan is for non-commercial use. Confirm the plan that fits OnChainFest
    LLC.
 
+Before step 1: the project's production deployment today is the LEGAL-05 preview content
+(drafts). Assigning a domain to the project attaches it to that deployment. Do not add the domain
+until an approved production deployment exists (production job), or promote it in the same step.
+
 Rollback: remove the domain from `onchainfest-legal`, or promote the previous deployment. The
 website is unaffected either way.
+
+### 3.6 Remediation: a preview became production or is publicly reachable
+
+`check-deployment` failed with `SECURITY:`. The deployment exists; the job does not clean up, on
+purpose (deleting a production deployment automatically could take the wrong thing down and
+would make the next preview the project's "first" deployment again).
+
+1. **Stop new previews:** set `LEGAL_HUB_PREVIEW_ENABLED=false` (or delete it).
+2. **Cut public access**, using the URLs named in the error:
+   - a project production domain (for example `onchainfest-legal.vercel.app`): Vercel →
+     `onchainfest-legal` → Settings → Domains → remove it;
+   - an alias still attached to the deployment:
+     `vercel alias rm <alias> --scope victor-valverdes-projects --yes`.
+   Keep the deployment itself (it stays behind Vercel Authentication at its unique URL).
+3. **Verify** without credentials: each removed host answers `404` with
+   `x-vercel-error: DEPLOYMENT_NOT_FOUND`; the unique URL and remaining aliases answer `302` to
+   `https://vercel.com/sso-api`.
+4. Find the cause (`check-project` should have prevented a first deployment; Deployment
+   Protection settings; a domain added to the project) before re-enabling previews.
+
+LEGAL-05 followed exactly these steps (domain removed, then the alias, both verified).
 
 ## 4. Linking the hub from other properties (separate, later changes)
 

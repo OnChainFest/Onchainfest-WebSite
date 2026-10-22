@@ -1,9 +1,11 @@
-"""ONCHAINFEST-LEGAL-04 · Tests for artifact.py: the deploy-side artifact verification.
+"""ONCHAINFEST-LEGAL-04/06 · Tests for artifact.py: the deploy-side artifact verification.
 
   python3 -I -m unittest discover -s .github/legal-hub -p 'test_*.py'
 
 Builds the real hub once (node legal/scripts/build.mjs), packages it, then checks that the
-verification accepts it and rejects every malicious or broken variant.
+verification accepts it and rejects every malicious or broken variant. fixtures/ holds the
+config.json that Vercel CLI 62.4.0 `vercel build` really emits for the hub, with and without the
+root rewrite (LEGAL-06).
 """
 
 import hashlib
@@ -29,6 +31,18 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 RUN_ID = "4242"
 WEBSITE_PROJECT = "prj_websiteProject0000000000"
 LEGAL_PROJECT = "prj_legalHubProject000000000"
+FIXTURES = os.path.join(HERE, "fixtures")
+CLI_CONFIG = os.path.join(FIXTURES, "vercel-62.4.0-config.json")
+CLI_CONFIG_NO_ROOT = os.path.join(FIXTURES, "vercel-62.4.0-config-no-root-rewrite.json")
+DEPLOY_URL = "onchainfest-legal-abc123-victor-valverdes-projects.vercel.app"
+SCOPED_ALIAS = "onchainfest-legal-victor-valverdes-projects.vercel.app"
+PUBLIC_ALIAS = "onchainfest-legal.vercel.app"
+LOGIN = "https://vercel.com/sso-api?url=https%3A%2F%2F"
+
+
+def load(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def digest(blob):
@@ -254,7 +268,16 @@ class ArtifactTest(unittest.TestCase):
             self.assertEqual(json.load(handle), config)
 
     def test_workspace_refuses_code_or_routing_keys(self):
-        for extra in ({"rewrites": []}, {"functions": {}}, {"builds": []}, {"framework": "nextjs"}):
+        for extra in (
+            {"rewrites": []},
+            {"rewrites": [{"source": "/", "destination": "https://example.com/"}]},
+            {"rewrites": artifact.ROOT_REWRITES + [{"source": "/x", "destination": "/terms"}]},
+            {"redirects": []},
+            {"routes": []},
+            {"functions": {}},
+            {"builds": []},
+            {"framework": "nextjs"},
+        ):
             with self.subTest(extra=extra):
                 path = os.path.join(self.tmp, "vercel-extra.json")
                 with open(os.path.join(REPO, "legal", "vercel.json"), encoding="utf-8") as handle:
@@ -291,13 +314,24 @@ class ArtifactTest(unittest.TestCase):
                 with self.assertRaisesRegex(artifact.ArtifactError, pattern):
                     artifact.check_link(project_json, project_id, website_id)
 
-    def output(self, name, target="preview", extra=None, functions=False):
+    def test_workspace_requires_the_root_rewrite(self):
+        path = os.path.join(self.tmp, "vercel-no-rewrite.json")
+        config = load(os.path.join(REPO, "legal", "vercel.json"))
+        self.assertEqual(config["rewrites"], artifact.ROOT_REWRITES)
+        del config["rewrites"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(config, handle)
+        with self.assertRaisesRegex(artifact.ArtifactError, "rewrites"):
+            artifact.workspace(path, os.path.join(self.tmp, "ws-no-rewrite"))
+
+    def output(self, name, target="preview", extra=None, functions=False, config=CLI_CONFIG):
         public = os.path.join(self.tmp, name, "public")
         if not os.path.exists(public):
             artifact.write_site(self.files, public)
         output = os.path.join(self.tmp, name, "output")
         shutil.rmtree(output, ignore_errors=True)
         shutil.copytree(public, os.path.join(output, "static"))
+        shutil.copy(config, os.path.join(output, "config.json"))
         with open(os.path.join(output, "builds.json"), "w", encoding="utf-8") as handle:
             json.dump({"target": target, "builds": [{"use": "@vercel/static"}]}, handle)
         if extra:
@@ -315,6 +349,164 @@ class ArtifactTest(unittest.TestCase):
             artifact.check_output(*self.output("out-ok", extra="contact.html"), "preview")
         with self.assertRaisesRegex(artifact.ArtifactError, "functions"):
             artifact.check_output(*self.output("out-ok", functions=True), "preview")
+
+    # root routing (LEGAL-05: / answered 404) ---------------------------------------------
+
+    def test_real_cli_output_serves_every_route(self):
+        config = load(CLI_CONFIG)
+        expected = {
+            "/": ("file", "index.html"),
+            "/terms": ("file", "terms.html"),
+            "/privacy": ("file", "privacy.html"),
+            "/products/listalaboda": ("file", "products/listalaboda.html"),
+            "/es": ("file", "es.html"),
+            "/es/terms": ("file", "es/terms.html"),
+            "/es/privacy": ("file", "es/privacy.html"),
+            "/es/products/listalaboda": ("file", "es/products/listalaboda.html"),
+            "/assets/legal.css": ("file", "assets/legal.css"),
+            "/robots.txt": ("file", "robots.txt"),
+            # cleanUrls redirects; /index goes to / and / is served, so there is no loop
+            "/index": ("redirect", "/"),
+            "/index.html": ("redirect", "/"),
+            "/terms.html": ("redirect", "/terms"),
+            "/es/": ("redirect", "/es"),
+            "/es/index": ("redirect", "/es"),
+            "/terms/": ("redirect", "/terms"),
+            # unknown paths reach the error phase (404.html, status 404)
+            "/nope": ("missing", None),
+            "/es/nope": ("missing", None),
+            "/products/unknown": ("missing", None),
+        }
+        for path, result in expected.items():
+            with self.subTest(path=path):
+                self.assertEqual(artifact.route(config, self.files, path), result)
+        artifact.check_routing(config, self.files)
+
+    def test_output_without_the_root_rewrite_is_refused(self):
+        """The configuration deployed in LEGAL-05: / is not served."""
+        config = load(CLI_CONFIG_NO_ROOT)
+        self.assertEqual(artifact.route(config, self.files, "/"), ("missing", None))
+        self.assertEqual(artifact.route(config, self.files, "/terms"), ("file", "terms.html"))
+        with self.assertRaisesRegex(artifact.ArtifactError, "/ would not serve index.html"):
+            artifact.check_output(*self.output("out-no-root", config=CLI_CONFIG_NO_ROOT), "preview")
+
+    def test_routing_refuses_unknown_route_shapes(self):
+        for rule in (
+            {"handle": "miss"},
+            {"src": "^/$", "dest": "https://example.com/"},
+            {"src": "^/(.*)$", "dest": "/$1", "middlewarePath": "x"},
+        ):
+            with self.subTest(rule=rule):
+                config = load(CLI_CONFIG)
+                config["routes"].insert(0, rule)
+                with self.assertRaises(artifact.ArtifactError):
+                    artifact.check_routing(config, self.files)
+        config = load(CLI_CONFIG)
+        config["routes"] = [r for r in config["routes"] if r.get("status") != 404]
+        with self.assertRaisesRegex(artifact.ArtifactError, "404"):
+            artifact.check_routing(config, self.files)
+
+    # Vercel server-side target and protection (LEGAL-05: first deploy became production) ----
+
+    def json_file(self, data):
+        fd, path = tempfile.mkstemp(suffix=".json", dir=self.tmp)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        return path
+
+    def project(self, **changes):
+        data = {
+            "id": LEGAL_PROJECT,
+            "ssoProtection": {"deploymentType": "all_except_custom_domains"},
+            "targets": {"production": {"id": "dpl_existingProduction"}},
+        }
+        data.update(changes)
+        return self.json_file(data)
+
+    def test_preview_requires_an_existing_production_deployment_and_protection(self):
+        artifact.check_project(self.project(), LEGAL_PROJECT)
+        cases = [
+            (self.project(targets={}), "no production deployment"),
+            (self.project(targets=None), "no production deployment"),
+            (self.project(ssoProtection=None), "Vercel Authentication"),
+            (self.project(id=WEBSITE_PROJECT), "another project"),
+        ]
+        for path, pattern in cases:
+            with self.subTest(pattern=pattern):
+                with self.assertRaisesRegex(artifact.ArtifactError, pattern):
+                    artifact.check_project(path, LEGAL_PROJECT)
+
+    def deployment(self, aliases=(SCOPED_ALIAS,), probes=None, **changes):
+        data = {"projectId": LEGAL_PROJECT, "readyState": "READY", "target": None,
+                "url": DEPLOY_URL}
+        data.update(changes)
+        if probes is None:
+            probes = {host: ("302", LOGIN + host) for host in (DEPLOY_URL, *aliases)}
+        fd, probe_path = tempfile.mkstemp(suffix=".tsv", dir=self.tmp)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for host, (code, location) in probes.items():
+                handle.write(f"{host}\t{code}\t{location}\n")
+        return (self.json_file(data), self.json_file({"aliases": [{"alias": a} for a in aliases]}),
+                probe_path)
+
+    def test_a_protected_preview_passes(self):
+        artifact.check_deployment(*self.deployment(), LEGAL_PROJECT, "preview")
+        artifact.check_deployment(*self.deployment(target="preview"), LEGAL_PROJECT, "preview")
+        probes = {DEPLOY_URL: ("401", ""), SCOPED_ALIAS: ("302", LOGIN + SCOPED_ALIAS)}
+        artifact.check_deployment(*self.deployment(probes=probes), LEGAL_PROJECT, "preview")
+
+    def test_a_preview_promoted_to_production_fails(self):
+        """What happened in LEGAL-05 (run 39714230172)."""
+        files = self.deployment(aliases=(PUBLIC_ALIAS, SCOPED_ALIAS), target="production",
+                                probes={DEPLOY_URL: ("302", LOGIN), SCOPED_ALIAS: ("302", LOGIN),
+                                        PUBLIC_ALIAS: ("200", "")})
+        with self.assertRaisesRegex(artifact.ArtifactError,
+                                    "SECURITY: preview deploy has server-side target 'production'"
+                                    ".*onchainfest-legal.vercel.app"):
+            artifact.check_deployment(*files, LEGAL_PROJECT, "preview")
+
+    def test_a_public_alias_fails_even_on_a_preview_target(self):
+        probes = {DEPLOY_URL: ("302", LOGIN + DEPLOY_URL), PUBLIC_ALIAS: ("200", "")}
+        files = self.deployment(aliases=(PUBLIC_ALIAS,), probes=probes)
+        with self.assertRaisesRegex(artifact.ArtifactError,
+                                    r"SECURITY: reachable without Vercel Authentication: "
+                                    r"onchainfest-legal\.vercel\.app \(200\)"):
+            artifact.check_deployment(*files, LEGAL_PROJECT, "preview")
+
+    def test_unproven_protection_fails_closed(self):
+        cases = {
+            "missing probe": {DEPLOY_URL: ("302", LOGIN)},
+            "redirect elsewhere": {DEPLOY_URL: ("302", "https://example.com/"),
+                                   SCOPED_ALIAS: ("302", LOGIN)},
+            "network error": {DEPLOY_URL: ("000", ""), SCOPED_ALIAS: ("302", LOGIN)},
+            "not found": {DEPLOY_URL: ("404", ""), SCOPED_ALIAS: ("302", LOGIN)},
+        }
+        for name, probes in cases.items():
+            with self.subTest(name):
+                with self.assertRaisesRegex(artifact.ArtifactError, "SECURITY: reachable"):
+                    artifact.check_deployment(*self.deployment(probes=probes), LEGAL_PROJECT,
+                                              "preview")
+
+    def test_deployment_identity_and_state(self):
+        with self.assertRaisesRegex(artifact.ArtifactError, "does not belong"):
+            artifact.check_deployment(*self.deployment(projectId=WEBSITE_PROJECT), LEGAL_PROJECT,
+                                      "preview")
+        with self.assertRaisesRegex(artifact.ArtifactError, "not READY"):
+            artifact.check_deployment(*self.deployment(readyState="ERROR"), LEGAL_PROJECT,
+                                      "preview")
+
+    def test_production_target_check(self):
+        artifact.check_deployment(*self.deployment(target="production", probes={}),
+                                  LEGAL_PROJECT, "production")
+        with self.assertRaisesRegex(artifact.ArtifactError, "server-side target None"):
+            artifact.check_deployment(*self.deployment(probes={}), LEGAL_PROJECT, "production")
+
+    def test_cli_reports_security_failures_as_errors(self):
+        files = self.deployment(target="production")
+        args = ["check-deployment", "--deployment", files[0], "--aliases", files[1],
+                "--probes", files[2], "--project-id", LEGAL_PROJECT, "--mode", "preview"]
+        self.assertEqual(artifact.main(args), 1)
+        self.assertEqual(artifact.main(args[:-1] + ["production"]), 0)
 
 
 if __name__ == "__main__":

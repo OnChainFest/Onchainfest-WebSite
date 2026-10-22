@@ -1,4 +1,4 @@
-// ONCHAINFEST-LEGAL-01 · Legal hub checks (node:test, no dependencies): output set, links,
+// ONCHAINFEST-LEGAL-01/06 · Legal hub checks (node:test, no dependencies): output set, links,
 // localization, accessibility basics, document relationships, the draft/approval model and
 // isolation from the www.onchainfest.xyz deployment.
 //
@@ -21,6 +21,7 @@ import { publishBlockers, validateDocuments } from '../src/validate.mjs';
 const LEGAL_DIR = fileURLToPath(new URL('..', import.meta.url));
 const REPO_DIR = join(LEGAL_DIR, '..');
 const { files, blockers } = renderSite();
+const VERCEL_CONFIG = JSON.parse(readFileSync(join(LEGAL_DIR, 'vercel.json'), 'utf8'));
 const pages = [...files].filter(([file]) => file.endsWith('.html'));
 
 const attrs = (html, tag, attr) =>
@@ -35,12 +36,18 @@ const mainText = (html) =>
     .split(/\s+/)
     .filter(Boolean);
 
-/** The output file a hub URL path is served from (cleanUrls), or null for an unknown path. */
+/**
+ * The output file a hub URL path is served from, or null for an unknown path. As on Vercel with
+ * cleanUrls: `<name>.html` is served at `/<name>` only, so index.html is at /index, never at /,
+ * unless a vercel.json rewrite maps / to it (LEGAL-05 deployed / as a 404). The deploy side checks
+ * the same thing on the real build output (.github/legal-hub/artifact.py check-output).
+ */
 function resolve(path) {
   if (path.startsWith('/assets/')) {
     return existsSync(join(LEGAL_DIR, 'assets', path.slice('/assets/'.length))) ? path : null;
   }
-  const file = path === '/' ? 'index.html' : `${path.slice(1)}.html`;
+  const target = VERCEL_CONFIG.rewrites?.find((r) => r.source === path)?.destination ?? path;
+  const file = `${target.slice(1)}.html`;
   return files.has(file) ? file : null;
 }
 
@@ -340,6 +347,29 @@ describe('deployment isolation', () => {
       assert.ok(vercelIgnored(path), `${path} would be uploaded with the website`);
     }
     assert.ok(!vercelIgnored('index.html'), 'sanity: the website itself is still uploaded');
+  });
+
+  it('serves the home page at / through the only rewrite (cleanUrls has no / route)', () => {
+    assert.deepEqual(VERCEL_CONFIG.rewrites, [{ source: '/', destination: '/index' }]);
+    assert.equal(VERCEL_CONFIG.trailingSlash, false);
+    const routes = {
+      '/': 'index.html',
+      '/terms': 'terms.html',
+      '/privacy': 'privacy.html',
+      '/products/listalaboda': 'products/listalaboda.html',
+      '/es': 'es.html',
+      '/es/terms': 'es/terms.html',
+      '/es/privacy': 'es/privacy.html',
+      '/es/products/listalaboda': 'es/products/listalaboda.html',
+      '/nope': null,
+      '/es/nope': null,
+      '/products/unknown': null,
+      '/terms.html': null,
+    };
+    for (const [path, file] of Object.entries(routes)) assert.equal(resolve(path), file, path);
+    // The rewrite targets /index, which cleanUrls redirects only when requested directly, and
+    // the home page links to / (not /index), so nothing loops.
+    for (const [, html] of pages) assert.doesNotMatch(html, /href="\/index(\.html)?"/);
   });
 
   it('builds a static site with its own config', () => {
