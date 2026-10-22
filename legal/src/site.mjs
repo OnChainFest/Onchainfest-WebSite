@@ -17,8 +17,16 @@ export const COMPANY = {
   legalName: 'OnChainFest LLC',
   // Verified: the published contact address on www.onchainfest.xyz (footer, contact page, JSON-LD).
   contactEmail: 'vicvalch@onchainfest.xyz',
-  // Not yet supplied: rendered as the REGISTRATION / ADDRESS review markers while null.
-  registration: null,
+  // Owner-verified formation facts (original Articles of Organization).
+  formation: Object.freeze({
+    jurisdiction: 'Wyoming, United States',
+    date: '2025-07-18',
+    filingId: '2025-001725151',
+    originalRegisteredAgent: 'Registered Agents Inc',
+    originalAddress: '30 N Gould St, Ste R, Sheridan, WY 82801',
+  }),
+  registration: 'Wyoming, United States · July 18, 2025 · Filing ID 2025-001725151',
+  // CURRENT notice address and CURRENT registered agent have not been independently verified.
   address: null,
 };
 
@@ -38,8 +46,8 @@ export const REVIEW = {
     es: 'Estado o país de constitución y número de registro de OnChainFest LLC',
   },
   ADDRESS: {
-    en: 'Registered address and address for legal notices',
-    es: 'Domicilio registrado y dirección para notificaciones legales',
+    en: 'Current registered agent and verified current address for legal notices (original 2025 Articles are historical only)',
+    es: 'Agente registrado vigente y dirección actual verificada para notificaciones legales (los artículos originales de 2025 son solo históricos)',
   },
   LEGAL_CONTACT: {
     en: 'Official contact address for legal and privacy requests',
