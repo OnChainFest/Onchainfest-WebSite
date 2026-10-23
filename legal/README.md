@@ -42,4 +42,6 @@ plain semver `version` and the real `effectiveDate`. When nothing is open anywhe
 
 Product documents are never copied here: the product's own site is canonical.
 
+Previews are protected by Vercel Authentication; the deploy job checks this on every deployment.
+
 Deployment, DNS and Stripe: `docs/operations/ONCF-LEGAL-01-LEGAL-HUB.md`.
