@@ -17,9 +17,15 @@ import {
 } from '@br/domain';
 import { sql } from 'kysely';
 import { authorizeIn } from './authority-store';
+import { competitionPermissions, loadCompetition } from './competition-support';
 import type { Db } from './db';
-import { lockKeys } from './identity-support';
-import { ResultLedger, type ResultScopeValidator } from './result-ledger';
+import { loadControlFacts, lockKeys, lockKeysShared } from './identity-support';
+import {
+  RESULT_AUTHORITY_STAFF_ROLES,
+  resultStaffEligibilityKeys,
+  resultStaffEligibleSince,
+} from './result-authority';
+import { ResultLedger, type ResultActorGate, type ResultScopeValidator } from './result-ledger';
 import { inTransaction, ModuleRole, withModuleRole, type TxContext } from './tx';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -235,6 +241,72 @@ export const competitionResultScopeValidator: ResultScopeValidator = {
 };
 
 /**
+ * WP-P0-3 (D-16, ADR-0079): the result-staff gate for one acting account. Result authority needs
+ * the grant AND, at the moment of the write, an OWNER or ADMIN role of the target's competition —
+ * the ADR-0077 §2.3 issuance predicate (`competitionPermissions`: explicit staff, or OWNER / ADMIN
+ * of the ACTIVE organizer organization, for an ACTIVE account with a SELF person). The facts are
+ * read after taking, SHARED, the keys every command that changes them takes exclusively: the
+ * account (disable), the person's staff assignments in this competition (assign / end), the
+ * organizer's roster (membership role and status) and the organization (status). A demotion that
+ * committed first is observed; one that comes later waits for this write. It runs after
+ * `contest:<id>` (assertMutable) and before the result stream head; no holder of these keys takes
+ * a contest or result lock, so the order cannot invert. Anything unreadable fails closed.
+ */
+export function competitionResultStaffGate(accountId: string): ResultActorGate {
+  const refuse = () =>
+    new DomainError(
+      DomainErrorCode.AUTHORITY_DENIED,
+      'acting on results needs a current OWNER or ADMIN role in this competition',
+      { reason: 'NOT_RESULT_STAFF' },
+    );
+  const predates = () =>
+    new DomainError(
+      DomainErrorCode.AUTHORITY_DENIED,
+      'the result grant was issued before the current OWNER or ADMIN role; a fresh grant is required',
+      { reason: 'GRANT_PREDATES_ELIGIBILITY' },
+    );
+  return {
+    async assertActor(ctx, scopeType, scopeTargetId) {
+      const path = await resolveHierarchy(ctx, LEVEL_OF[scopeType], scopeTargetId);
+      if (path === undefined) throw refuse();
+      const since = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
+        const competition = await loadCompetition(cctx, path.competitionId);
+        const person = (await loadControlFacts(cctx, accountId)).selfPersonId;
+        if (person === undefined) throw refuse();
+        await lockKeysShared(cctx, ...resultStaffEligibilityKeys(accountId, competition, person));
+        // Read again under the locks (READ COMMITTED: each statement sees the latest commit).
+        if ((await loadControlFacts(cctx, accountId)).selfPersonId !== person) throw refuse();
+        const { staffRoles } = await competitionPermissions(cctx, accountId, competition);
+        if (
+          !staffRoles.some((r) => (RESULT_AUTHORITY_STAFF_ROLES as readonly string[]).includes(r))
+        )
+          throw refuse();
+        // Q3 (ADR-0079 §2.3): when that eligibility began, without interruption.
+        const began = await resultStaffEligibleSince(cctx, accountId, competition, person);
+        if (began === undefined) throw refuse(); // fail closed: the histories disagree with "now"
+        return began;
+      });
+      return {
+        async assertAuthorizedBy(actx, decision) {
+          // The grant the engine authorized by (leaf of its chain), and any other grant of that
+          // chain held by the same principal (a self-delegation), must not predate `since`: a
+          // grant held across a loss of eligibility does not come back with a re-promotion.
+          const leaf = decision.grantChain[0]?.grantId;
+          if (leaf === undefined) throw predates();
+          const chain = decision.grantChain.map((l) => l.grantId);
+          const { rows } = await sql<{ fresh: boolean | null }>`
+            SELECT bool_and(g.recorded_at >= ${since}) AS fresh FROM authority.authority_grant g
+            WHERE g.id = ANY(${sql.val(chain)}::uuid[])
+              AND g.grantee_principal_id = (SELECT grantee_principal_id FROM authority.authority_grant
+                                            WHERE id = ${leaf})`.execute(actx.trx);
+          if (rows[0]?.fresh !== true) throw predates();
+        },
+      };
+    },
+  };
+}
+
+/**
  * BRT-05R guardrail — THE composition for competition-scoped Result operations.
  *
  * Any BRT-06+ application composition that exposes Result operations scoped to a COMPETITION,
@@ -245,7 +317,22 @@ export const competitionResultScopeValidator: ResultScopeValidator = {
  */
 export function createCompetitionResultLedger(
   db: Db,
-  options: { conflictChecker?: ConflictOfInterestChecker } = {},
+  options: {
+    conflictChecker?: ConflictOfInterestChecker;
+    /**
+     * WP-P0-3: the account a command acts for. Every application result command passes it (the
+     * API composition, ContestResultService), which wires the result-staff gate. Demos, seeds and
+     * ledger tests with fixture principals have no account and do not.
+     */
+    actorAccountId?: string;
+  } = {},
 ): ResultLedger {
-  return new ResultLedger(db, { ...options, scopeValidator: competitionResultScopeValidator });
+  const { actorAccountId, ...rest } = options;
+  return new ResultLedger(db, {
+    ...rest,
+    scopeValidator: competitionResultScopeValidator,
+    ...(actorAccountId === undefined
+      ? {}
+      : { actorGate: competitionResultStaffGate(actorAccountId) }),
+  });
 }

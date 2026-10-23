@@ -205,6 +205,31 @@ export interface ResultScopeValidator {
 }
 
 /**
+ * WP-P0-3 (D-16, ADR-0079): the acting account's CURRENT eligibility for result writes. A grant is
+ * necessary but not sufficient: the competition composition binds this to the account a command
+ * acts for, and it refuses (AUTHORITY_DENIED, `NOT_RESULT_STAFF`) unless that account holds an
+ * OWNER or ADMIN role of the target's competition now. Called inside the command's br_results
+ * transaction after the scope preconditions and before the Authority Engine, so the check and the
+ * write are one transaction.
+ */
+export interface ResultActorGate {
+  assertActor(
+    ctx: TxContext,
+    scopeType: ResultScopeType,
+    scopeTargetId: string,
+    operation: ResultWriteOperation,
+  ): Promise<ResultActorClearance>;
+}
+
+/**
+ * WP-P0-3 Q3 (ADR-0079 §2.3): what the gate cleared, checked again once the Authority Engine has
+ * authorized: the grant it authorized by must not predate the actor's current eligibility.
+ */
+export interface ResultActorClearance {
+  assertAuthorizedBy(ctx: TxContext, decision: AuthorizationDecision): Promise<void>;
+}
+
+/**
  * The result write a scope precondition is asked about: submit (T2), accept (T3), reject (T4),
  * declare official (T5) and correct (T7).
  */
@@ -246,6 +271,7 @@ export class ResultLedger {
   private readonly db: Db;
   private readonly conflictChecker: ConflictOfInterestChecker | undefined;
   private readonly scopeValidator: ResultScopeValidator | undefined;
+  private readonly actorGate: ResultActorGate | undefined;
 
   /**
    * `scopeValidator` is optional only for BRT-03 backward compatibility (tests/demos with bare
@@ -258,11 +284,13 @@ export class ResultLedger {
     options: {
       conflictChecker?: ConflictOfInterestChecker;
       scopeValidator?: ResultScopeValidator;
+      actorGate?: ResultActorGate;
     } = {},
   ) {
     this.db = db;
     this.conflictChecker = options.conflictChecker;
     this.scopeValidator = options.scopeValidator;
+    this.actorGate = options.actorGate;
   }
 
   private async assertResultScope(
@@ -270,23 +298,32 @@ export class ResultLedger {
     resultId: string,
     scope: AuthorityScope,
     operation: ResultWriteOperation,
-  ): Promise<void> {
-    if (this.scopeValidator === undefined) return;
+  ): Promise<ResultActorClearance | undefined> {
+    if (this.scopeValidator === undefined && this.actorGate === undefined) return undefined;
     const r = await ctx.trx
       .selectFrom('results.result')
       .select(['scope_type', 'scope_target_id'])
       .where('id', '=', resultId)
       .executeTakeFirst();
     if (r === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'result not found');
-    await this.scopeValidator.assertScope(
-      ctx,
-      r.scope_type as ResultScopeType,
-      r.scope_target_id,
-      scope,
-    );
-    // ONCF-L6: every write path (submit T2, accept / reject / declare-official T3–T5, correct T7)
-    // validates its scope here, after its idempotency replay and before its stream head.
-    await this.scopeValidator.assertMutable(
+    if (this.scopeValidator !== undefined) {
+      await this.scopeValidator.assertScope(
+        ctx,
+        r.scope_type as ResultScopeType,
+        r.scope_target_id,
+        scope,
+      );
+      // ONCF-L6: every write path (submit T2, accept / reject / declare-official T3–T5, correct T7)
+      // validates its scope here, after its idempotency replay and before its stream head.
+      await this.scopeValidator.assertMutable(
+        ctx,
+        r.scope_type as ResultScopeType,
+        r.scope_target_id,
+        operation,
+      );
+    }
+    // WP-P0-3 (D-16): then the actor's current role, still before the Authority Engine.
+    return this.actorGate?.assertActor(
       ctx,
       r.scope_type as ResultScopeType,
       r.scope_target_id,
@@ -438,7 +475,7 @@ export class ResultLedger {
       if (draft.submitted_version_id !== null) {
         throw new DomainError(DomainErrorCode.IMMUTABLE, 'draft was already submitted');
       }
-      await this.assertResultScope(ctx, draft.result_id, input.scope, 'SUBMIT');
+      const clearance = await this.assertResultScope(ctx, draft.result_id, input.scope, 'SUBMIT');
 
       const decision = await authorizeIn(
         ctx,
@@ -452,6 +489,7 @@ export class ResultLedger {
         this.conflictChecker,
       );
       if (!decision.authorized) throw denied(decision);
+      await clearance?.assertAuthorizedBy(ctx, decision);
 
       // Serialize all writes to this Result on its ledger stream head.
       const stream = await openStream(ctx, draft.result_id as Uuid, StreamType.RESULT);
@@ -639,7 +677,7 @@ export class ResultLedger {
         .executeTakeFirst();
       if (version === undefined)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'result version not found');
-      await this.assertResultScope(
+      const clearance = await this.assertResultScope(
         ctx,
         version.result_id,
         input.scope,
@@ -659,6 +697,7 @@ export class ResultLedger {
         this.conflictChecker,
       );
       if (!decision.authorized) throw denied(decision);
+      await clearance?.assertAuthorizedBy(ctx, decision);
 
       const stream = await openStream(ctx, version.result_id as Uuid, StreamType.RESULT);
       const state = await ctx.trx
@@ -799,7 +838,7 @@ export class ResultLedger {
           DomainErrorCode.INVALID_INPUT,
           'a derived classification is corrected by re-derivation, not by a correction draft',
         );
-      await this.assertResultScope(ctx, draft.result_id, input.scope, 'CORRECT');
+      const clearance = await this.assertResultScope(ctx, draft.result_id, input.scope, 'CORRECT');
       const authorize = async (capability: Capability) => {
         const d = await authorizeIn(
           ctx,
@@ -813,6 +852,7 @@ export class ResultLedger {
           this.conflictChecker,
         );
         if (!d.authorized) throw denied(d);
+        await clearance?.assertAuthorizedBy(ctx, d);
         return d;
       };
       const correctDecision = await authorize(Capability.CORRECT_RESULT);
