@@ -274,7 +274,8 @@ async function play(A: Org, contestId: string) {
     actorAccountId: A.accountId,
     competitionId: A.competitionId,
     typeCode: 'TENNIS_COURT',
-    resource: { label: `Court ${newId().slice(0, 4)}` },
+    // Labels are unique per competition; a UUIDv7 prefix is a timestamp and collides within a test.
+    resource: { label: `Court ${playOrdinal + 1}` },
     idempotencyKey: k(),
   });
   for (const weekday of [1, 2, 3, 4, 5, 6, 7])
