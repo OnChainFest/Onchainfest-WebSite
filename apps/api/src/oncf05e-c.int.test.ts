@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   CANONICAL_CATALOG,
   CONFLICT_ENGINE,
@@ -217,6 +218,11 @@ describe('ONCF-05E-C schedule versions over the API', () => {
       ).toBe(201);
     }
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, A.h)).status).toBe(200);
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', A.h)).body?.accountId as string,
+      eventId,
+    );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...A.h, ...idem() })).status,
     ).toBe(200);

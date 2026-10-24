@@ -93,3 +93,67 @@ jobs:
         run: pnpm --filter @br/worker exec tsx src/main.ts --once
       - name: Web build
         run: pnpm --filter @br/web build
+
+  d13-qualification:
+    name: D-13 acceptance and regression proof
+    if: github.ref == 'refs/heads/fix/oncf-wp-p0-4-advancement-preflight' || github.head_ref == 'fix/oncf-wp-p0-4-advancement-preflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: br_admin
+          POSTGRES_PASSWORD: br_admin_dev_only
+          POSTGRES_DB: bragging_rights
+        ports: [55432:5432]
+        options: >-
+          --health-cmd "pg_isready -U br_admin -d bragging_rights"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate disposable test keys
+        run: |
+          for name in BR_VAULT_DEV_KEY BR_DEV_AUTH_SECRET BR_EVIDENCE_DEV_KEY; do
+            value=$(openssl rand -hex 32)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+          echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
+      - name: Prove deployment guard and format boundaries
+        run: pnpm exec vitest run --project unit tooling/d13-deployment.test.ts packages/competition/src/advancement/preflight.test.ts apps/web/app/_tests/structure-teams.test.tsx
+      - name: Green — API refusals, 50 races in each order, complete tennis journey
+        env:
+          ONCF_P04_RACE_RUNS: '50'
+        run: pnpm exec vitest run --project integration apps/api/src/oncf-p0-4.int.test.ts
+      - name: Red — same refusal test against the assessed base lock implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=e128cb32a5ba25687dfe8481b55a380fb418ba3f
+          # Only this disposable Actions checkout changes; the test and other code stay fixed.
+          git show "$base:packages/persistence/src/competition-structure-store.ts" > packages/persistence/src/competition-structure-store.ts
+          set +e
+          pnpm exec vitest run --project integration apps/api/src/oncf-p0-4.int.test.ts -t 'refuses field lock without advancement and writes no field facts' --reporter=json --outputFile="$RUNNER_TEMP/d13-red.json"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          # A missing import, infrastructure error or unrelated failure is not regression proof.
+          node --input-type=module - "$RUNNER_TEMP/d13-red.json" <<'JS'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const assertions = report.testResults.flatMap((file) => file.assertionResults);
+          const failure = assertions.find((test) => test.status === 'failed' && test.fullName.includes('refuses field lock without advancement and writes no field facts'));
+          if (!failure?.failureMessages.some((message) => /expected 200 to be 409/.test(message))) {
+            throw new Error('The base did not reproduce the specific D-13 HTTP 200 versus 409 defect');
+          }
+          JS

@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   CANONICAL_CATALOG,
   RULESET_TEMPLATES,
@@ -164,6 +165,7 @@ async function startedKnockout(): Promise<Ev> {
     });
   }
   await comps.closeRegistration({ actorAccountId: actor, eventId });
+  await configureAdvancementFixture(db, actor, eventId);
   await structure.lockField({ actorAccountId: actor, eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: actor,

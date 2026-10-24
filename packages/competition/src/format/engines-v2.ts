@@ -99,6 +99,7 @@ const drawSizeFor = (c: Config, n: number) => {
 
 /** SINGLE_ELIMINATION v2: explicit draw size (ITF 24/48 draws sit in 32/64), optional third place. */
 export const singleEliminationV2 = v2Engine({
+  advancementDefaultPolicyCode: 'official-confirmed',
   id: 'single-elimination',
   version: 2,
   displayName: 'Single elimination',

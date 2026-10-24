@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   CANONICAL_CATALOG,
   PROPOSAL_BUDGET,
@@ -214,6 +215,11 @@ async function scheduledKnockout(o: Org, label: string, window = WEEK) {
     ).toBe(201);
   }
   expect((await call('POST', `/v1/events/${eventId}/close-registration`, o.h)).status).toBe(200);
+  await configureAdvancementFixture(
+    db,
+    (await call('GET', '/v1/me', o.h)).body?.accountId as string,
+    eventId,
+  );
   expect(
     (await call('POST', `/v1/events/${eventId}/lock-field`, { ...o.h, ...idem() })).status,
   ).toBe(200);

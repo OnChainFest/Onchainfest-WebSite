@@ -17,7 +17,16 @@ import {
   type SchedulingProfileSpec,
 } from '@br/competition';
 import { DomainErrorCode, newId } from '@br/domain';
-import { apiDb, newOrganizer, newTestAccount, operatorDb, ownerDb, uniqueSlug } from '@br/testkit';
+import {
+  apiDb,
+  configureAdvancementFixture,
+  newAthlete,
+  newOrganizer,
+  newTestAccount,
+  operatorDb,
+  ownerDb,
+  uniqueSlug,
+} from '@br/testkit';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CatalogStore } from './catalog-store';
@@ -559,8 +568,17 @@ describe('event pinning: reference, compatibility, authorization, field lock', (
   it('the pin is frozen at field lock (store and database)', async () => {
     const ev = await eventWith('golf@1', 'mr');
     await pin(ev, 'golf-stroke-gross', 'golf-course-tee-groups');
+    const golfer = await newAthlete(identity);
+    await comps.register({
+      actorAccountId: golfer.accountId,
+      eventId: ev.eventId,
+      athleteId: golfer.athleteId,
+      eligibilityDeclared: true,
+      idempotencyKey: k(),
+    });
     await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
     await pin(ev, 'golf-stroke-gross', 'golf-course-tee-groups'); // REGISTRATION_CLOSED: still editable
+    await configureAdvancementFixture(db, ev.actor, ev.eventId);
     await structure.lockField({
       actorAccountId: ev.actor,
       eventId: ev.eventId,

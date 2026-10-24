@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import { RULESET_TEMPLATES, SWIMMING_POOL_V2 } from '@br/competition';
 import { newId } from '@br/domain';
 import { CatalogStore, CompetitionReader, IdentityStore } from '@br/persistence';
@@ -209,6 +210,11 @@ describe('scoring over the API (COMP_STAFF only)', () => {
     }
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, owner.h)).status).toBe(
       200,
+    );
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', owner.h)).body?.accountId as string,
+      eventId,
     );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...owner.h, ...idem() })).status,

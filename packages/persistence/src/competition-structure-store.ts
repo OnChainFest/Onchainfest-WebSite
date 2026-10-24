@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { advancementPreflight, assertAdvancementReady } from './advancement-preflight';
 import {
   canTransition,
   ContestLifecycle,
@@ -165,6 +166,7 @@ export class StructureStore {
         SELECT r.id, r.entrant_type, r.athlete_id, r.team_id FROM competition.registration r
         JOIN competition.v_registration_current v ON v.registration_id = r.id
         WHERE r.event_id = ${e.id} AND v.status = 'CONFIRMED' ORDER BY r.id`.execute(ctx.trx);
+      assertAdvancementReady(await advancementPreflight(ctx, e, confirmed.length));
       const participants: FieldParticipant[] = [];
       for (const r of confirmed) {
         const participantId = newId();
@@ -649,7 +651,8 @@ export class StructureStore {
         WHERE e.id = ${e.id}`.execute(ctx.trx);
       const r = rows[0];
       if (r === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'event not found');
-      const blockers: string[] = [];
+      const advancement = await advancementPreflight(ctx, e, r.participants ?? undefined);
+      const blockers: string[] = r.field_version === null ? [...advancement.blockers] : [];
       const warnings: string[] = [];
       if (r.field_version === null) blockers.push('FIELD_NOT_LOCKED');
       else if (r.seeding_method === null) blockers.push('NOT_SEEDED');
@@ -701,6 +704,7 @@ export class StructureStore {
                 dynamicRounds: r.dynamic_rounds,
               },
         contestsScheduled: { scheduled: r.scheduled, total: r.contests },
+        advancement,
         blockers,
         warnings,
       };

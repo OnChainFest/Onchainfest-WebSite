@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   ADVANCEMENT_POLICY_TEMPLATES,
   CANONICAL_CATALOG,
@@ -216,6 +217,7 @@ async function knockout(entrants: number, courts: number): Promise<Ev> {
     });
   }
   await comps.closeRegistration({ actorAccountId: actor, eventId });
+  await configureAdvancementFixture(db, actor, eventId);
   await structure.lockField({ actorAccountId: actor, eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: actor,
@@ -1143,6 +1145,7 @@ async function golfCut() {
     });
   }
   await comps.closeRegistration({ actorAccountId: actor, eventId });
+  await configureAdvancementFixture(db, actor, eventId);
   await structure.lockField({ actorAccountId: actor, eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: actor,

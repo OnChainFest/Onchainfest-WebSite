@@ -31,6 +31,7 @@ import {
   type ClassificationV2Contest,
 } from '@br/rankings';
 import { sql } from 'kysely';
+import { advancementPreflight } from './advancement-preflight';
 import { loadCompetition, loadEvent, requireCompPermission } from './competition-support';
 import type { Db } from './db';
 import { identityIdempotency, lockKeys, recordAudit } from './identity-support';
@@ -361,6 +362,13 @@ export class ScoringStore {
           throw new DomainError(
             DomainErrorCode.INVALID_INPUT,
             'advancement policy version not found or not published',
+          );
+        const preflight = await advancementPreflight(ctx, e);
+        if (!preflight.compatiblePolicyVersionIds.includes(input.advancementPolicyVersionId))
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            'advancement policy does not fit this format configuration',
+            { reason: 'ADVANCEMENT_POLICY_INCOMPATIBLE' },
           );
         // A cross-group order can only read values the pinned standings template produces.
         const used = crossGroupKeysUsed(a.spec as AdvancementPolicySpec);
