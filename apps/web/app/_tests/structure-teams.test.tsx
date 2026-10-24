@@ -757,6 +757,12 @@ describe('organizer structure page', () => {
   });
 
   it('filters incompatible choices and uses only the API-approved fresh-event default', async () => {
+    // The scoring form (and so the policy choice) needs COMP_EDIT, like the profile tests below.
+    routes[`GET /v1/competitions/${COMP}/manage`] = () =>
+      json(
+        200,
+        managed('REGISTRATION_CLOSED', ['COMP_VIEW_PRIVATE', 'COMP_EDIT', 'COMP_LOCK_FIELD']),
+      );
     routes['GET /v1/catalog'] = () =>
       json(200, {
         ...catalog(),

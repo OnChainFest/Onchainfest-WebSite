@@ -47,7 +47,7 @@ export async function configureAdvancementFixture(db: Db, actorAccountId: string
   const requirements = advancementRequirements(engine, row.spec, row.format_config, row.n);
   const scoring = new ScoringStore(db);
   const pin = await scoring.scoring({ actorAccountId, eventId });
-  if (pin.pinned && (!requirements.required || pin.advancementPolicy != null)) return;
+  if (pin.pinned && (!requirements.required || pin.advancementPolicy !== null)) return;
   const policy = ADVANCEMENT_POLICY_TEMPLATES.find(
     (p) => advancementCompatibility(requirements, p.spec).length === 0,
   );

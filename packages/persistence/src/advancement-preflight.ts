@@ -74,10 +74,12 @@ export async function advancementPreflight(ctx: TxContext, event: EventRow, coun
       : policies.filter((p) => advancementCompatibility(assessed, p.spec).length === 0);
   if (pin === undefined) blockers.push('SCORING_NOT_PINNED');
   if (requirements?.required) {
-    if (pin?.advancement_policy_version_id == null) blockers.push('ADVANCEMENT_POLICY_REQUIRED');
+    if (pin === undefined || pin.advancement_policy_version_id === null)
+      blockers.push('ADVANCEMENT_POLICY_REQUIRED');
   }
   if (
-    pin?.advancement_policy_version_id != null &&
+    pin !== undefined &&
+    pin.advancement_policy_version_id !== null &&
     !compatible.some((p) => p.id === pin.advancement_policy_version_id)
   )
     blockers.push('ADVANCEMENT_POLICY_INCOMPATIBLE');

@@ -6,8 +6,8 @@ const workflow = readFileSync(
   'utf8',
 );
 const condition = (job: string) => {
-  const section = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z]+:\n/)[0];
-  const expression = section?.match(/^    if: (.+)$/m)?.[1];
+  const section = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n {2}[a-z]+:\n/)[0];
+  const expression = section?.match(/^ {4}if: (.+)$/m)?.[1];
   if (expression === undefined) throw new Error('missing deployment condition');
   return expression;
 };
