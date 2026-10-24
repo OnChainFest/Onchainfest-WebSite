@@ -21,6 +21,17 @@ export async function lockKeys(ctx: TxContext, ...keys: string[]): Promise<void>
   }
 }
 
+/**
+ * The same keys in SHARED mode: an authorization read inside a transaction holds them while the
+ * commands that change what it read take them exclusively (`lockKeys`), so the check and the
+ * change never interleave — as the vault (migration 0004) and attestations (0011) already do.
+ */
+export async function lockKeysShared(ctx: TxContext, ...keys: string[]): Promise<void> {
+  for (const key of [...new Set(keys)].sort()) {
+    await sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`.execute(ctx.trx);
+  }
+}
+
 /** Accountability telemetry (never sporting truth). `details` must never contain PII. */
 export async function recordAudit(
   ctx: TxContext,

@@ -6,16 +6,21 @@ import {
   type Instant,
   type Uuid,
 } from '@br/domain';
+import { ORGANIZER_ROLE_TO_STAFF_ROLE } from '@br/competition';
 import { sql } from 'kysely';
 import { AuthorityStore, normalizeScope } from './authority-store';
-import { competitionPermissions, loadCompetition } from './competition-support';
+import {
+  competitionPermissions,
+  loadCompetition,
+  type CompetitionRow,
+} from './competition-support';
 import {
   personParticipatesInCompetition,
   platformGrantorChecker,
 } from './competition-participation';
 import type { Db } from './db';
-import { loadControlFacts, recordAudit } from './identity-support';
-import { inTransaction, ModuleRole } from './tx';
+import { loadControlFacts, lockKeysShared, recordAudit } from './identity-support';
+import { inTransaction, ModuleRole, withModuleRole, type TxContext } from './tx';
 
 /**
  * ADR-0077: governance-issued competition result authority.
@@ -35,6 +40,161 @@ export const RESULT_AUTHORITY_CAPABILITIES: readonly Capability[] = [
 
 /** Competition staff roles eligible for result authority (never REGISTRATION_MANAGER / SCHEDULER). */
 export const RESULT_AUTHORITY_STAFF_ROLES = ['OWNER', 'ADMIN'] as const;
+
+/** Organization roles that make a member competition OWNER / ADMIN of the organizer's competitions. */
+const RESULT_AUTHORITY_ORG_ROLES = Object.entries(ORGANIZER_ROLE_TO_STAFF_ROLE)
+  .filter(([, staff]) => (RESULT_AUTHORITY_STAFF_ROLES as readonly string[]).includes(staff ?? ''))
+  .map(([org]) => org);
+
+/**
+ * ADR-0079 §2.2: the keys every change of a result-staff eligibility basis takes exclusively. Result
+ * commands and the issuance below hold them shared, in one sorted call.
+ */
+export function resultStaffEligibilityKeys(
+  accountId: string,
+  competition: Pick<CompetitionRow, 'id' | 'organizerOrganizationId'>,
+  personId: string,
+): string[] {
+  return [
+    `account:${accountId}`,
+    `competition-staff:${competition.id}:${personId}`,
+    `org-roster:${competition.organizerOrganizationId}`,
+    `org:${competition.organizerOrganizationId}`,
+  ];
+}
+
+type Span = readonly [number, number];
+
+/** One status change of an eligibility history: the entity, its status, its `recorded_at`. */
+export interface EligibilityChange {
+  readonly id: string;
+  readonly status: string;
+  readonly at: Date;
+}
+
+/**
+ * The ACTIVE spans of one append-only status history, given in `seq` (commit) order; end = Infinity
+ * while open. `recorded_at` is the transaction START, and commands lock after starting, so a change
+ * that waited on a lock can be stamped before one it committed after. Times are therefore made
+ * non-decreasing in `seq` order, and a span reopened after a closing change starts strictly after
+ * it: a re-activation never touches (and never merges with) the period it follows.
+ */
+function activeSpans(changes: readonly { status: string; at: Date }[]): Span[] {
+  const out: Span[] = [];
+  let open: number | undefined;
+  let last = -Infinity;
+  let closed = false;
+  for (const c of changes) {
+    let t = Math.max(c.at.getTime(), last);
+    if (c.status === 'ACTIVE') {
+      if (open === undefined) {
+        if (closed) t = Math.max(t, last + 1);
+        open = t;
+      }
+    } else {
+      if (open !== undefined && t > open) out.push([open, t]);
+      open = undefined;
+      closed = true;
+    }
+    last = t;
+  }
+  if (open !== undefined) out.push([open, Infinity]);
+  return out;
+}
+
+function spansById(rows: readonly EligibilityChange[]): Span[] {
+  const byId = new Map<string, EligibilityChange[]>();
+  for (const r of rows) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
+  return [...byId.values()].flatMap(activeSpans);
+}
+
+/** Where the entity's current (open) ACTIVE span began; undefined if it is not ACTIVE now. */
+const openSince = (rows: readonly EligibilityChange[]): number | undefined =>
+  spansById(rows).find(([, b]) => b === Infinity)?.[0];
+
+/** The part of a span from `t` on (none if it ended by then). */
+const from =
+  (t: number) =>
+  ([a, b]: Span): Span[] =>
+    b > Math.max(a, t) ? [[Math.max(a, t), b]] : [];
+
+/**
+ * WP-P0-3 Q3 (ADR-0079 §2.3), pure: the start of the current, uninterrupted OWNER / ADMIN
+ * eligibility, from the append-only histories (each in `seq` order): the account, the organizer
+ * organization, the explicit OWNER/ADMIN staff rows and the organizer OWNER/ADMIN memberships. A
+ * membership counts while the organization is ACTIVE, and every basis while the account is.
+ * Overlapping or touching spans of DIFFERENT bases are one continuous eligibility (an organization
+ * role change ends one membership and starts the next at the same instant); a basis reactivated
+ * after a gap never touches its own earlier span. Undefined when not eligible now.
+ */
+export function continuousEligibilitySince(h: {
+  readonly account: readonly EligibilityChange[];
+  readonly organization: readonly EligibilityChange[];
+  readonly staff: readonly EligibilityChange[];
+  readonly memberships: readonly EligibilityChange[];
+}): Date | undefined {
+  const accountSince = openSince(h.account);
+  if (accountSince === undefined) return undefined;
+  const orgSince = openSince(h.organization);
+  const spans = [
+    ...spansById(h.staff),
+    ...(orgSince === undefined ? [] : spansById(h.memberships).flatMap(from(orgSince))),
+  ]
+    .flatMap(from(accountSince))
+    .sort((x, y) => x[0] - y[0]);
+  let start: number | undefined;
+  let end = -Infinity;
+  for (const [a, b] of spans) {
+    if (start === undefined || a > end) start = a;
+    end = Math.max(end, b);
+  }
+  return start !== undefined && end === Infinity ? new Date(start) : undefined;
+}
+
+/**
+ * WP-P0-3 Q3 (ADR-0079 §2.3): when the account's CURRENT, uninterrupted OWNER / ADMIN eligibility in
+ * the competition began; undefined when it holds none now. Each history is read by the module role
+ * that owns it (staff: competition; account and memberships: identity, which already reads
+ * memberships for permissions; organization status: organizations). The caller holds the
+ * eligibility keys, so no basis changes meanwhile.
+ */
+export async function resultStaffEligibleSince(
+  ctx: TxContext,
+  accountId: string,
+  competition: Pick<CompetitionRow, 'id' | 'organizerOrganizationId'>,
+  personId: string,
+): Promise<Date | undefined> {
+  const org = competition.organizerOrganizationId;
+  const staff = await sql<EligibilityChange>`
+    SELECT s.id, c.status, c.recorded_at AS at FROM competition.competition_staff s
+    JOIN competition.competition_staff_status_change c ON c.staff_id = s.id
+    WHERE s.competition_id = ${competition.id} AND s.person_id = ${personId}
+      AND s.staff_role = ANY(${sql.val([...RESULT_AUTHORITY_STAFF_ROLES])}::text[])
+    ORDER BY s.id, c.seq`.execute(ctx.trx);
+  const identity = await withModuleRole(ctx, ModuleRole.identity, async (ictx) => ({
+    account: await sql<EligibilityChange>`
+      SELECT account_id AS id, status, recorded_at AS at FROM identity.account_status_change
+      WHERE account_id = ${accountId} ORDER BY seq`.execute(ictx.trx),
+    memberships: await sql<EligibilityChange>`
+      SELECT m.id, c.status, c.recorded_at AS at FROM organizations.membership m
+      JOIN organizations.membership_status_change c ON c.membership_id = m.id
+      WHERE m.organization_id = ${org} AND m.person_id = ${personId}
+        AND m.membership_role = ANY(${sql.val(RESULT_AUTHORITY_ORG_ROLES)}::text[])
+      ORDER BY m.id, c.seq`.execute(ictx.trx),
+  }));
+  const organization = await withModuleRole(ctx, ModuleRole.organizations, (octx) =>
+    sql<EligibilityChange>`
+      SELECT organization_id AS id, status, recorded_at AS at
+      FROM organizations.organization_status_change
+      WHERE organization_id = ${org} ORDER BY seq`.execute(octx.trx),
+  );
+  return continuousEligibilitySince({
+    account: identity.account.rows,
+    organization: organization.rows,
+    staff: staff.rows,
+    memberships: identity.memberships.rows,
+  });
+}
 
 const OPERATING_STATUSES = ['PUBLISHED', 'ACTIVE'];
 const REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$/;
@@ -190,46 +350,115 @@ export class ResultAuthorityGovernance {
     });
 
     const scope = competitionResultScope(eligibility.competitionId);
-    const held = await this.activeGrants(platformId, granteePrincipalId, scope);
-    let grantId: Uuid;
-    let created: boolean;
-    if (held[0] !== undefined) {
-      grantId = held[0];
-      created = false;
-    } else {
-      const store = new AuthorityStore(this.db, {
-        conflictChecker: platformGrantorChecker(platformId),
-      });
-      try {
-        const out = await store.issueGrant({
-          actorPrincipalId: platformId,
-          grantorPrincipalId: platformId,
-          granteePrincipalId,
-          capabilities: RESULT_AUTHORITY_CAPABILITIES,
-          scope,
-          delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
-          constraints: { mustNotBeParticipant: true },
-          ...(input.effectiveTo === undefined ? {} : { effectiveTo: input.effectiveTo }),
-          idempotencyKey: `result-authority:${eligibility.competitionId}:${granteePrincipalId}:${ref}`,
+    // WP-P0-3 Q3 (ADR-0079 §2.3): the grant is decided and written while the eligibility it relies
+    // on is held. This transaction keeps the eligibility keys (shared) until the grant has
+    // committed, so no demotion or re-promotion falls between the check and the write. It is not
+    // retried: its body commits other transactions. Nothing in that body takes those keys.
+    const issued = await inTransaction(
+      this.db,
+      ModuleRole.competition,
+      async (ctx) => {
+        const competition = await loadCompetition(ctx, eligibility.competitionId);
+        await lockKeysShared(
+          ctx,
+          ...resultStaffEligibilityKeys(input.granteeAccountId, competition, eligibility.personId),
+        );
+        const self = (await loadControlFacts(ctx, input.granteeAccountId)).selfPersonId;
+        const { staffRoles } = await competitionPermissions(
+          ctx,
+          input.granteeAccountId,
+          competition,
+        );
+        const since =
+          self === eligibility.personId &&
+          staffRoles.some((r) => (RESULT_AUTHORITY_STAFF_ROLES as readonly string[]).includes(r))
+            ? await resultStaffEligibleSince(
+                ctx,
+                input.granteeAccountId,
+                competition,
+                eligibility.personId,
+              )
+            : undefined;
+        if (since === undefined) {
+          await recordAudit(ctx, {
+            action: 'authority.result-grant.issue',
+            targetType: 'COMPETITION',
+            targetId: competition.id,
+            outcome: 'DENIED',
+            details: {
+              reason: 'NOT_RESULT_STAFF',
+              granteeAccountId: input.granteeAccountId,
+              governanceDecisionRef: ref,
+            },
+          });
+          return {
+            denied: new DomainError(
+              DomainErrorCode.FORBIDDEN,
+              'the grantee is not OWNER or ADMIN staff of this competition',
+              { reason: 'NOT_RESULT_STAFF' },
+            ),
+          };
+        }
+        // A grant issued before the grantee's current eligibility is stale: the ledger refuses it
+        // (GRANT_PREDATES_ELIGIBILITY), so it is never reused; it is revoked, prospectively.
+        const isFresh = (g: { recordedAt: Date }) => g.recordedAt.getTime() >= since.getTime();
+        const held = await this.activeGrants(platformId, granteePrincipalId, scope);
+        const stale = held.filter((g) => !isFresh(g)).map((g) => g.id);
+        const authority = new AuthorityStore(this.db);
+        for (const grantId of stale)
+          await authority.revokeGrant({
+            grantId,
+            actorPrincipalId: platformId,
+            reason: `issued before the grantee's current OWNER/ADMIN eligibility [governance:${ref}]`,
+          });
+        // Audited as soon as committed: the issuance below may still be refused.
+        if (stale.length > 0)
+          await this.audit('authority.result-grant.stale-revoked', 'SUCCEEDED', competition.id, {
+            revokedGrantIds: stale,
+            granteePrincipalId,
+            granteeAccountId: input.granteeAccountId,
+            platformPrincipalId: platformId,
+            governanceDecisionRef: ref,
+          });
+        const current = held.find(isFresh);
+        if (current !== undefined) return { grantId: current.id, created: false };
+        const store = new AuthorityStore(this.db, {
+          conflictChecker: platformGrantorChecker(platformId),
         });
-        grantId = out.grant.id;
-        created = out.created;
-      } catch (err) {
-        if (!(err instanceof DomainError) || err.code !== DomainErrorCode.IDEMPOTENCY_KEY_REUSED)
-          throw err;
-        // A concurrent run under the same decision won, or the decision was already spent on a
-        // grant that has since been revoked: converge on the winner, or ask for a new decision.
-        const now = await this.activeGrants(platformId, granteePrincipalId, scope);
-        if (now[0] === undefined)
-          throw new DomainError(
-            DomainErrorCode.ALREADY_EXISTS,
-            'this governance decision was already used for this grantee and competition; a new decision is required',
-            { reason: 'GOVERNANCE_DECISION_USED' },
+        try {
+          const out = await store.issueGrant({
+            actorPrincipalId: platformId,
+            grantorPrincipalId: platformId,
+            granteePrincipalId,
+            capabilities: RESULT_AUTHORITY_CAPABILITIES,
+            scope,
+            delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+            constraints: { mustNotBeParticipant: true },
+            ...(input.effectiveTo === undefined ? {} : { effectiveTo: input.effectiveTo }),
+            idempotencyKey: `result-authority:${eligibility.competitionId}:${granteePrincipalId}:${ref}`,
+          });
+          return { grantId: out.grant.id, created: out.created };
+        } catch (err) {
+          if (!(err instanceof DomainError) || err.code !== DomainErrorCode.IDEMPOTENCY_KEY_REUSED)
+            throw err;
+          // A concurrent run under the same decision won, or the decision was already spent on a
+          // grant that has since been revoked: converge on the winner, or ask for a new decision.
+          const now = (await this.activeGrants(platformId, granteePrincipalId, scope)).find(
+            isFresh,
           );
-        grantId = now[0];
-        created = false;
-      }
-    }
+          if (now === undefined)
+            throw new DomainError(
+              DomainErrorCode.ALREADY_EXISTS,
+              'this governance decision was already used for this grantee and competition; a new decision is required',
+              { reason: 'GOVERNANCE_DECISION_USED' },
+            );
+          return { grantId: now.id, created: false };
+        }
+      },
+      1,
+    );
+    if ('denied' in issued) throw issued.denied;
+    const { grantId, created } = issued;
     await this.audit(
       created ? 'authority.result-grant.issued' : 'authority.result-grant.already-held',
       'SUCCEEDED',
@@ -279,7 +508,7 @@ export class ResultAuthorityGovernance {
     const store = new AuthorityStore(this.db);
     const revokedGrantIds: Uuid[] = [];
     for (const principalId of principals) {
-      for (const grantId of await this.activeGrants(platformId, principalId, scope)) {
+      for (const { id: grantId } of await this.activeGrants(platformId, principalId, scope)) {
         await store.revokeGrant({
           grantId,
           actorPrincipalId: platformId,
@@ -351,15 +580,15 @@ export class ResultAuthorityGovernance {
     });
   }
 
-  /** Active (not revoked, not expired, in effect) PLATFORM grants of exactly this scope and these capabilities. */
+  /** Active (not revoked, not expired, in effect) PLATFORM grants of exactly this scope and these capabilities, oldest first. */
   private activeGrants(
     platformId: Uuid,
     granteePrincipalId: Uuid,
     scope: AuthorityScope,
-  ): Promise<Uuid[]> {
+  ): Promise<{ id: Uuid; recordedAt: Date }[]> {
     return inTransaction(this.db, ModuleRole.authority, async (ctx) => {
-      const { rows } = await sql<{ id: string }>`
-        SELECT g.id FROM authority.authority_grant g
+      const { rows } = await sql<{ id: string; recorded_at: Date }>`
+        SELECT g.id, g.recorded_at FROM authority.authority_grant g
         WHERE g.grantor_principal_id = ${platformId} AND g.grantee_principal_id = ${granteePrincipalId}
           AND g.parent_grant_id IS NULL
           AND g.scope = ${JSON.stringify(scope)}::jsonb
@@ -369,7 +598,7 @@ export class ResultAuthorityGovernance {
           AND NOT EXISTS (SELECT 1 FROM authority.authority_grant_status_change s
                           WHERE s.grant_id = g.id AND s.effective_from <= ${ctx.txTime})
         ORDER BY g.recorded_at, g.id`.execute(ctx.trx);
-      return rows.map((r) => r.id as Uuid);
+      return rows.map((r) => ({ id: r.id as Uuid, recordedAt: r.recorded_at }));
     });
   }
 

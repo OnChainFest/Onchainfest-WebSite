@@ -160,7 +160,7 @@ The organizer asks the platform to enable results for a tournament. The operator
    pnpm authority:results revoke --competition <uuid> --account <uuid> --governance-ref gov:… --reason "…"
    ```
 
-   Revocation is prospective. Ending a staff role already stops that person's result actions over the API at once, but the grant stays until revoked, so always revoke.
+   Revocation is prospective. Losing the OWNER / ADMIN role (demoted to SCHEDULER or REGISTRATION_MANAGER, staff ended, or organization role demoted) stops that person's result actions at once, because every result command re-checks the current role inside its transaction ([ADR-0079](../adr/ADR-0079-result-authority-requires-current-result-staff.md)). The grant stays until revoked, so always revoke. A person made OWNER / ADMIN again cannot use an earlier grant: issue a fresh one with `grant` under a **new** `--governance-ref` (the command revokes the stale grant and records it in the audit).
 5. **Know what the grant allows.** It covers submit, accept, declare official and correct for every contest of **that competition only**. It is never delegable. Accept, declare and correct are refused while the person participates in the competition (`CONFLICT_OF_INTEREST`).
 
 ## 7. Rollback

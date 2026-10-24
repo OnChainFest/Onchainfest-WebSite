@@ -853,13 +853,18 @@ export class CompetitionStore {
     await this.tx(async (ctx) => {
       const { rows } = await sql<{
         competition_id: string;
-      }>`SELECT competition_id FROM competition.competition_staff WHERE id = ${input.staffId}`.execute(
+        person_id: string;
+      }>`SELECT competition_id, person_id FROM competition.competition_staff WHERE id = ${input.staffId}`.execute(
         ctx.trx,
       );
       if (rows[0] === undefined)
         throw new DomainError(DomainErrorCode.NOT_FOUND, 'staff assignment not found');
       const c = await loadCompetition(ctx, rows[0].competition_id);
       await requireCompPermission(ctx, input.actorAccountId, c, 'COMP_MANAGE_STAFF');
+      // WP-P0-3 (D-16): the key assignStaff takes, and every result write takes SHARED while it
+      // checks this person's role (ADR-0079): an ending and a result write never interleave.
+      // The assignment row is immutable, so reading it before locking is safe.
+      await lockKeys(ctx, `competition-staff:${c.id}:${rows[0].person_id}`);
       if (
         (await currentStatus(ctx, 'competition.v_staff_current', 'staff_id', input.staffId)) !==
         'ACTIVE'
