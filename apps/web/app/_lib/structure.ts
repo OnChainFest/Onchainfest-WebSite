@@ -29,6 +29,8 @@ export interface Readiness {
   contestsScheduled: { scheduled: number; total: number };
   advancement?: {
     participantCount: number;
+    /** EXACT: the confirmed (or locked) field. ESTIMATE: setup guidance, never lock-ready. */
+    countBasis?: 'EXACT' | 'ESTIMATE';
     required: boolean;
     compatiblePolicyVersionIds: string[];
     defaultPolicyVersionId: string | null;
@@ -95,6 +97,11 @@ export const BLOCKER_LABEL: Record<string, string> = {
   ADVANCEMENT_POLICY_REQUIRED: 'Choose advancement before locking: later rounds need qualifiers',
   ADVANCEMENT_POLICY_INCOMPATIBLE: 'Choose advancement compatible with this format',
   ADVANCEMENT_PLAN_INVALID: 'Check the confirmed field size and format settings',
+  CLASSIFICATION_TEMPLATE_REQUIRED:
+    'Choose a classification before locking: advancement ranks a stage of this format',
+  CLASSIFICATION_TEMPLATE_INCOMPATIBLE:
+    'Choose a classification that fits each ranked stage and the advancement policy',
+  FIELD_COUNT_UNCONFIRMED: 'Readiness has not been checked on the confirmed field yet',
   NOT_SEEDED: 'Seed the field',
   NO_PLAN: 'Generate the structure',
 };

@@ -110,6 +110,13 @@ export default async function StructurePage({
     </>
   );
   const canLock = e.status === 'REGISTRATION_CLOSED' && perms.includes('COMP_LOCK_FIELD');
+  // The lock control needs a clean preflight on the exact confirmed field, never an estimate.
+  const lockBlockers =
+    r.advancement === undefined
+      ? ['FIELD_COUNT_UNCONFIRMED']
+      : r.advancement.countBasis === 'EXACT'
+        ? r.advancement.blockers
+        : [...r.advancement.blockers, 'FIELD_COUNT_UNCONFIRMED'];
   const canSeed = r.fieldLocked && !r.seeded && perms.includes('COMP_GENERATE_STRUCTURE');
   const canGenerate = r.seeded && !r.planGenerated && perms.includes('COMP_GENERATE_STRUCTURE');
 
@@ -154,18 +161,18 @@ export default async function StructurePage({
             </section>
           ) : null}
 
-          {canLock && (r.advancement?.blockers.length ?? 0) > 0 ? (
+          {canLock && lockBlockers.length > 0 ? (
             <section className="tb-panel" role="status">
               <h3>Before locking the field</h3>
               <ul>
-                {r.advancement?.blockers.map((code) => (
+                {lockBlockers.map((code) => (
                   <li key={code}>{BLOCKER_LABEL[code] ?? code}</li>
                 ))}
               </ul>
               <a href="#sc-h">Configure scoring and advancement</a>
             </section>
           ) : null}
-          {canLock && (r.advancement?.blockers.length ?? 0) === 0 ? (
+          {canLock && lockBlockers.length === 0 ? (
             <section className="tb-panel" aria-labelledby="lock-h">
               <h3 id="lock-h" className="mono muted">
                 1 · Lock the field
