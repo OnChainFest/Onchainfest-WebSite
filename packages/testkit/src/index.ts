@@ -1076,3 +1076,5 @@ export async function brt10ConsequenceFootprint(owner: Db): Promise<Brt10Consequ
   if (footprint === undefined) throw new Error('BRT-10 footprint query returned no row');
   return footprint;
 }
+
+export { configureAdvancementFixture } from './advancement-fixture';

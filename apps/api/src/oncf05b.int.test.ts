@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   PADEL_DOUBLES_V1,
   SWIMMING_POOL_V2,
@@ -264,6 +265,11 @@ describe('swimming heats → final over the API (proof case D)', () => {
 
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, owner.h)).status).toBe(
       200,
+    );
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', owner.h)).body?.accountId as string,
+      eventId,
     );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...owner.h, ...idem() })).status,

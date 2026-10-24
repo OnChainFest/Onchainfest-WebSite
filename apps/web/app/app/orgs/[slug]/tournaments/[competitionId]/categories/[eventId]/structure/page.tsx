@@ -154,7 +154,18 @@ export default async function StructurePage({
             </section>
           ) : null}
 
-          {canLock ? (
+          {canLock && (r.advancement?.blockers.length ?? 0) > 0 ? (
+            <section className="tb-panel" role="status">
+              <h3>Before locking the field</h3>
+              <ul>
+                {r.advancement?.blockers.map((code) => (
+                  <li key={code}>{BLOCKER_LABEL[code] ?? code}</li>
+                ))}
+              </ul>
+              <a href="#sc-h">Configure scoring and advancement</a>
+            </section>
+          ) : null}
+          {canLock && (r.advancement?.blockers.length ?? 0) === 0 ? (
             <section className="tb-panel" aria-labelledby="lock-h">
               <h3 id="lock-h" className="mono muted">
                 1 · Lock the field
@@ -338,7 +349,17 @@ export default async function StructurePage({
             templates={(family) =>
               catalog.kind === 'ok' ? templatesFor(catalog.data, family) : []
             }
-            policies={catalog.kind === 'ok' ? (catalog.data.advancementPolicyVersions ?? []) : []}
+            policies={
+              catalog.kind === 'ok'
+                ? (catalog.data.advancementPolicyVersions ?? []).filter(
+                    (policy) =>
+                      r.advancement?.compatiblePolicyVersionIds.includes(policy.versionId) ?? false,
+                  )
+                : []
+            }
+            defaultPolicyVersionId={
+              pinned === null ? (r.advancement?.defaultPolicyVersionId ?? null) : null
+            }
             profiles={
               catalog.kind === 'ok'
                 ? compatibleSchedulingProfiles(catalog.data, discipline?.disciplineVersionId)
@@ -610,6 +631,7 @@ function ScoringPanel({
   rulesets,
   templates,
   policies,
+  defaultPolicyVersionId,
   profiles,
   canPin,
   hidden,
@@ -622,6 +644,7 @@ function ScoringPanel({
   rulesets: ReturnType<typeof entryRulesets>;
   templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
   policies: ReturnType<typeof templatesFor>;
+  defaultPolicyVersionId: string | null;
   profiles: ReturnType<typeof compatibleSchedulingProfiles>;
   canPin: boolean;
   hidden: ReactNode;
@@ -735,7 +758,7 @@ function ScoringPanel({
             Advancement
             <select
               name="advancementPolicyVersionId"
-              defaultValue={pinned?.advancementPolicy?.versionId ?? ''}
+              defaultValue={pinned?.advancementPolicy?.versionId ?? defaultPolicyVersionId ?? ''}
             >
               <option value="">None</option>
               {policies.map((p) => (

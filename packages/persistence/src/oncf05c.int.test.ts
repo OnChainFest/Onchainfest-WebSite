@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   BASKETBALL_3X3_V2,
   BASKETBALL_WHEELCHAIR_V2,
@@ -260,6 +261,7 @@ async function lockSeedPlan(
   > = { method: 'DETERMINISTIC_DRAW' },
 ) {
   await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
+  await configureAdvancementFixture(db, ev.actor, ev.eventId);
   await structure.lockField({ actorAccountId: ev.actor, eventId: ev.eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: ev.actor,

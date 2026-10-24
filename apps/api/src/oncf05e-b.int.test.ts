@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   CANONICAL_CATALOG,
   RULESET_TEMPLATES,
@@ -253,6 +254,11 @@ describe('ONCF-05E-B over the API', () => {
     expect((await call('POST', `/v1/events/${eventId}/open-registration`, A.h)).status).toBe(200);
     expect((await put(A.h, v['tennis-court-match'] as string)).status).toBe(200);
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, A.h)).status).toBe(200);
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', A.h)).body?.accountId as string,
+      eventId,
+    );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...A.h, ...idem() })).status,
     ).toBe(200);

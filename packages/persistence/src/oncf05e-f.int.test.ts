@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import { readFileSync } from 'node:fs';
 import {
   ADVANCEMENT_POLICY_TEMPLATES,
@@ -308,6 +309,7 @@ async function plannedEvent(comp: Comp, o: EventSpec) {
     });
   }
   await comps.closeRegistration({ actorAccountId: actor, eventId });
+  await configureAdvancementFixture(db, actor, eventId);
   await structure.lockField({ actorAccountId: actor, eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: actor,

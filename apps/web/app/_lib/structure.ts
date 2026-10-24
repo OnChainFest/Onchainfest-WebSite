@@ -27,6 +27,13 @@ export interface Readiness {
     dynamicRounds: number;
   } | null;
   contestsScheduled: { scheduled: number; total: number };
+  advancement?: {
+    participantCount: number;
+    required: boolean;
+    compatiblePolicyVersionIds: string[];
+    defaultPolicyVersionId: string | null;
+    blockers: string[];
+  };
   blockers: string[];
   warnings: string[];
   /** ONCF-05C: generated stages and their groups (absent on older API builds). */
@@ -84,6 +91,10 @@ export function planPreview(token: string, eventId: string): Promise<ApiResult<P
 
 export const BLOCKER_LABEL: Record<string, string> = {
   FIELD_NOT_LOCKED: 'Lock the field',
+  SCORING_NOT_PINNED: 'Set scoring before locking the field',
+  ADVANCEMENT_POLICY_REQUIRED: 'Choose advancement before locking: later rounds need qualifiers',
+  ADVANCEMENT_POLICY_INCOMPATIBLE: 'Choose advancement compatible with this format',
+  ADVANCEMENT_PLAN_INVALID: 'Check the confirmed field size and format settings',
   NOT_SEEDED: 'Seed the field',
   NO_PLAN: 'Generate the structure',
 };

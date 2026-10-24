@@ -131,6 +131,10 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
 
 /** ONCF-L6 fixed reason values of INVALID_TRANSITION (ADR-0078 §2.1–§2.4). */
 const L6_TRANSITION_REASONS: ReadonlySet<string> = new Set([
+  'SCORING_NOT_PINNED',
+  'ADVANCEMENT_POLICY_REQUIRED',
+  'ADVANCEMENT_POLICY_INCOMPATIBLE',
+  'ADVANCEMENT_PLAN_INVALID',
   'RESULTS_FROZEN',
   'CONTESTS_OPEN',
   'RESULTS_NOT_OFFICIAL',
@@ -175,6 +179,7 @@ export function errorBody(err: DomainError): {
     // distinct from BASE_VERSION_STALE and REPORT_STALE.
     (err.code === 'CONCURRENCY_CONFLICT' && reason === 'LAST_FACT_STALE') ||
     (err.code === 'INVALID_TRANSITION' && reason === 'PROPOSAL_NOT_COMMITTABLE') ||
+    (err.code === 'INVALID_INPUT' && reason === 'ADVANCEMENT_POLICY_INCOMPATIBLE') ||
     // ONCF-L6 (ADR-0078): the completion and freeze refusals an organizer must tell apart.
     (err.code === 'INVALID_TRANSITION' &&
       typeof reason === 'string' &&
