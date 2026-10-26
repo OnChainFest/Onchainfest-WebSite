@@ -53,7 +53,7 @@ export async function configureAdvancementFixture(db: Db, actorAccountId: string
   const requirements = advancementRequirements(engine, row.spec, row.format_config, row.n);
   const scoring = new ScoringStore(db);
   const pin = await scoring.scoring({ actorAccountId, eventId });
-  const p = 'ruleset' in pin ? pin : undefined;
+  const p = pin.pinned ? pin : undefined;
   const unranked = requirements.classificationStages.some(
     (stage) =>
       (p?.stageOverrides[stage]?.classificationTemplateVersionId ??
