@@ -9,6 +9,7 @@ import {
 import { DomainErrorCode, newId, type Uuid } from '@br/domain';
 import {
   apiDb,
+  declaredNoParticipation,
   newAthlete,
   newOrganizer,
   newTestAccount,
@@ -655,6 +656,50 @@ async function heldWhile<A, B>(key: string, launched: () => Promise<A>, during: 
   ] as const;
 }
 
+/**
+ * `first` is ordered INSIDE its result transaction: a barrier holds the contest result's stream head
+ * row, which a result command locks only after its eligibility keys (gate, then Authority Engine,
+ * then `openStream`). Once `first` is blocked there — so its result transaction already holds the
+ * eligibility keys shared, unlike a pre-step transaction on the same advisory key — `second` is
+ * launched and must queue on `key`; then the row is released and `first` commits before `second`.
+ * If a command settles before blocking, the wait ends (the assertions then fail instead of hanging).
+ */
+async function streamFirst<A, B>(
+  contestId: string,
+  key: string,
+  first: () => Promise<A>,
+  second: () => Promise<B>,
+) {
+  let out: Promise<[PromiseSettledResult<A>, PromiseSettledResult<B>]> | undefined;
+  await owner.transaction().execute(async (trx) => {
+    await sql`
+      SELECT 1 FROM platform.stream_head WHERE stream_id =
+        (SELECT id FROM results.result WHERE scope_target_id = ${contestId})
+      FOR UPDATE`.execute(trx);
+    let done = false;
+    const a = Promise.allSettled([first()]).then(([r]) => {
+      done = true;
+      return r as PromiseSettledResult<A>;
+    });
+    const blocked = async () =>
+      (
+        await sql<{ n: number }>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE pg_backend_pid() = ANY (pg_blocking_pids(pid))`.execute(trx)
+      ).rows[0]?.n ?? 0;
+    for (let i = 0; i < 400 && !done && (await blocked()) < 1; i++)
+      await new Promise((r) => setTimeout(r, 25));
+    const b = Promise.allSettled([second()]).then(([r]) => {
+      done = true;
+      return r as PromiseSettledResult<B>;
+    });
+    for (let i = 0; i < 400 && !done && (await waitingOn(trx, key)) < 1; i++)
+      await new Promise((r) => setTimeout(r, 25));
+    out = Promise.all([a, b]);
+  });
+  return out as Promise<[PromiseSettledResult<A>, PromiseSettledResult<B>]>;
+}
+
 // ───────────────────────────── authorization at action time ─────────────────────────────
 
 describe('WP-P0-3 · result authority needs a CURRENT OWNER / ADMIN role (D-16)', () => {
@@ -1061,7 +1106,7 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
       actorAccountId: s.accountId,
       personId: s.personId,
     });
-    const authority = new AuthorityStore(db);
+    const authority = new AuthorityStore(db, { conflictChecker: declaredNoParticipation });
     const legacyGrant = () =>
       ({
         granteePrincipalId: principalId as Uuid,
@@ -1410,9 +1455,11 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
               reason: 'race',
             });
           const fix = () => correct(s.accountId, f.contestId, rv);
+          // Correction first: its pre-step (its PERSON principal) also takes `account:` shared, so
+          // the order is forced inside its result transaction instead (`streamFirst`).
           const [a, b] = disableFirst
             ? await ordered(`account:${s.accountId}`, disable, fix)
-            : await ordered(`account:${s.accountId}`, fix, disable);
+            : await streamFirst(f.contestId, `account:${s.accountId}`, fix, disable);
           const [dis, cor] = disableFirst ? [a, b] : [b, a];
           const at = `run ${run} disableFirst=${disableFirst}`;
           expect(reasonOf(dis), at).toBe('fulfilled');
