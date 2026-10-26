@@ -201,6 +201,14 @@ function readiness(o: Partial<{ locked: boolean; seeded: boolean; planned: boole
       ? { engine: 'heats-final/1', planVersion: 2, stages: 2, contests: 4, dynamicRounds: 0 }
       : null,
     contestsScheduled: { scheduled: 0, total: o.planned ? 4 : 0 },
+    advancement: {
+      participantCount: 3,
+      countBasis: 'EXACT',
+      required: false,
+      compatiblePolicyVersionIds: [],
+      defaultPolicyVersionId: null,
+      blockers: [],
+    },
     blockers: !o.locked
       ? ['FIELD_NOT_LOCKED']
       : !o.seeded
@@ -733,9 +741,117 @@ describe('organizer structure page', () => {
 
   it('offers the field lock after registration closes', async () => {
     const page = html(await Structure(cat()));
-    expect(page).toContain('Lock the field');
+    expect(page).toContain('Lock the field (');
     expect(page).toContain('Readiness');
     expect(page).not.toContain('Seed the field');
+  });
+
+  it('shows advancement blockers and withholds the field-lock command', async () => {
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, {
+        ...readiness(),
+        advancement: {
+          participantCount: 4,
+          required: true,
+          compatiblePolicyVersionIds: [],
+          defaultPolicyVersionId: null,
+          blockers: ['ADVANCEMENT_POLICY_REQUIRED'],
+        },
+      });
+    const page = html(await Structure(cat()));
+    expect(page).toContain('Choose advancement before locking');
+    expect(page).toContain('Configure scoring and advancement');
+    expect(page).not.toContain('Lock the field (');
+  });
+
+  it('withholds the field lock unless readiness was assessed on the exact confirmed field (D-13B)', async () => {
+    const estimate = { ...readiness().advancement, countBasis: 'ESTIMATE' };
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, { ...readiness(), advancement: estimate });
+    let page = html(await Structure(cat()));
+    expect(page).toContain('Readiness has not been checked on the confirmed field yet');
+    expect(page).not.toContain('Lock the field (');
+    const { advancement: _omitted, ...unassessed } = readiness();
+    routes[`GET /v1/events/${EVENT}/readiness`] = () => json(200, unassessed);
+    page = html(await Structure(cat()));
+    expect(page).toContain('Readiness has not been checked on the confirmed field yet');
+    expect(page).not.toContain('Lock the field (');
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, {
+        ...readiness(),
+        advancement: {
+          ...readiness().advancement,
+          required: true,
+          blockers: ['CLASSIFICATION_TEMPLATE_REQUIRED'],
+        },
+      });
+    page = html(await Structure(cat()));
+    expect(page).toContain('Choose a classification before locking');
+    expect(page).not.toContain('Lock the field (');
+  });
+
+  it('filters incompatible choices and uses only the API-approved fresh-event default', async () => {
+    // The scoring form (and so the policy choice) needs COMP_EDIT, like the profile tests below.
+    routes[`GET /v1/competitions/${COMP}/manage`] = () =>
+      json(
+        200,
+        managed('REGISTRATION_CLOSED', ['COMP_VIEW_PRIVATE', 'COMP_EDIT', 'COMP_LOCK_FIELD']),
+      );
+    routes['GET /v1/catalog'] = () =>
+      json(200, {
+        ...catalog(),
+        disciplineVersions: catalog().disciplineVersions.map((d) => ({
+          ...d,
+          compatibleRulesetVersionIds: ['rs-test'],
+        })),
+        rulesetVersions: [
+          {
+            versionId: 'rs-test',
+            code: 'sets-test',
+            name: 'Sets',
+            version: 1,
+            family: 'SETS_OF_GAMES',
+            basis: { kind: 'COMMON_PRACTICE', note: 'fixture' },
+          },
+        ],
+        advancementPolicyVersions: [
+          {
+            versionId: 'approved',
+            code: 'official-confirmed',
+            name: 'Compatible policy',
+            version: 1,
+            family: 'ADVANCEMENT',
+            basis: { kind: 'COMMON_PRACTICE', note: 'fixture' },
+          },
+          {
+            versionId: 'incompatible',
+            code: 'groups-wins-games',
+            name: 'Incompatible policy',
+            version: 1,
+            family: 'ADVANCEMENT',
+            basis: { kind: 'COMMON_PRACTICE', note: 'fixture' },
+          },
+        ],
+      });
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, {
+        ...readiness(),
+        advancement: {
+          participantCount: 4,
+          required: true,
+          compatiblePolicyVersionIds: ['approved'],
+          defaultPolicyVersionId: 'approved',
+          blockers: [],
+        },
+      });
+    const page = html(await Structure(cat()));
+    expect(page).toContain('Compatible policy');
+    expect(page).not.toContain('Incompatible policy');
+    expect(page).toMatch(/value="approved" selected=""/);
+    // A saved explicit None is preserved; only an unpinned event receives the suggestion.
+    routes[`GET /v1/events/${EVENT}/scoring`] = () =>
+      json(200, { eventId: EVENT, pinned: true, frozen: false, advancementPolicy: null });
+    expect(html(await Structure(cat()))).not.toMatch(/value="approved" selected=""/);
   });
 
   it('a locked, unseeded field offers seeding with the field table (private entrants stay unnamed)', async () => {

@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   BASKETBALL_3X3_V2,
   GOLF_INDIVIDUAL_V2,
@@ -209,6 +210,7 @@ async function lockAndSeed(
     : never,
 ) {
   await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
+  await configureAdvancementFixture(api, ev.actor, ev.eventId);
   const field = await structure.lockField({
     actorAccountId: ev.actor,
     eventId: ev.eventId,
@@ -241,6 +243,7 @@ describe('proof case A — tennis singles, single elimination v2 (KNOCKOUT)', ()
         )
       ).rows[0]?.id as string;
     await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
+    await configureAdvancementFixture(api, ev.actor, ev.eventId);
     const field = await structure.lockField({
       actorAccountId: ev.actor,
       eventId: ev.eventId,
@@ -560,6 +563,7 @@ describe('proof case F — basketball 3x3, pools → knockout (roster / lineup)'
       }
     }
     await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
+    await configureAdvancementFixture(api, ev.actor, ev.eventId);
     await expect(
       structure.lockField({ actorAccountId: ev.actor, eventId: ev.eventId, idempotencyKey: k() }),
     ).rejects.toMatchObject({
@@ -574,6 +578,7 @@ describe('ONCF-05B invariants', () => {
     const ev = await eventWith('tennis@2', 'se@2');
     await individuals(ev.eventId, 4);
     await comps.closeRegistration({ actorAccountId: ev.actor, eventId: ev.eventId });
+    await configureAdvancementFixture(api, ev.actor, ev.eventId);
     await structure.lockField({
       actorAccountId: ev.actor,
       eventId: ev.eventId,

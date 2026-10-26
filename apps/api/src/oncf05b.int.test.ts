@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   PADEL_DOUBLES_V1,
   SWIMMING_POOL_V2,
@@ -259,11 +260,21 @@ describe('swimming heats → final over the API (proof case D)', () => {
     ).toBe(400);
 
     let ready = await call('GET', `/v1/events/${eventId}/readiness`, owner.h);
-    expect(ready.body?.blockers).toEqual(['FIELD_NOT_LOCKED']);
+    // D-13: readiness names the scoring and advancement prerequisites ahead of the lock itself.
+    expect(ready.body?.blockers).toEqual([
+      'SCORING_NOT_PINNED',
+      'ADVANCEMENT_POLICY_REQUIRED',
+      'FIELD_NOT_LOCKED',
+    ]);
     expect((await call('GET', `/v1/events/${eventId}/readiness`, stranger.h)).status).toBe(403);
 
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, owner.h)).status).toBe(
       200,
+    );
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', owner.h)).body?.accountId as string,
+      eventId,
     );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...owner.h, ...idem() })).status,

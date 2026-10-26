@@ -98,6 +98,8 @@ export class FormatEngineError extends Error {
 }
 
 interface FormatEngineBase {
+  /** Organizer suggestion only; never silently pinned or part of a historical plan hash. */
+  readonly advancementDefaultPolicyCode?: 'official-confirmed';
   /** Stable engine id (e.g. "single-elimination"). */
   readonly id: string;
   /** Semantic version: any change to generated structure ⇒ a new version. */

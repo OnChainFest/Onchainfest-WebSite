@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   BOWLING_SINGLES_V2,
   CANONICAL_CATALOG,
@@ -199,6 +200,7 @@ async function plannedEvent(opts: {
     });
   }
   await comps.closeRegistration({ actorAccountId: actor, eventId });
+  await configureAdvancementFixture(db, actor, eventId);
   await structure.lockField({ actorAccountId: actor, eventId, idempotencyKey: k() });
   await structure.seedField({
     actorAccountId: actor,

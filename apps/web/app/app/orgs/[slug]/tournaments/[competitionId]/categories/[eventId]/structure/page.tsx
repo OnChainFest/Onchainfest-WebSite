@@ -110,6 +110,13 @@ export default async function StructurePage({
     </>
   );
   const canLock = e.status === 'REGISTRATION_CLOSED' && perms.includes('COMP_LOCK_FIELD');
+  // The lock control needs a clean preflight on the exact confirmed field, never an estimate.
+  const lockBlockers =
+    r.advancement === undefined
+      ? ['FIELD_COUNT_UNCONFIRMED']
+      : r.advancement.countBasis === 'EXACT'
+        ? r.advancement.blockers
+        : [...r.advancement.blockers, 'FIELD_COUNT_UNCONFIRMED'];
   const canSeed = r.fieldLocked && !r.seeded && perms.includes('COMP_GENERATE_STRUCTURE');
   const canGenerate = r.seeded && !r.planGenerated && perms.includes('COMP_GENERATE_STRUCTURE');
 
@@ -154,7 +161,18 @@ export default async function StructurePage({
             </section>
           ) : null}
 
-          {canLock ? (
+          {canLock && lockBlockers.length > 0 ? (
+            <section className="tb-panel" role="status">
+              <h3>Before locking the field</h3>
+              <ul>
+                {lockBlockers.map((code) => (
+                  <li key={code}>{BLOCKER_LABEL[code] ?? code}</li>
+                ))}
+              </ul>
+              <a href="#sc-h">Configure scoring and advancement</a>
+            </section>
+          ) : null}
+          {canLock && lockBlockers.length === 0 ? (
             <section className="tb-panel" aria-labelledby="lock-h">
               <h3 id="lock-h" className="mono muted">
                 1 · Lock the field
@@ -338,7 +356,17 @@ export default async function StructurePage({
             templates={(family) =>
               catalog.kind === 'ok' ? templatesFor(catalog.data, family) : []
             }
-            policies={catalog.kind === 'ok' ? (catalog.data.advancementPolicyVersions ?? []) : []}
+            policies={
+              catalog.kind === 'ok'
+                ? (catalog.data.advancementPolicyVersions ?? []).filter(
+                    (policy) =>
+                      r.advancement?.compatiblePolicyVersionIds.includes(policy.versionId) ?? false,
+                  )
+                : []
+            }
+            defaultPolicyVersionId={
+              pinned === null ? (r.advancement?.defaultPolicyVersionId ?? null) : null
+            }
             profiles={
               catalog.kind === 'ok'
                 ? compatibleSchedulingProfiles(catalog.data, discipline?.disciplineVersionId)
@@ -610,6 +638,7 @@ function ScoringPanel({
   rulesets,
   templates,
   policies,
+  defaultPolicyVersionId,
   profiles,
   canPin,
   hidden,
@@ -622,6 +651,7 @@ function ScoringPanel({
   rulesets: ReturnType<typeof entryRulesets>;
   templates: (family: string | undefined) => ReturnType<typeof templatesFor>;
   policies: ReturnType<typeof templatesFor>;
+  defaultPolicyVersionId: string | null;
   profiles: ReturnType<typeof compatibleSchedulingProfiles>;
   canPin: boolean;
   hidden: ReactNode;
@@ -735,7 +765,7 @@ function ScoringPanel({
             Advancement
             <select
               name="advancementPolicyVersionId"
-              defaultValue={pinned?.advancementPolicy?.versionId ?? ''}
+              defaultValue={pinned?.advancementPolicy?.versionId ?? defaultPolicyVersionId ?? ''}
             >
               <option value="">None</option>
               {policies.map((p) => (

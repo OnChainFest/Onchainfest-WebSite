@@ -17,6 +17,7 @@ export {
   MIGRATIONS_DIR,
 } from './migrate';
 export { bootstrapDatabase, resetDatabase } from './bootstrap';
+export { HEAD_TO_HEAD_FAMILIES, standingsValueKeys } from './advancement-preflight';
 export * from './identity-support';
 export * from './identity-store';
 export * from './vault-store';

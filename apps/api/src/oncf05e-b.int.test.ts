@@ -1,3 +1,4 @@
+import { configureAdvancementFixture } from '@br/testkit';
 import {
   CANONICAL_CATALOG,
   RULESET_TEMPLATES,
@@ -252,7 +253,37 @@ describe('ONCF-05E-B over the API', () => {
     // Registration open: still editable; then the field locks and the pin is frozen.
     expect((await call('POST', `/v1/events/${eventId}/open-registration`, A.h)).status).toBe(200);
     expect((await put(A.h, v['tennis-court-match'] as string)).status).toBe(200);
+    // D-13: a scored field below the format's minimum no longer locks; enter a four-player draw.
+    for (const label of ['o5eb-p1', 'o5eb-p2', 'o5eb-p3', 'o5eb-p4']) {
+      const p = await person(label);
+      const a = await call(
+        'POST',
+        '/v1/athletes',
+        { ...p.h, ...idem() },
+        {
+          personId: p.personId,
+          slug: uniqueSlug(label),
+          profile: { displayName: `Athlete ${label}`, profileVisibility: 'PUBLIC' },
+        },
+      );
+      expect(a.status).toBe(201);
+      expect(
+        (
+          await call(
+            'POST',
+            `/v1/events/${eventId}/registrations`,
+            { ...p.h, ...idem() },
+            { athleteId: a.body?.athleteId, eligibilityDeclared: true },
+          )
+        ).status,
+      ).toBe(201);
+    }
     expect((await call('POST', `/v1/events/${eventId}/close-registration`, A.h)).status).toBe(200);
+    await configureAdvancementFixture(
+      db,
+      (await call('GET', '/v1/me', A.h)).body?.accountId as string,
+      eventId,
+    );
     expect(
       (await call('POST', `/v1/events/${eventId}/lock-field`, { ...A.h, ...idem() })).status,
     ).toBe(200);

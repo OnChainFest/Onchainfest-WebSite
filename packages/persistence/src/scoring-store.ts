@@ -31,6 +31,11 @@ import {
   type ClassificationV2Contest,
 } from '@br/rankings';
 import { sql } from 'kysely';
+import {
+  advancementPreflight,
+  HEAD_TO_HEAD_FAMILIES,
+  standingsValueKeys,
+} from './advancement-preflight';
 import { loadCompetition, loadEvent, requireCompPermission } from './competition-support';
 import type { Db } from './db';
 import { identityIdempotency, lockKeys, recordAudit } from './identity-support';
@@ -54,12 +59,6 @@ import { inTransaction, ModuleRole, type TxContext } from './tx';
  * transactions; neither role gains access to the other's tables.
  */
 
-const HEAD_TO_HEAD_FAMILIES = new Set([
-  'SETS_OF_GAMES',
-  'TIMED_PERIODS',
-  'TIMED_OR_TARGET',
-  'MATCH_PLAY_HOLES',
-]);
 const STATUS_FLOOR: Record<string, readonly string[]> = {
   PROVISIONAL: ['PROVISIONAL', 'OFFICIAL', 'FINAL'],
   OFFICIAL: ['OFFICIAL', 'FINAL'],
@@ -180,21 +179,6 @@ export async function currentPin(ctx: TxContext, eventId: string): Promise<Pinne
         schedulingProfileVersionId: r.scheduling_profile_version_id,
         stageOverrides: r.stage_overrides,
       };
-}
-
-/** Value keys a STANDINGS classification document carries (base values + criteria metrics). */
-function standingsValueKeys(spec: ClassificationPolicyV2Spec): Set<string> {
-  const keys = new Set(['played', 'wins', 'points']);
-  const walk = (cs: readonly unknown[]) => {
-    for (const raw of cs) {
-      const c = raw as Record<string, unknown>;
-      for (const k of ['forMetric', 'againstMetric', 'metric'])
-        if (typeof c[k] === 'string') keys.add(c[k] as string);
-      if (Array.isArray(c['sub'])) walk(c['sub'] as unknown[]);
-    }
-  };
-  if (spec.family === 'STANDINGS') walk(spec.criteria);
-  return keys;
 }
 
 const view = (v: VersionRow) => ({
@@ -361,6 +345,13 @@ export class ScoringStore {
           throw new DomainError(
             DomainErrorCode.INVALID_INPUT,
             'advancement policy version not found or not published',
+          );
+        const preflight = await advancementPreflight(ctx, e, 'ESTIMATE');
+        if (!preflight.compatiblePolicyVersionIds.includes(input.advancementPolicyVersionId))
+          throw new DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            'advancement policy does not fit this format configuration',
+            { reason: 'ADVANCEMENT_POLICY_INCOMPATIBLE' },
           );
         // A cross-group order can only read values the pinned standings template produces.
         const used = crossGroupKeysUsed(a.spec as AdvancementPolicySpec);
