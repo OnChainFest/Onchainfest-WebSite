@@ -1,126 +1,115 @@
 import { describe, expect, it } from 'vitest';
-import { continuousEligibilitySince, type EligibilityChange } from './result-authority';
+import {
+  bindingFrom,
+  bindingHolds,
+  type EligibilitySnapshot,
+  type EligibilityVersion,
+} from './result-authority';
 
 /**
- * WP-P0-3 Q3 (ADR-0079 §2.3): the continuity start computed from the append-only histories. Rows
- * are given in `seq` (commit) order; `at` is the transaction START (`recorded_at`), which can run
- * backwards across a lock wait.
+ * WP-P0-3 Q3 (ADR-0079 §2.3): a grant is bound to the eligibility rows it was issued on, each with
+ * its status-change count; it holds while the account and at least one bound basis (a membership
+ * also with the organization) have no change since. No timestamp is involved.
  */
-const at = (ms: number) => new Date(Date.UTC(2027, 0, 1) + ms);
-const ch = (id: string, status: string, ms: number): EligibilityChange => ({
-  id,
-  status,
-  at: at(ms),
+const v = (id: string, changes = 1, active = true): EligibilityVersion => ({ id, changes, active });
+const snap = (h: Partial<EligibilitySnapshot>): EligibilitySnapshot => ({
+  account: v('acct'),
+  organization: v('org'),
+  staff: [],
+  memberships: [],
+  ...h,
 });
-const active = (id: string, ms = 0) => [ch(id, 'ACTIVE', ms)];
-const since = (h: Partial<Parameters<typeof continuousEligibilitySince>[0]>) =>
-  continuousEligibilitySince({
-    account: active('acct'),
-    organization: active('org'),
-    staff: [],
-    memberships: [],
-    ...h,
-  })?.getTime();
-const T = (ms: number) => at(ms).getTime();
+/** The binding issued on `at`, judged against `now`. */
+const holds = (at: Partial<EligibilitySnapshot>, now: Partial<EligibilitySnapshot>) => {
+  const b = bindingFrom(snap(at));
+  if (b === undefined) throw new Error('not eligible at issuance');
+  return bindingHolds(b, snap(now));
+};
 
-describe('continuousEligibilitySince (ADR-0079 §2.3)', () => {
-  it('one explicit staff row: its activation', () => {
-    expect(since({ staff: [ch('s1', 'ACTIVE', 100)] })).toBe(T(100));
+describe('bindingFrom (ADR-0079 §2.3)', () => {
+  it('binds every ACTIVE basis with its change count, and the account and organization counts', () => {
+    expect(
+      bindingFrom(
+        snap({
+          account: v('acct', 1),
+          organization: v('org', 3),
+          staff: [v('s1', 1), v('s2', 2, false)],
+          memberships: [v('m1', 2)],
+        }),
+      ),
+    ).toEqual({
+      accountChanges: 1,
+      organizationChanges: 3,
+      bases: [
+        { kind: 'STAFF', id: 's1', changes: 1 },
+        { kind: 'MEMBERSHIP', id: 'm1', changes: 2 },
+      ],
+    });
   });
 
-  it('not eligible: no basis, an ended basis, a disabled account, a suspended organization', () => {
-    expect(since({})).toBeUndefined();
-    expect(since({ staff: [ch('s1', 'ACTIVE', 100), ch('s1', 'ENDED', 200)] })).toBeUndefined();
+  it('not eligible: no basis, only ended bases, a disabled account, memberships of a suspended organization', () => {
+    expect(bindingFrom(snap({}))).toBeUndefined();
+    expect(bindingFrom(snap({ staff: [v('s1', 2, false)] }))).toBeUndefined();
+    expect(bindingFrom(snap({ account: v('acct', 2, false), staff: [v('s1')] }))).toBeUndefined();
     expect(
-      since({
-        staff: active('s1', 100),
-        account: [ch('acct', 'ACTIVE', 0), ch('acct', 'DISABLED', 50)],
-      }),
+      bindingFrom(snap({ organization: v('org', 2, false), memberships: [v('m1')] })),
     ).toBeUndefined();
+    // An explicit staff row does not depend on the organization's status.
+    expect(bindingFrom(snap({ organization: v('org', 2, false), staff: [v('s1')] }))).toBeDefined();
+  });
+});
+
+describe('bindingHolds (ADR-0079 §2.3)', () => {
+  it('holds while nothing it rests on has changed, whatever else happens', () => {
+    expect(holds({ staff: [v('s1')] }, { staff: [v('s1')] })).toBe(true);
+    // Unrelated bases appear and change: irrelevant.
     expect(
-      since({
-        memberships: active('m1', 100),
-        organization: [ch('org', 'ACTIVE', 0), ch('org', 'SUSPENDED', 50)],
-      }),
-    ).toBeUndefined();
+      holds(
+        { staff: [v('s1')] },
+        { staff: [v('s1'), v('s9', 2, false)], memberships: [v('m1', 3)] },
+      ),
+    ).toBe(true);
+    // A staff basis does not depend on the organization history.
+    expect(holds({ staff: [v('s1')] }, { staff: [v('s1')], organization: v('org', 3) })).toBe(true);
   });
 
-  it('demotion then re-assignment: a new row, so eligibility restarts', () => {
-    expect(
-      since({ staff: [ch('s1', 'ACTIVE', 100), ch('s1', 'ENDED', 200), ch('s2', 'ACTIVE', 300)] }),
-    ).toBe(T(300));
+  it('two bound bases: losing one keeps the grant while the other is unchanged', () => {
+    const at = { staff: [v('s1')], memberships: [v('m1')] };
+    expect(holds(at, { staff: [v('s1', 2, false)], memberships: [v('m1')] })).toBe(true);
+    expect(holds(at, { staff: [v('s1')], memberships: [v('m1', 2, false)] })).toBe(true);
+    expect(holds(at, { staff: [v('s1', 2, false)], memberships: [v('m1', 2, false)] })).toBe(false);
   });
 
-  it('a membership role change ends one row and starts the next at the same instant: continuous', () => {
-    expect(
-      since({
-        memberships: [ch('m1', 'ACTIVE', 100), ch('m1', 'ENDED', 200), ch('m2', 'ACTIVE', 200)],
-      }),
-    ).toBe(T(100));
+  it('demotion then re-promotion never restores it: a reactivated row has more changes, a new row is unbound', () => {
+    const at = { staff: [v('s1')] };
+    // Same row ended, then (were it reactivated) active again with more changes.
+    expect(holds(at, { staff: [v('s1', 3)] })).toBe(false);
+    // Ended, and a new ADMIN row assigned.
+    expect(holds(at, { staff: [v('s1', 2, false), v('s2')] })).toBe(false);
   });
 
-  it('a handoff between bases that overlap is continuous', () => {
-    expect(
-      since({
-        staff: [ch('s1', 'ACTIVE', 100), ch('s1', 'ENDED', 300)],
-        memberships: active('m1', 200),
-      }),
-    ).toBe(T(100));
-  });
-
-  it('a membership suspended then reactivated restarts at the reactivation', () => {
-    expect(
-      since({
-        memberships: [ch('m1', 'ACTIVE', 100), ch('m1', 'SUSPENDED', 200), ch('m1', 'ACTIVE', 300)],
-      }),
-    ).toBe(T(300));
-  });
-
-  it('an organization suspended then reactivated clips its memberships, not explicit staff', () => {
-    const organization = [
-      ch('org', 'ACTIVE', 0),
-      ch('org', 'SUSPENDED', 200),
-      ch('org', 'ACTIVE', 300),
-    ];
-    expect(since({ organization, memberships: active('m1', 100) })).toBe(T(300));
-    expect(since({ organization, staff: active('s1', 100) })).toBe(T(100));
-  });
-
-  it('commit order wins over transaction-start stamps: a reactivation that waited is not continuous', () => {
-    // The suspension (stamped 200) committed before the reactivation that started earlier (150).
-    expect(
-      since({
-        memberships: [ch('m1', 'ACTIVE', 100), ch('m1', 'SUSPENDED', 200), ch('m1', 'ACTIVE', 150)],
-      }),
-    ).toBe(T(201));
-    const organization = [
-      ch('org', 'ACTIVE', 0),
-      ch('org', 'SUSPENDED', 200),
-      ch('org', 'ACTIVE', 150),
-    ];
-    expect(since({ organization, memberships: active('m1', 100) })).toBe(T(201));
-    const account = [
-      ch('acct', 'ACTIVE', 0),
-      ch('acct', 'DISABLED', 200),
-      ch('acct', 'ACTIVE', 150),
-    ];
-    expect(since({ account, staff: active('s1', 100) })).toBe(T(201));
-  });
-
-  it('a closing change stamped before its opening (lock wait) drops the period, never extends it', () => {
-    expect(
-      since({
-        staff: [ch('s1', 'ACTIVE', 300), ch('s1', 'ENDED', 250), ch('s2', 'ACTIVE', 400)],
-      }),
-    ).toBe(T(400));
-  });
-
-  it('INVITED and DECLINED never open a span; ACTIVE after INVITED does', () => {
-    expect(
-      since({ memberships: [ch('m1', 'INVITED', 100), ch('m1', 'DECLINED', 200)] }),
-    ).toBeUndefined();
-    expect(since({ memberships: [ch('m1', 'INVITED', 100), ch('m1', 'ACTIVE', 200)] })).toBe(
-      T(200),
+  it('a membership replaced by a role change (ADMIN → OWNER) needs a fresh grant (fail closed)', () => {
+    expect(holds({ memberships: [v('m1')] }, { memberships: [v('m1', 2, false), v('m2')] })).toBe(
+      false,
     );
+  });
+
+  it('a cross-basis handoff keeps no grant whose own bases were all lost', () => {
+    expect(
+      holds({ staff: [v('s1')] }, { staff: [v('s1', 2, false)], memberships: [v('m1')] }),
+    ).toBe(false);
+  });
+
+  it('suspension and reactivation of a membership or of the organization refuse a membership-bound grant', () => {
+    const at = { memberships: [v('m1')] };
+    expect(holds(at, { memberships: [v('m1', 3)] })).toBe(false);
+    expect(holds(at, { memberships: [v('m1')], organization: v('org', 3) })).toBe(false);
+    expect(holds(at, { memberships: [v('m1')], organization: v('org', 2, false) })).toBe(false);
+  });
+
+  it('any account status change refuses, whatever the bases', () => {
+    const at = { staff: [v('s1')] };
+    expect(holds(at, { staff: [v('s1')], account: v('acct', 2, false) })).toBe(false);
+    expect(holds(at, { staff: [v('s1')], account: v('acct', 3) })).toBe(false);
   });
 });

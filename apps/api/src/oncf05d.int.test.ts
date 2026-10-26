@@ -5,13 +5,13 @@ import {
   TENNIS_SINGLES_V1,
   type DisciplineVersionSpec,
 } from '@br/competition';
-import { newId, type Uuid } from '@br/domain';
+import { newId } from '@br/domain';
 import {
-  AuthorityStore,
   CatalogStore,
   CompetitionReader,
   CompetitionStore,
   IdentityStore,
+  ResultAuthorityGovernance,
   StructureStore,
 } from '@br/persistence';
 import {
@@ -45,7 +45,6 @@ const app = buildServer({
   resultConflictChecker: declaredNoParticipation,
   auth: (identity: IdentityStore) => createDevTokenAuth(identity, { secret: SECRET }),
 });
-const authority = new AuthorityStore(db, { conflictChecker: declaredNoParticipation });
 afterAll(async () => {
   await app.close();
   await Promise.all([db.destroy(), operator.destroy()]);
@@ -77,7 +76,8 @@ async function person(label: string) {
   const h = auth(`${label}-${newId()}`);
   const p = await call('POST', '/v1/persons', { ...h, ...idem() }, { relation: 'SELF' });
   expect(p.status).toBe(201);
-  return { h, personId: p.body?.personId as string };
+  const me = await call('GET', '/v1/me', h);
+  return { h, personId: p.body?.personId as string, accountId: me.body?.accountId as string };
 }
 async function athlete(label: string) {
   const u = await person(label);
@@ -289,26 +289,18 @@ describe('ONCF-05D over the API', () => {
     ).toBe(403);
     expect((await call('GET', `/v1/contests/${sf1.contestId}/results`, B.h)).status).toBe(403);
 
-    // The organizer's own PERSON principal receives grants from a recognized platform anchor.
-    const principal = await call('POST', `/v1/persons/${A.personId}/principal`, A.h);
-    expect(principal.status, principal.text).toBe(200);
-    const platform = await authority.registerPrincipal({
-      principalType: 'PLATFORM',
-      label: 'platform (05D api)',
+    // The ADR-0077 operator act: the organizer's own PERSON principal receives the result grant,
+    // bound to its current OWNER eligibility (ADR-0079 §2.3).
+    const governance = new ResultAuthorityGovernance(db);
+    const { platformPrincipalId } = await governance.bootstrapPlatformAnchor({
+      governanceDecisionRef: `gov:05d-api:anchor:${newId()}`,
+      basisRef: 'basis:05d-api:charter',
     });
-    await authority.recognizeTrustAnchor({
-      principalId: platform.id,
-      recognitionScope: { recognitionLevel: ['PLATFORM'] },
-      basisRef: 'fixture',
-      governanceDecisionRef: `fx-${newId()}`,
-    });
-    await authority.issueGrant({
-      actorPrincipalId: platform.id,
-      grantorPrincipalId: platform.id,
-      granteePrincipalId: principal.body?.principalId as Uuid,
-      capabilities: ['SUBMIT_RESULT', 'ACCEPT_RESULT', 'DECLARE_OFFICIAL', 'CORRECT_RESULT'],
-      scope: { recognitionLevel: ['PLATFORM'], competition: [A.competitionId as Uuid] },
-      delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+    await governance.grantCompetitionResultAuthority({
+      platformPrincipalId,
+      competitionId: A.competitionId,
+      granteeAccountId: A.accountId,
+      governanceDecisionRef: `gov:05d-api:${newId()}`,
     });
     const invalid = await call(
       'POST',

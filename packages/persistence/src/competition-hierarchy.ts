@@ -21,9 +21,12 @@ import { competitionPermissions, loadCompetition } from './competition-support';
 import type { Db } from './db';
 import { loadControlFacts, lockKeys, lockKeysShared } from './identity-support';
 import {
+  bindingFrom,
+  bindingHolds,
+  grantEligibilityBindings,
   RESULT_AUTHORITY_STAFF_ROLES,
+  resultEligibilitySnapshot,
   resultStaffEligibilityKeys,
-  resultStaffEligibleSince,
 } from './result-authority';
 import { ResultLedger, type ResultActorGate, type ResultScopeValidator } from './result-ledger';
 import { inTransaction, ModuleRole, withModuleRole, type TxContext } from './tx';
@@ -259,17 +262,17 @@ export function competitionResultStaffGate(accountId: string): ResultActorGate {
       'acting on results needs a current OWNER or ADMIN role in this competition',
       { reason: 'NOT_RESULT_STAFF' },
     );
-  const predates = () =>
+  const stale = () =>
     new DomainError(
       DomainErrorCode.AUTHORITY_DENIED,
-      'the result grant was issued before the current OWNER or ADMIN role; a fresh grant is required',
-      { reason: 'GRANT_PREDATES_ELIGIBILITY' },
+      'the result grant is not bound to the current OWNER or ADMIN eligibility; a fresh operator grant is required',
+      { reason: 'GRANT_ELIGIBILITY_STALE' },
     );
   return {
     async assertActor(ctx, scopeType, scopeTargetId) {
       const path = await resolveHierarchy(ctx, LEVEL_OF[scopeType], scopeTargetId);
       if (path === undefined) throw refuse();
-      const since = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
+      const cleared = await withModuleRole(ctx, ModuleRole.competition, async (cctx) => {
         const competition = await loadCompetition(cctx, path.competitionId);
         const person = (await loadControlFacts(cctx, accountId)).selfPersonId;
         if (person === undefined) throw refuse();
@@ -281,25 +284,37 @@ export function competitionResultStaffGate(accountId: string): ResultActorGate {
           !staffRoles.some((r) => (RESULT_AUTHORITY_STAFF_ROLES as readonly string[]).includes(r))
         )
           throw refuse();
-        // Q3 (ADR-0079 §2.3): when that eligibility began, without interruption.
-        const began = await resultStaffEligibleSince(cctx, accountId, competition, person);
-        if (began === undefined) throw refuse(); // fail closed: the histories disagree with "now"
-        return began;
+        // Q3 (ADR-0079 §2.3): the eligibility facts, held unchanged until this transaction ends.
+        const snapshot = await resultEligibilitySnapshot(cctx, accountId, competition, person);
+        if (bindingFrom(snapshot) === undefined) throw refuse(); // fail closed: histories disagree
+        return { competitionId: competition.id, person, snapshot };
       });
       return {
         async assertAuthorizedBy(actx, decision) {
-          // The grant the engine authorized by (leaf of its chain), and any other grant of that
-          // chain held by the same principal (a self-delegation), must not predate `since`: a
-          // grant held across a loss of eligibility does not come back with a re-promotion.
+          // The engine authorized by an ADR-0077 grant (a root grant: they cannot be delegated)
+          // bound at issuance to this account's eligibility in this competition, and that binding
+          // still holds. Anything else — another origin, no binding, a basis lost since — refuses:
+          // a grant held across a loss of eligibility does not come back with a re-promotion.
           const leaf = decision.grantChain[0]?.grantId;
-          if (leaf === undefined) throw predates();
-          const chain = decision.grantChain.map((l) => l.grantId);
-          const { rows } = await sql<{ fresh: boolean | null }>`
-            SELECT bool_and(g.recorded_at >= ${since}) AS fresh FROM authority.authority_grant g
-            WHERE g.id = ANY(${sql.val(chain)}::uuid[])
-              AND g.grantee_principal_id = (SELECT grantee_principal_id FROM authority.authority_grant
-                                            WHERE id = ${leaf})`.execute(actx.trx);
-          if (rows[0]?.fresh !== true) throw predates();
+          if (leaf === undefined || decision.grantChain.length !== 1) throw stale();
+          const { rows } = await sql<{ root: boolean }>`
+            SELECT parent_grant_id IS NULL AS root FROM authority.authority_grant WHERE id = ${leaf}`.execute(
+            actx.trx,
+          );
+          if (rows[0]?.root !== true) throw stale();
+          const b = (
+            await withModuleRole(actx, ModuleRole.competition, (cctx) =>
+              grantEligibilityBindings(cctx, [leaf]),
+            )
+          ).get(leaf);
+          if (
+            b === undefined ||
+            b.competitionId !== cleared.competitionId ||
+            b.accountId !== accountId ||
+            b.personId !== cleared.person ||
+            !bindingHolds(b, cleared.snapshot)
+          )
+            throw stale();
         },
       };
     },

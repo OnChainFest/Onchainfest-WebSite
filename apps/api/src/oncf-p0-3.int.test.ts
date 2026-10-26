@@ -404,7 +404,7 @@ describe('WP-P0-3 API · result routes need a CURRENT OWNER / ADMIN role (D-16)'
     const LEVEL = { recognitionLevel: 'PLATFORM' };
     const post = (url: string, payload: unknown) =>
       call('POST', url, { ...scorer.h, ...idem() }, payload);
-    // A grant must postdate the eligibility it relies on (ADR-0079 §2.3): DB-clock margin first.
+    // A fixture DB-clock margin past the staff change (grants are bound to rows, ADR-0079 §2.3).
     const settled = async () => {
       for (;;) {
         const { rows } = await sql<{ ok: boolean }>`

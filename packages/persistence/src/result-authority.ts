@@ -19,7 +19,7 @@ import {
   platformGrantorChecker,
 } from './competition-participation';
 import type { Db } from './db';
-import { loadControlFacts, lockKeysShared, recordAudit } from './identity-support';
+import { loadControlFacts, lockKeys, lockKeysShared, recordAudit } from './identity-support';
 import { inTransaction, ModuleRole, withModuleRole, type TxContext } from './tx';
 
 /**
@@ -63,137 +63,175 @@ export function resultStaffEligibilityKeys(
   ];
 }
 
-type Span = readonly [number, number];
-
-/** One status change of an eligibility history: the entity, its status, its `recorded_at`. */
-export interface EligibilityChange {
+/** One eligibility entity's status history: its row id, how many status changes it has, and
+ * whether the latest one is ACTIVE. Histories are append-only, so the count only ever grows. */
+export interface EligibilityVersion {
   readonly id: string;
-  readonly status: string;
-  readonly at: Date;
+  readonly changes: number;
+  readonly active: boolean;
+}
+
+/** The result-staff eligibility facts of one account in one competition, read under the keys. */
+export interface EligibilitySnapshot {
+  readonly account: EligibilityVersion;
+  readonly organization: EligibilityVersion;
+  /** Explicit OWNER / ADMIN staff rows of the competition. */
+  readonly staff: readonly EligibilityVersion[];
+  /** OWNER / ADMIN memberships of the organizer organization. */
+  readonly memberships: readonly EligibilityVersion[];
+}
+
+/** A basis the grant was issued on: the row and its status-change count at issuance. */
+export interface EligibilityBasis {
+  readonly kind: 'STAFF' | 'MEMBERSHIP';
+  readonly id: string;
+  readonly changes: number;
 }
 
 /**
- * The ACTIVE spans of one append-only status history, given in `seq` (commit) order; end = Infinity
- * while open. `recorded_at` is the transaction START, and commands lock after starting, so a change
- * that waited on a lock can be stamped before one it committed after. Times are therefore made
- * non-decreasing in `seq` order, and a span reopened after a closing change starts strictly after
- * it: a re-activation never touches (and never merges with) the period it follows.
+ * WP-P0-3 Q3 (ADR-0079 §2.3): what an ADR-0077 grant was issued on. Each entity's status history is
+ * written only while its producer holds that entity's eligibility key exclusively, and the issuance
+ * and every result command read it holding the key shared, so "this history has exactly N changes"
+ * is decided in commit order. No transaction-start timestamp is compared across transactions.
  */
-function activeSpans(changes: readonly { status: string; at: Date }[]): Span[] {
-  const out: Span[] = [];
-  let open: number | undefined;
-  let last = -Infinity;
-  let closed = false;
-  for (const c of changes) {
-    let t = Math.max(c.at.getTime(), last);
-    if (c.status === 'ACTIVE') {
-      if (open === undefined) {
-        if (closed) t = Math.max(t, last + 1);
-        open = t;
-      }
-    } else {
-      if (open !== undefined && t > open) out.push([open, t]);
-      open = undefined;
-      closed = true;
-    }
-    last = t;
-  }
-  if (open !== undefined) out.push([open, Infinity]);
-  return out;
+export interface EligibilityBinding {
+  readonly accountChanges: number;
+  readonly organizationChanges: number;
+  readonly bases: readonly EligibilityBasis[];
 }
 
-function spansById(rows: readonly EligibilityChange[]): Span[] {
-  const byId = new Map<string, EligibilityChange[]>();
-  for (const r of rows) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
-  return [...byId.values()].flatMap(activeSpans);
-}
-
-/** Where the entity's current (open) ACTIVE span began; undefined if it is not ACTIVE now. */
-const openSince = (rows: readonly EligibilityChange[]): number | undefined =>
-  spansById(rows).find(([, b]) => b === Infinity)?.[0];
-
-/** The part of a span from `t` on (none if it ended by then). */
-const from =
-  (t: number) =>
-  ([a, b]: Span): Span[] =>
-    b > Math.max(a, t) ? [[Math.max(a, t), b]] : [];
+const version = (v: EligibilityVersion) => ({ id: v.id, changes: v.changes });
 
 /**
- * WP-P0-3 Q3 (ADR-0079 §2.3), pure: the start of the current, uninterrupted OWNER / ADMIN
- * eligibility, from the append-only histories (each in `seq` order): the account, the organizer
- * organization, the explicit OWNER/ADMIN staff rows and the organizer OWNER/ADMIN memberships. A
- * membership counts while the organization is ACTIVE, and every basis while the account is.
- * Overlapping or touching spans of DIFFERENT bases are one continuous eligibility (an organization
- * role change ends one membership and starts the next at the same instant); a basis reactivated
- * after a gap never touches its own earlier span. Undefined when not eligible now.
+ * The binding a grant issued now would carry: every currently ACTIVE basis (a membership only while
+ * the organization is ACTIVE), for an ACTIVE account. Undefined when the account holds none.
  */
-export function continuousEligibilitySince(h: {
-  readonly account: readonly EligibilityChange[];
-  readonly organization: readonly EligibilityChange[];
-  readonly staff: readonly EligibilityChange[];
-  readonly memberships: readonly EligibilityChange[];
-}): Date | undefined {
-  const accountSince = openSince(h.account);
-  if (accountSince === undefined) return undefined;
-  const orgSince = openSince(h.organization);
-  const spans = [
-    ...spansById(h.staff),
-    ...(orgSince === undefined ? [] : spansById(h.memberships).flatMap(from(orgSince))),
-  ]
-    .flatMap(from(accountSince))
-    .sort((x, y) => x[0] - y[0]);
-  let start: number | undefined;
-  let end = -Infinity;
-  for (const [a, b] of spans) {
-    if (start === undefined || a > end) start = a;
-    end = Math.max(end, b);
-  }
-  return start !== undefined && end === Infinity ? new Date(start) : undefined;
+export function bindingFrom(s: EligibilitySnapshot): EligibilityBinding | undefined {
+  if (!s.account.active) return undefined;
+  const bases: EligibilityBasis[] = [
+    ...s.staff.filter((v) => v.active).map((v) => ({ kind: 'STAFF' as const, ...version(v) })),
+    ...(s.organization.active
+      ? s.memberships
+          .filter((v) => v.active)
+          .map((v) => ({ kind: 'MEMBERSHIP' as const, ...version(v) }))
+      : []),
+  ];
+  return bases.length === 0
+    ? undefined
+    : {
+        accountChanges: s.account.changes,
+        organizationChanges: s.organization.changes,
+        bases,
+      };
 }
 
 /**
- * WP-P0-3 Q3 (ADR-0079 §2.3): when the account's CURRENT, uninterrupted OWNER / ADMIN eligibility in
- * the competition began; undefined when it holds none now. Each history is read by the module role
- * that owns it (staff: competition; account and memberships: identity, which already reads
- * memberships for permissions; organization status: organizations). The caller holds the
- * eligibility keys, so no basis changes meanwhile.
+ * Whether the eligibility a grant was issued on still holds, uninterrupted: the account has no
+ * status change since, and at least one bound basis has none either (a membership also needs the
+ * organization unchanged). Any loss — demotion, removal, suspension, a role change that replaces the
+ * row — adds a change, so a later re-promotion never restores the grant: a fresh one is required.
  */
-export async function resultStaffEligibleSince(
+export function bindingHolds(b: EligibilityBinding, s: EligibilitySnapshot): boolean {
+  if (!s.account.active || s.account.changes !== b.accountChanges) return false;
+  return b.bases.some((basis) => {
+    const now = (basis.kind === 'STAFF' ? s.staff : s.memberships).find((v) => v.id === basis.id);
+    if (now === undefined || !now.active || now.changes !== basis.changes) return false;
+    return (
+      basis.kind === 'STAFF' ||
+      (s.organization.active && s.organization.changes === b.organizationChanges)
+    );
+  });
+}
+
+/**
+ * The account's result-staff eligibility facts in the competition. Each history is read by the
+ * module role that owns it (staff: competition; account and memberships: identity, which already
+ * reads memberships for permissions; organization status: organizations). The caller holds the
+ * eligibility keys, so none of them changes meanwhile.
+ */
+export async function resultEligibilitySnapshot(
   ctx: TxContext,
   accountId: string,
   competition: Pick<CompetitionRow, 'id' | 'organizerOrganizationId'>,
   personId: string,
-): Promise<Date | undefined> {
+): Promise<EligibilitySnapshot> {
   const org = competition.organizerOrganizationId;
-  const staff = await sql<EligibilityChange>`
-    SELECT s.id, c.status, c.recorded_at AS at FROM competition.competition_staff s
+  const none = (id: string): EligibilityVersion => ({ id, changes: 0, active: false });
+  const staff = await sql<EligibilityVersion>`
+    SELECT s.id, count(*)::int AS changes, (array_agg(c.status ORDER BY c.seq DESC))[1] = 'ACTIVE' AS active
+    FROM competition.competition_staff s
     JOIN competition.competition_staff_status_change c ON c.staff_id = s.id
     WHERE s.competition_id = ${competition.id} AND s.person_id = ${personId}
       AND s.staff_role = ANY(${sql.val([...RESULT_AUTHORITY_STAFF_ROLES])}::text[])
-    ORDER BY s.id, c.seq`.execute(ctx.trx);
+    GROUP BY s.id ORDER BY s.id`.execute(ctx.trx);
   const identity = await withModuleRole(ctx, ModuleRole.identity, async (ictx) => ({
-    account: await sql<EligibilityChange>`
-      SELECT account_id AS id, status, recorded_at AS at FROM identity.account_status_change
-      WHERE account_id = ${accountId} ORDER BY seq`.execute(ictx.trx),
-    memberships: await sql<EligibilityChange>`
-      SELECT m.id, c.status, c.recorded_at AS at FROM organizations.membership m
+    account: await sql<EligibilityVersion>`
+      SELECT account_id AS id, count(*)::int AS changes, (array_agg(status ORDER BY seq DESC))[1] = 'ACTIVE' AS active
+      FROM identity.account_status_change WHERE account_id = ${accountId}
+      GROUP BY account_id`.execute(ictx.trx),
+    memberships: await sql<EligibilityVersion>`
+      SELECT m.id, count(*)::int AS changes, (array_agg(c.status ORDER BY c.seq DESC))[1] = 'ACTIVE' AS active
+      FROM organizations.membership m
       JOIN organizations.membership_status_change c ON c.membership_id = m.id
       WHERE m.organization_id = ${org} AND m.person_id = ${personId}
         AND m.membership_role = ANY(${sql.val(RESULT_AUTHORITY_ORG_ROLES)}::text[])
-      ORDER BY m.id, c.seq`.execute(ictx.trx),
+      GROUP BY m.id ORDER BY m.id`.execute(ictx.trx),
   }));
   const organization = await withModuleRole(ctx, ModuleRole.organizations, (octx) =>
-    sql<EligibilityChange>`
-      SELECT organization_id AS id, status, recorded_at AS at
-      FROM organizations.organization_status_change
-      WHERE organization_id = ${org} ORDER BY seq`.execute(octx.trx),
+    sql<EligibilityVersion>`
+      SELECT organization_id AS id, count(*)::int AS changes, (array_agg(status ORDER BY seq DESC))[1] = 'ACTIVE' AS active
+      FROM organizations.organization_status_change WHERE organization_id = ${org}
+      GROUP BY organization_id`.execute(octx.trx),
   );
-  return continuousEligibilitySince({
-    account: identity.account.rows,
-    organization: organization.rows,
+  return {
+    account: identity.account.rows[0] ?? none(accountId),
+    organization: organization.rows[0] ?? none(org),
     staff: staff.rows,
     memberships: identity.memberships.rows,
-  });
+  };
+}
+
+/** A stored binding (`competition.result_grant_eligibility`), with whom and where it was issued. */
+export interface StoredEligibilityBinding extends EligibilityBinding {
+  readonly grantId: string;
+  readonly competitionId: string;
+  readonly accountId: string;
+  readonly personId: string;
+}
+
+/** The stored bindings of these grants (none for a grant the ADR-0077 issuance did not bind). */
+export async function grantEligibilityBindings(
+  ctx: TxContext,
+  grantIds: readonly string[],
+): Promise<Map<string, StoredEligibilityBinding>> {
+  if (grantIds.length === 0) return new Map();
+  const { rows } = await sql<{
+    grant_id: string;
+    competition_id: string;
+    account_id: string;
+    person_id: string;
+    account_changes: number;
+    organization_changes: number;
+    bases: EligibilityBasis[];
+  }>`
+    SELECT grant_id, competition_id, account_id, person_id, account_changes, organization_changes, bases
+    FROM competition.result_grant_eligibility WHERE grant_id = ANY(${sql.val([...grantIds])}::uuid[])`.execute(
+    ctx.trx,
+  );
+  return new Map(
+    rows.map((r) => [
+      r.grant_id,
+      {
+        grantId: r.grant_id,
+        competitionId: r.competition_id,
+        accountId: r.account_id,
+        personId: r.person_id,
+        accountChanges: r.account_changes,
+        organizationChanges: r.organization_changes,
+        bases: r.bases,
+      },
+    ]),
+  );
 }
 
 const OPERATING_STATUSES = ['PUBLISHED', 'ACTIVE'];
@@ -350,15 +388,19 @@ export class ResultAuthorityGovernance {
     });
 
     const scope = competitionResultScope(eligibility.competitionId);
-    // WP-P0-3 Q3 (ADR-0079 §2.3): the grant is decided and written while the eligibility it relies
-    // on is held. This transaction keeps the eligibility keys (shared) until the grant has
-    // committed, so no demotion or re-promotion falls between the check and the write. It is not
-    // retried: its body commits other transactions. Nothing in that body takes those keys.
+    // WP-P0-3 Q3 (ADR-0079 §2.3): the grant is decided, written and bound to the eligibility it
+    // relies on while that eligibility is held. This transaction keeps the eligibility keys (shared)
+    // until the grant and its binding have committed, so no demotion or re-promotion falls between
+    // the read and the binding. Issuances for one grantee serialize on their own key first (taken
+    // only here, before the eligibility keys), so a concurrent run converges on a committed,
+    // bound grant. It is not retried: its body commits other transactions. Nothing in that body
+    // takes the eligibility keys.
     const issued = await inTransaction(
       this.db,
       ModuleRole.competition,
       async (ctx) => {
         const competition = await loadCompetition(ctx, eligibility.competitionId);
+        await lockKeys(ctx, `result-authority-issue:${competition.id}:${eligibility.personId}`);
         await lockKeysShared(
           ctx,
           ...resultStaffEligibilityKeys(input.granteeAccountId, competition, eligibility.personId),
@@ -369,17 +411,18 @@ export class ResultAuthorityGovernance {
           input.granteeAccountId,
           competition,
         );
-        const since =
+        const snapshot =
           self === eligibility.personId &&
           staffRoles.some((r) => (RESULT_AUTHORITY_STAFF_ROLES as readonly string[]).includes(r))
-            ? await resultStaffEligibleSince(
+            ? await resultEligibilitySnapshot(
                 ctx,
                 input.granteeAccountId,
                 competition,
                 eligibility.personId,
               )
             : undefined;
-        if (since === undefined) {
+        const binding = snapshot === undefined ? undefined : bindingFrom(snapshot);
+        if (snapshot === undefined || binding === undefined) {
           await recordAudit(ctx, {
             action: 'authority.result-grant.issue',
             targetType: 'COMPETITION',
@@ -399,17 +442,31 @@ export class ResultAuthorityGovernance {
             ),
           };
         }
-        // A grant issued before the grantee's current eligibility is stale: the ledger refuses it
-        // (GRANT_PREDATES_ELIGIBILITY), so it is never reused; it is revoked, prospectively.
-        const isFresh = (g: { recordedAt: Date }) => g.recordedAt.getTime() >= since.getTime();
+        // A held grant whose binding no longer holds (or that has none: a legacy or foreign grant)
+        // is refused by the ledger (GRANT_ELIGIBILITY_STALE), so it is never reused or re-bound; it
+        // is revoked, prospectively.
         const held = await this.activeGrants(platformId, granteePrincipalId, scope);
-        const stale = held.filter((g) => !isFresh(g)).map((g) => g.id);
+        const bindings = await grantEligibilityBindings(
+          ctx,
+          held.map((g) => g.id),
+        );
+        const holds = (grantId: string) => {
+          const b = bindings.get(grantId);
+          return (
+            b !== undefined &&
+            b.competitionId === competition.id &&
+            b.accountId === input.granteeAccountId &&
+            b.personId === eligibility.personId &&
+            bindingHolds(b, snapshot)
+          );
+        };
+        const stale = held.filter((g) => !holds(g.id)).map((g) => g.id);
         const authority = new AuthorityStore(this.db);
         for (const grantId of stale)
           await authority.revokeGrant({
             grantId,
             actorPrincipalId: platformId,
-            reason: `issued before the grantee's current OWNER/ADMIN eligibility [governance:${ref}]`,
+            reason: `not bound to the grantee's current OWNER/ADMIN eligibility [governance:${ref}]`,
           });
         // Audited as soon as committed: the issuance below may still be refused.
         if (stale.length > 0)
@@ -420,13 +477,20 @@ export class ResultAuthorityGovernance {
             platformPrincipalId: platformId,
             governanceDecisionRef: ref,
           });
-        const current = held.find(isFresh);
+        const current = held.find((g) => holds(g.id));
         if (current !== undefined) return { grantId: current.id, created: false };
+        const decisionUsed = () =>
+          new DomainError(
+            DomainErrorCode.ALREADY_EXISTS,
+            'this governance decision was already used for this grantee and competition; a new decision is required',
+            { reason: 'GOVERNANCE_DECISION_USED' },
+          );
         const store = new AuthorityStore(this.db, {
           conflictChecker: platformGrantorChecker(platformId),
         });
+        let out: Awaited<ReturnType<typeof store.issueGrant>>;
         try {
-          const out = await store.issueGrant({
+          out = await store.issueGrant({
             actorPrincipalId: platformId,
             grantorPrincipalId: platformId,
             granteePrincipalId,
@@ -437,23 +501,24 @@ export class ResultAuthorityGovernance {
             ...(input.effectiveTo === undefined ? {} : { effectiveTo: input.effectiveTo }),
             idempotencyKey: `result-authority:${eligibility.competitionId}:${granteePrincipalId}:${ref}`,
           });
-          return { grantId: out.grant.id, created: out.created };
         } catch (err) {
-          if (!(err instanceof DomainError) || err.code !== DomainErrorCode.IDEMPOTENCY_KEY_REUSED)
-            throw err;
-          // A concurrent run under the same decision won, or the decision was already spent on a
-          // grant that has since been revoked: converge on the winner, or ask for a new decision.
-          const now = (await this.activeGrants(platformId, granteePrincipalId, scope)).find(
-            isFresh,
-          );
-          if (now === undefined)
-            throw new DomainError(
-              DomainErrorCode.ALREADY_EXISTS,
-              'this governance decision was already used for this grantee and competition; a new decision is required',
-              { reason: 'GOVERNANCE_DECISION_USED' },
-            );
-          return { grantId: now.id, created: false };
+          // The decision was already spent on a grant that is no longer bound to current
+          // eligibility (a committed, bound one was converged on above).
+          if (err instanceof DomainError && err.code === DomainErrorCode.IDEMPOTENCY_KEY_REUSED)
+            throw decisionUsed();
+          throw err;
         }
+        // Only a grant created by this act is bound, now, to what was read under the keys: an
+        // existing grant handed back by a replay is never bound after the fact.
+        if (!out.created) throw decisionUsed();
+        await sql`INSERT INTO competition.result_grant_eligibility (grant_id, competition_id, account_id,
+                    person_id, organization_id, account_changes, organization_changes, bases, recorded_at)
+          VALUES (${out.grant.id}, ${competition.id}, ${input.granteeAccountId}, ${eligibility.personId},
+                  ${competition.organizerOrganizationId}, ${binding.accountChanges},
+                  ${binding.organizationChanges}, ${JSON.stringify(binding.bases)}::jsonb, ${ctx.txTime})`.execute(
+          ctx.trx,
+        );
+        return { grantId: out.grant.id, created: true };
       },
       1,
     );

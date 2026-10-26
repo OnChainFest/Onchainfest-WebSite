@@ -6,7 +6,7 @@ import {
   type DisciplineVersionSpec,
   type ScoreSheet,
 } from '@br/competition';
-import { DomainErrorCode, newId } from '@br/domain';
+import { DomainErrorCode, newId, type Uuid } from '@br/domain';
 import {
   apiDb,
   newAthlete,
@@ -18,6 +18,7 @@ import {
 } from '@br/testkit';
 import { sql, type Transaction } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthorityStore } from './authority-store';
 import { CatalogStore } from './catalog-store';
 import { CompetitionReader } from './competition-reader';
 import { CompetitionStore } from './competition-store';
@@ -26,6 +27,7 @@ import { ContestResultService } from './contest-results';
 import type { Database } from './db';
 import { EventOutcomeStore } from './event-outcome-store';
 import { IdentityStore } from './identity-store';
+import { PersonPrincipalService } from './key-ceremony-store';
 import { OrganizationStore } from './organization-store';
 import { ResourceStore } from './resource-store';
 import { ResultAuthorityGovernance } from './result-authority';
@@ -40,6 +42,9 @@ import { ScoringStore } from './scoring-store';
  * organization and account change takes exclusively. A grantee demoted to SCHEDULER or
  * REGISTRATION_MANAGER, or whose organization role is demoted, is refused (403 AUTHORITY_DENIED,
  * NOT_RESULT_STAFF) and nothing is written.
+ *
+ * Q3 (ADR-0079 §2.3): a grant is usable only while the eligibility rows it was bound to at issuance
+ * are unchanged; any loss of eligibility needs a fresh operator grant, whatever the commit order.
  *
  * Everything runs through the production composition: ContestResultService with the DB-backed
  * participation checker, grants issued by the ADR-0077 governance command, staff and membership
@@ -302,8 +307,9 @@ async function staffer(
 
 /**
  * Waits until the DATABASE clock is past the grantee's latest eligibility change (staff, membership,
- * organization or account status) by a margin: a grant must postdate the eligibility it relies on
- * (ADR-0079 §2.3), and the local database clock has been measured stepping back by up to ~2.6 s.
+ * organization or account status) by a margin. A fixture margin only: grants are bound to the
+ * eligibility rows they were issued on (ADR-0079 §2.3), not to timestamps, but the local database
+ * clock has been measured stepping back by up to ~2.6 s around the principal's creation.
  */
 async function settleEligibility(comp: Comp, accountId: string) {
   for (;;) {
@@ -500,9 +506,18 @@ async function refusal(p: Promise<unknown>, code: DomainErrorCode | string, reas
 }
 const notResultStaff = (p: Promise<unknown>) =>
   refusal(p, DomainErrorCode.AUTHORITY_DENIED, 'NOT_RESULT_STAFF');
-/** Q3 (ADR-0079 §2.3): eligible again, but the grant was issued before the current eligibility. */
-const predates = (p: Promise<unknown>) =>
-  refusal(p, DomainErrorCode.AUTHORITY_DENIED, 'GRANT_PREDATES_ELIGIBILITY');
+/** Q3 (ADR-0079 §2.3): eligible, but the grant is not bound to the current, unbroken eligibility. */
+const stale = (p: Promise<unknown>) =>
+  refusal(p, DomainErrorCode.AUTHORITY_DENIED, 'GRANT_ELIGIBILITY_STALE');
+
+/** The stored eligibility bindings of a grant (one per ADR-0077 grant, never re-bound). */
+const bindingsOf = async (grantId: string) =>
+  (
+    await sql<{ bases: { kind: string; id: string; changes: number }[] }>`
+      SELECT bases FROM competition.result_grant_eligibility WHERE grant_id = ${grantId}`.execute(
+      owner,
+    )
+  ).rows;
 
 /** The ACTIVE membership of `personId` in `organizationId`. */
 const activeMembership = async (organizationId: string, personId: string) =>
@@ -588,6 +603,57 @@ const reasonOf = (r: PromiseSettledResult<unknown>) =>
     ? ((r.reason as { details?: { reason?: string } }).details?.reason ??
       String((r.reason as Error).message))
     : 'fulfilled';
+
+/**
+ * `ordered` for any number of commands: each is launched only once every earlier one queues on
+ * `key`, so the lock grants them in exactly this order when the barrier releases it. Every command
+ * STARTS (and is stamped) before the first of them can commit.
+ */
+async function queued(key: string, ...steps: (() => Promise<unknown>)[]) {
+  let out: Promise<PromiseSettledResult<unknown>[]> | undefined;
+  await owner.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(${lockId(key)})`.execute(trx);
+    let settled = 0;
+    const all: Promise<PromiseSettledResult<unknown>>[] = [];
+    for (const step of steps) {
+      all.push(
+        Promise.allSettled([step()]).then(([r]) => {
+          settled += 1;
+          return r as PromiseSettledResult<unknown>;
+        }),
+      );
+      for (let i = 0; i < 400 && settled === 0 && (await waitingOn(trx, key)) < all.length; i++)
+        await new Promise((r) => setTimeout(r, 25));
+    }
+    out = Promise.all(all);
+  });
+  return out as Promise<PromiseSettledResult<unknown>[]>;
+}
+
+/**
+ * Cross-basis overlap: `launched` starts and queues on `key` (held by a barrier), `during` runs to
+ * completion on another key, then the barrier releases and `launched` commits. So `launched` STARTS
+ * before `during` but COMMITS after it — the order transaction-start timestamps cannot see (#41).
+ */
+async function heldWhile<A, B>(key: string, launched: () => Promise<A>, during: () => Promise<B>) {
+  let first: Promise<PromiseSettledResult<A>> | undefined;
+  let second: PromiseSettledResult<B> | undefined;
+  await owner.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(${lockId(key)})`.execute(trx);
+    let done = false;
+    first = Promise.allSettled([launched()]).then(([r]) => {
+      done = true;
+      return r as PromiseSettledResult<A>;
+    });
+    for (let i = 0; i < 400 && !done && (await waitingOn(trx, key)) < 1; i++)
+      await new Promise((r) => setTimeout(r, 25));
+    [second] = (await Promise.allSettled([during()])) as [PromiseSettledResult<B>];
+  });
+  return [
+    await (first as Promise<PromiseSettledResult<A>>),
+    second as PromiseSettledResult<B>,
+  ] as const;
+}
 
 // ───────────────────────────── authorization at action time ─────────────────────────────
 
@@ -836,9 +902,9 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
     expect(await activeRoles(comp, s)).toEqual(['ADMIN', 'SCHEDULER']);
     expect(await grantStatuses(comp, s.accountId)).toEqual(['ACTIVE']);
     const before = { f: await facts(f.contestId), g: await facts(g.contestId) };
-    await predates(correct(s.accountId, f.contestId, rv));
-    await predates(transition(s.accountId, sub.resultVersionId, 'OFFICIAL'));
-    await predates(submit(s.accountId, g.contestId, k(), false));
+    await stale(correct(s.accountId, f.contestId, rv));
+    await stale(transition(s.accountId, sub.resultVersionId, 'OFFICIAL'));
+    await stale(submit(s.accountId, g.contestId, k(), false));
     // Q3-06: nothing changed; the official result stands. A replay is not a decision.
     expect({ f: await facts(f.contestId), g: await facts(g.contestId) }).toEqual(before);
     expect(before.f?.states).toBe('OFFICIAL');
@@ -867,7 +933,7 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
     // No staff role at all: refused before the gate, by the private-view check (AUTH-03 / AUTH-07).
     await refusal(submit(s.accountId, f.contestId), DomainErrorCode.FORBIDDEN);
     await assign(comp, s, 'ADMIN');
-    await predates(submit(s.accountId, f.contestId));
+    await stale(submit(s.accountId, f.contestId));
     expect((await facts(f.contestId))?.versions).toBe(0);
     expect((await grant(comp, s.accountId)).created).toBe(true);
     expect((await submit(s.accountId, f.contestId)).status).toBe('SUBMITTED');
@@ -887,7 +953,7 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
         role,
         idempotencyKey: k(),
       });
-    await predates(correct(m.accountId, f.contestId, rv));
+    await stale(correct(m.accountId, f.contestId, rv));
     expect((await grant(c, m.accountId)).created).toBe(true);
     const fixed = await correct(m.accountId, f.contestId, rv);
     await transition(m.accountId, fixed.resultVersionId, 'OFFICIAL');
@@ -904,15 +970,53 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
         reason: 'WP-P0-3 Q3',
       });
     const before = await facts(g.contestId);
-    await predates(submit(c.actor, g.contestId, k(), false));
+    await stale(submit(c.actor, g.contestId, k(), false));
     expect(await facts(g.contestId)).toEqual(before);
     expect((await grant(c, c.actor)).created).toBe(true);
     expect((await submit(c.actor, g.contestId, k(), false)).status).toBe('SUBMITTED');
   }, 300_000);
 
-  it('Q3-07 continuous eligibility is never interrupted: handoffs between bases and unrelated grants keep working', async () => {
-    // An explicit ADMIN who also becomes organization ADMIN, then loses the explicit row: eligible
-    // without a gap, so the grant issued under the explicit row still works.
+  it('Q3-07 (R5 / R6) a grant bound to two bases survives the loss of one; other people’s changes never matter', async () => {
+    // Explicit ADMIN and organization ADMIN at issuance: both bases are bound.
+    const s = await staffer(comp, ['ADMIN']);
+    const inv = await orgs.invite({
+      actorAccountId: comp.actor,
+      organizationId: comp.organizationId,
+      personId: s.personId,
+      role: 'ADMIN',
+      visibility: 'PUBLIC',
+      idempotencyKey: k(),
+    });
+    await orgs.respondToInvitation({
+      actorAccountId: s.accountId,
+      token: inv.token as string,
+      accept: true,
+    });
+    const g = await grant(comp, s.accountId);
+    expect((await bindingsOf(g.grantId))[0]?.bases.map((b) => b.kind).sort()).toEqual([
+      'MEMBERSHIP',
+      'STAFF',
+    ]);
+    // The explicit row ends: the membership it was also issued on is unchanged, so it still works.
+    await end(comp, s.staffIds.ADMIN);
+    const f = await playedFinal(comp);
+    await official(s.accountId, f.contestId);
+    // An unrelated ADMIN is untouched by s's history, and by another person's demotion cycle.
+    const other = await staffer(comp, ['ADMIN']);
+    await grant(comp, other.accountId);
+    const cycled = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await grant(comp, cycled.accountId);
+    await end(comp, cycled.staffIds.ADMIN);
+    await assign(comp, cycled, 'ADMIN');
+    const h = await playedFinal(comp);
+    await official(other.accountId, h.contestId);
+    expect((await facts(h.contestId))?.states).toBe('OFFICIAL');
+    expect(await grantStatuses(comp, other.accountId)).toEqual(['ACTIVE']);
+  }, 300_000);
+
+  it('Q3-07 (R7) losing every bound basis needs a fresh grant: a cross-basis handoff, and organization ADMIN → OWNER', async () => {
+    // Issued on the explicit row only; the person then becomes organization ADMIN and the row ends.
+    // Eligible throughout, but nothing the grant was issued on remains (fail closed, ADR-0079 §2.3).
     const s = await staffer(comp, ['ADMIN']);
     await grant(comp, s.accountId);
     const inv = await orgs.invite({
@@ -929,26 +1033,109 @@ describe('WP-P0-3 · Q3 re-promotion does not revive an earlier grant (ADR-0079 
       accept: true,
     });
     await end(comp, s.staffIds.ADMIN);
-    // Organization ADMIN → OWNER in one command: touching intervals, still continuous.
+    const f = await playedFinal(comp);
+    await stale(submit(s.accountId, f.contestId));
+    expect((await facts(f.contestId))?.versions).toBe(0);
+    expect((await grant(comp, s.accountId)).created).toBe(true);
+    const sub = await submit(s.accountId, f.contestId);
+    // Organization ADMIN → OWNER replaces the membership row: a fresh grant again.
     await orgs.changeRole({
       actorAccountId: comp.actor,
       membershipId: await activeMembership(comp.organizationId, s.personId),
       role: 'OWNER',
       idempotencyKey: k(),
     });
+    const before = await facts(f.contestId);
+    await stale(transition(s.accountId, sub.resultVersionId, 'PROVISIONAL'));
+    expect(await facts(f.contestId)).toEqual(before);
+    expect((await grant(comp, s.accountId)).created).toBe(true);
+    await transition(s.accountId, sub.resultVersionId, 'PROVISIONAL');
+    await transition(s.accountId, sub.resultVersionId, 'OFFICIAL');
+    expect((await facts(f.contestId))?.states).toBe('OFFICIAL');
+  }, 300_000);
+
+  it('Q3-09 (R8) a grant with no binding — legacy, or another origin — is refused; the operator act revokes and replaces it', async () => {
+    const s = await staffer(comp, ['ADMIN']);
+    await settleEligibility(comp, s.accountId);
+    const { principalId } = await new PersonPrincipalService(db).ensure({
+      actorAccountId: s.accountId,
+      personId: s.personId,
+    });
+    const authority = new AuthorityStore(db);
+    const legacyGrant = () =>
+      ({
+        granteePrincipalId: principalId as Uuid,
+        capabilities: ['SUBMIT_RESULT', 'ACCEPT_RESULT', 'DECLARE_OFFICIAL', 'CORRECT_RESULT'],
+        scope: { recognitionLevel: ['PLATFORM'], competition: [comp.competitionId as Uuid] },
+        delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
+      }) as const;
+    // Issued by the ADR-0077 platform principal but outside the governance act (a pre-binding grant).
+    const legacy = await authority.issueGrant({
+      actorPrincipalId: platformPrincipalId as Uuid,
+      grantorPrincipalId: platformPrincipalId as Uuid,
+      ...legacyGrant(),
+    });
+    await pastGrant(legacy.grant.id, 2);
     const f = await playedFinal(comp);
-    await official(s.accountId, f.contestId);
-    // An unrelated ADMIN is untouched by s's history, and by another person's demotion cycle.
-    const other = await staffer(comp, ['ADMIN']);
-    await grant(comp, other.accountId);
-    const cycled = await staffer(comp, ['ADMIN', 'SCHEDULER']);
-    await grant(comp, cycled.accountId);
-    await end(comp, cycled.staffIds.ADMIN);
-    await assign(comp, cycled, 'ADMIN');
-    const g = await playedFinal(comp);
-    await official(other.accountId, g.contestId);
-    expect((await facts(g.contestId))?.states).toBe('OFFICIAL');
-    expect(await grantStatuses(comp, other.accountId)).toEqual(['ACTIVE']);
+    await stale(submit(s.accountId, f.contestId));
+    // Another recognized PLATFORM anchor's grant: not the ADR-0077 chain, refused the same way.
+    const foreign = await authority.registerPrincipal({
+      principalType: 'PLATFORM',
+      label: 'other platform (p03)',
+    });
+    await authority.recognizeTrustAnchor({
+      principalId: foreign.id,
+      recognitionScope: { recognitionLevel: ['PLATFORM'] },
+      basisRef: 'fixture',
+      governanceDecisionRef: `fx-${newId()}`,
+    });
+    await revoke(comp, s.accountId, 'replace the legacy grant'); // only the ADR-0077 one
+    const other = await authority.issueGrant({
+      actorPrincipalId: foreign.id,
+      grantorPrincipalId: foreign.id,
+      ...legacyGrant(),
+    });
+    await pastGrant(other.grant.id, 2);
+    await stale(submit(s.accountId, f.contestId));
+    expect((await facts(f.contestId))?.versions).toBe(0);
+    expect(await bindingsOf(legacy.grant.id)).toEqual([]);
+    expect(await bindingsOf(other.grant.id)).toEqual([]);
+    // The governance act issues a bound grant; the engine then authorizes by it (the foreign
+    // grant is revoked here so that it cannot be the one picked).
+    await authority.revokeGrant({
+      grantId: other.grant.id,
+      actorPrincipalId: foreign.id,
+      reason: 'fixture done',
+    });
+    const fresh = await grant(comp, s.accountId);
+    expect(fresh.created).toBe(true);
+    expect(await bindingsOf(fresh.grantId)).toHaveLength(1);
+    expect((await submit(s.accountId, f.contestId)).status).toBe('SUBMITTED');
+  }, 300_000);
+
+  it('Q3-10 (R8) re-issuing under a spent decision after an interruption never re-binds the old grant', async () => {
+    const s = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await settleEligibility(comp, s.accountId);
+    const ref = `gov:p03:spent:${newId()}`;
+    const issue = () =>
+      governance.grantCompetitionResultAuthority({
+        platformPrincipalId,
+        competitionId: comp.competitionId,
+        granteeAccountId: s.accountId,
+        governanceDecisionRef: ref,
+      });
+    const first = await issue();
+    expect(first.created).toBe(true);
+    // Same decision while nothing changed: converges on the same bound grant.
+    expect(await issue()).toMatchObject({ grantId: first.grantId, created: false });
+    await end(comp, s.staffIds.ADMIN);
+    await assign(comp, s, 'ADMIN');
+    await refusal(issue(), DomainErrorCode.ALREADY_EXISTS, 'GOVERNANCE_DECISION_USED');
+    expect(await grantStatuses(comp, s.accountId)).toEqual(['REVOKED']);
+    expect(await bindingsOf(first.grantId)).toHaveLength(1);
+    const f = await playedFinal(comp);
+    await refusal(submit(s.accountId, f.contestId), DomainErrorCode.AUTHORITY_DENIED);
+    expect((await facts(f.contestId))?.versions).toBe(0);
   }, 300_000);
 });
 
@@ -1020,7 +1207,7 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
           if (cycleFirst) {
             // Queued behind the demotion, the correction sees either the gap or the re-promotion:
             // refused either way; the official version stands alone.
-            expect(['NOT_RESULT_STAFF', 'GRANT_PREDATES_ELIGIBILITY'], `run ${run}`).toContain(
+            expect(['NOT_RESULT_STAFF', 'GRANT_ELIGIBILITY_STALE'], `run ${run}`).toContain(
               reasonOf(cor),
             );
             expect(after?.states).toBe('OFFICIAL');
@@ -1028,7 +1215,7 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
             expect(reasonOf(cor), `run ${run}`).toBe('fulfilled');
             expect(after?.states).toBe('SUPERSEDED,PROVISIONAL');
             const corrected = (cor as PromiseFulfilledResult<{ resultVersionId: string }>).value;
-            await predates(transition(s.accountId, corrected.resultVersionId, 'OFFICIAL'));
+            await stale(transition(s.accountId, corrected.resultVersionId, 'OFFICIAL'));
           }
         }
       }
@@ -1037,7 +1224,7 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
   );
 
   it(
-    `Q3-08 a grant issuance ‖ a demotion, both orders, then re-promotion (${RUNS} runs each)`,
+    `Q3-08 (R1) an issuance with a demotion and a re-promotion queued behind it, both orders (${RUNS} runs each)`,
     async () => {
       for (let run = 0; run < RUNS; run++) {
         for (const issueFirst of [true, false]) {
@@ -1053,30 +1240,197 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
               governanceDecisionRef: `gov:p03:race:${newId()}`,
             });
           const demote = () => end(comp, s.staffIds.ADMIN);
-          const [a, b] = issueFirst
-            ? await ordered(key, issue, demote)
-            : await ordered(key, demote, issue);
-          const [iss, dem] = issueFirst ? [a, b] : [b, a];
-          expect(reasonOf(dem), `run ${run} issueFirst=${issueFirst}`).toBe('fulfilled');
+          const promote = () => assign(comp, s, 'ADMIN');
+          // All three START before any commits (the #41 case: their transaction-start times all
+          // precede the grant's), and the lock grants them in exactly this order.
+          const [iss, dem, pro] = issueFirst
+            ? await queued(key, issue, demote, promote)
+            : await queued(key, demote, issue, promote).then(([d, i, p]) => [i, d, p]);
+          const at = `run ${run} issueFirst=${issueFirst}`;
+          expect(reasonOf(dem as PromiseSettledResult<unknown>), at).toBe('fulfilled');
+          expect(reasonOf(pro as PromiseSettledResult<unknown>), at).toBe('fulfilled');
+          expect(await activeRoles(comp, s)).toEqual(['ADMIN', 'SCHEDULER']);
           if (issueFirst) {
-            // The grant committed before the demotion could: it predates the re-promotion.
-            expect(reasonOf(iss), `run ${run}`).toBe('fulfilled');
-            await pastGrant((iss as PromiseFulfilledResult<{ grantId: string }>).value.grantId, 4);
+            // Issued and bound before the demotion committed: the re-promotion never revives it.
+            expect(reasonOf(iss as PromiseSettledResult<unknown>), at).toBe('fulfilled');
+            const g = (iss as PromiseFulfilledResult<{ grantId: string }>).value;
+            expect(await bindingsOf(g.grantId)).toHaveLength(1);
+            await pastGrant(g.grantId, 2);
+            await stale(submit(s.accountId, f.contestId));
           } else {
-            // Checked before the demotion, issued after it: the issuance re-checks under the staff
-            // key and refuses; no grant is written.
-            expect(reasonOf(iss), `run ${run}`).toBe('NOT_RESULT_STAFF');
+            // Read under the staff key after the demotion: refused, no grant written.
+            expect(reasonOf(iss as PromiseSettledResult<unknown>), at).toBe('NOT_RESULT_STAFF');
             expect(await grantStatuses(comp, s.accountId)).toEqual([]);
+            await refusal(
+              submit(s.accountId, f.contestId),
+              DomainErrorCode.AUTHORITY_DENIED,
+              'NO_GRANT_FOR_CAPABILITY',
+            );
           }
-          await assign(comp, s, 'ADMIN');
-          const err = await refusal(
-            submit(s.accountId, f.contestId),
-            DomainErrorCode.AUTHORITY_DENIED,
-          );
-          expect(err.details.reason, `run ${run}`).toBe(
-            issueFirst ? 'GRANT_PREDATES_ELIGIBILITY' : 'NO_GRANT_FOR_CAPABILITY',
-          );
-          expect((await facts(f.contestId))?.versions).toBe(0);
+          expect((await facts(f.contestId))?.versions, at).toBe(0);
+          if (run === 0 && issueFirst) {
+            // A fresh operator act restores the intended operation.
+            expect((await grant(comp, s.accountId)).created).toBe(true);
+            expect((await submit(s.accountId, f.contestId)).status).toBe('SUBMITTED');
+          }
+        }
+      }
+    },
+    RACE_TIMEOUT,
+  );
+
+  it(
+    `Q3-11 (R2) staff termination ‖ organization promotion, both commit orders, never revives the grant (${RUNS} runs each)`,
+    async () => {
+      for (let run = 0; run < RUNS; run++) {
+        for (const promotionStartsFirst of [true, false]) {
+          // Granted on an explicit ADMIN row; also an organization MEMBER (not eligible).
+          const s = await staffer(comp, ['ADMIN']);
+          const inv = await orgs.invite({
+            actorAccountId: comp.actor,
+            organizationId: comp.organizationId,
+            personId: s.personId,
+            role: 'MEMBER',
+            visibility: 'PUBLIC',
+            idempotencyKey: k(),
+          });
+          await orgs.respondToInvitation({
+            actorAccountId: s.accountId,
+            token: inv.token as string,
+            accept: true,
+          });
+          await grant(comp, s.accountId);
+          const f = await playedFinal(comp);
+          const rv = await official(s.accountId, f.contestId);
+          const membershipId = await activeMembership(comp.organizationId, s.personId);
+          const promote = () =>
+            orgs.changeRole({
+              actorAccountId: comp.actor,
+              membershipId,
+              role: 'ADMIN',
+              idempotencyKey: k(),
+            });
+          const demote = () => end(comp, s.staffIds.ADMIN);
+          // promotionStartsFirst: the promotion starts, waits, and commits AFTER the termination
+          // (a real gap in commit order whose timestamps overlap). Otherwise the reverse: the
+          // termination starts first and commits after the promotion (a handoff).
+          const [late, early] = promotionStartsFirst
+            ? await heldWhile(`org-roster:${comp.organizationId}`, promote, demote)
+            : await heldWhile(
+                `competition-staff:${comp.competitionId}:${s.personId}`,
+                demote,
+                promote,
+              );
+          const at = `run ${run} promotionStartsFirst=${promotionStartsFirst}`;
+          expect(reasonOf(late), at).toBe('fulfilled');
+          expect(reasonOf(early), at).toBe('fulfilled');
+          expect(await activeRoles(comp, s)).toEqual([]);
+          // Eligible now (organization ADMIN), but the grant's only basis ended: refused either way.
+          const before = await facts(f.contestId);
+          await stale(correct(s.accountId, f.contestId, rv));
+          expect(await facts(f.contestId), at).toEqual(before);
+        }
+      }
+    },
+    RACE_TIMEOUT,
+  );
+
+  it(
+    `Q3-12 (R3) a membership, and an organization, suspension → reactivation ‖ a correction, both orders (${RUNS} runs each)`,
+    async () => {
+      for (let run = 0; run < RUNS; run++) {
+        for (const level of ['membership', 'organization'] as const) {
+          for (const cycleFirst of [true, false]) {
+            const org = await newOrganizer(identity, orgs);
+            const c = await competition(org);
+            const m = await orgAdmin(c, org.ownerAccountId);
+            await grant(c, m.accountId);
+            const f = await playedFinal(c);
+            const rv = await official(m.accountId, f.contestId);
+            const membershipId = await activeMembership(org.organizationId, m.personId);
+            const key =
+              level === 'membership'
+                ? `org-roster:${org.organizationId}`
+                : `org:${org.organizationId}`;
+            const cycle = async () => {
+              for (const status of ['SUSPENDED', 'ACTIVE'] as const)
+                if (level === 'membership')
+                  await orgs.setMembershipStatus({
+                    actorAccountId: org.ownerAccountId,
+                    membershipId,
+                    status,
+                  });
+                else
+                  await orgs.setStatus({
+                    operatorAccountId: org.ownerAccountId,
+                    organizationId: org.organizationId,
+                    status,
+                    reason: 'WP-P0-3 Q3 race',
+                  });
+            };
+            const fix = () => correct(m.accountId, f.contestId, rv);
+            const [a, b] = cycleFirst
+              ? await ordered(key, cycle, fix)
+              : await ordered(key, fix, cycle);
+            const [cyc, cor] = cycleFirst ? [a, b] : [b, a];
+            const at = `run ${run} ${level} cycleFirst=${cycleFirst}`;
+            expect(reasonOf(cyc), at).toBe('fulfilled');
+            const after = await facts(f.contestId);
+            if (cycleFirst) {
+              expect(['NOT_RESULT_STAFF', 'GRANT_ELIGIBILITY_STALE'], at).toContain(reasonOf(cor));
+              expect(after?.states, at).toBe('OFFICIAL');
+            } else {
+              expect(reasonOf(cor), at).toBe('fulfilled');
+              expect(after?.states, at).toBe('SUPERSEDED,PROVISIONAL');
+              const corrected = (cor as PromiseFulfilledResult<{ resultVersionId: string }>).value;
+              await stale(transition(m.accountId, corrected.resultVersionId, 'OFFICIAL'));
+            }
+          }
+        }
+      }
+    },
+    RACE_TIMEOUT,
+  );
+
+  it(
+    `Q3-13 (R4) an account disablement ‖ a correction, both orders (${RUNS} runs each)`,
+    async () => {
+      const op = (await newTestAccount(identity, { withPerson: false, label: 'p03-operator' }))
+        .accountId;
+      for (let run = 0; run < RUNS; run++) {
+        for (const disableFirst of [true, false]) {
+          const s = await staffer(comp, ['ADMIN']);
+          await grant(comp, s.accountId);
+          const f = await playedFinal(comp);
+          const rv = await official(s.accountId, f.contestId);
+          const disable = () =>
+            identity.disableAccount({
+              operatorAccountId: op,
+              accountId: s.accountId,
+              reason: 'race',
+            });
+          const fix = () => correct(s.accountId, f.contestId, rv);
+          const [a, b] = disableFirst
+            ? await ordered(`account:${s.accountId}`, disable, fix)
+            : await ordered(`account:${s.accountId}`, fix, disable);
+          const [dis, cor] = disableFirst ? [a, b] : [b, a];
+          const at = `run ${run} disableFirst=${disableFirst}`;
+          expect(reasonOf(dis), at).toBe('fulfilled');
+          const after = await facts(f.contestId);
+          if (disableFirst) {
+            expect(cor.status, at).toBe('rejected');
+            expect(after?.states, at).toBe('OFFICIAL');
+          } else {
+            expect(reasonOf(cor), at).toBe('fulfilled');
+            expect(after?.states, at).toBe('SUPERSEDED,PROVISIONAL');
+            const corrected = (cor as PromiseFulfilledResult<{ resultVersionId: string }>).value;
+            // A disabled account is refused (at the access check or the staff gate); nothing written.
+            const [next] = await Promise.allSettled([
+              transition(s.accountId, corrected.resultVersionId, 'OFFICIAL'),
+            ]);
+            expect(next?.status, at).toBe('rejected');
+            expect(await facts(f.contestId), at).toEqual(after);
+          }
         }
       }
     },
