@@ -227,6 +227,8 @@ async function category(
     scoring?: boolean;
     /** D-13B: groups → knockout instead of the default single elimination. */
     groups?: Record<string, unknown>;
+    /** Single-elimination format configuration (e.g. an explicit drawSize). */
+    config?: Record<string, unknown>;
     /** Scoring fields replacing the default pin body (ruleset is always set). */
     pin?: Record<string, unknown>;
     /** Confirmed entries when fewer than the capacity (`count`). */
@@ -243,7 +245,7 @@ async function category(
       slug: eventSlug,
       disciplineVersionId: v['tennis'],
       formatVersionId: options.groups === undefined ? v['se'] : v['gk'],
-      formatConfig: options.groups ?? {},
+      formatConfig: options.groups ?? options.config ?? {},
       settings: {
         name: `Singles ${eventSlug}`,
         capacity: options.count ?? 2,
@@ -763,6 +765,22 @@ describe('D-13B ranked-stage classification, retired pins and exact lock readine
     expect(closed.body?.advancement.countBasis).toBe('EXACT');
     expect(closed.body?.advancement.participantCount).toBe(1);
     expect(closed.body?.blockers).toContain('ADVANCEMENT_PLAN_INVALID');
+    await refusedLock(A, eventId, 'ADVANCEMENT_PLAN_INVALID');
+  }, 180_000);
+
+  it('never substitutes a feasible count for three confirmed entrants in an explicit two-player draw', async () => {
+    const A = await organizer('p04b-draw');
+    const { eventId } = await category(A, 'singles', {
+      count: 3,
+      config: { drawSize: 2 },
+      lock: false,
+      policy: true,
+    });
+    const ready = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(ready.status).toBe(200);
+    expect(ready.body?.advancement.countBasis).toBe('EXACT');
+    expect(ready.body?.advancement.participantCount).toBe(3);
+    expect(ready.body?.advancement.blockers).toContain('ADVANCEMENT_PLAN_INVALID');
     await refusedLock(A, eventId, 'ADVANCEMENT_PLAN_INVALID');
   }, 180_000);
 });

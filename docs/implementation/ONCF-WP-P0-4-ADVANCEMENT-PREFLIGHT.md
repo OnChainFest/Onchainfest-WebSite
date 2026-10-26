@@ -176,5 +176,7 @@ Coverage (written; CI-only): pure stage derivation (knockout, groups, best-ranke
 refusal without a template and acceptance via a stage override; a stage override whose standings
 cannot feed the cross-group order refused although the event template could; pin → retire → lock
 accepted while a new selection of the retired version is refused; closed registration below the
-format minimum reports `EXACT` and `ADVANCEMENT_PLAN_INVALID` (before close: `ESTIMATE`); SSR lock
+format minimum reports `EXACT` and `ADVANCEMENT_PLAN_INVALID` (before close: `ESTIMATE`); three
+confirmed entrants in an explicit two-player draw (`drawSize: 2`) report `ADVANCEMENT_PLAN_INVALID`
+at the exact count instead of a feasible substitute, and the lock refuses the same; SSR lock
 withholding for estimated, unassessed and template-blocked readiness.
