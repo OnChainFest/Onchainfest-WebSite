@@ -157,3 +157,79 @@ jobs:
             throw new Error('The base did not reproduce the specific D-13 HTTP 200 versus 409 defect');
           }
           JS
+
+  q3-qualification:
+    name: WP-P0-3 Q3 concurrency qualification (50 runs per ordering)
+    # Branch-scoped and push-only: one run per head commit of PR #42's branch, shown on the PR's
+    # checks. Disposable CI PostgreSQL only; no deployment, no repository secrets.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/oncf-wp-p0-3-scorer-authority'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: br_admin
+          POSTGRES_PASSWORD: br_admin_dev_only
+          POSTGRES_DB: bragging_rights
+        ports: [55432:5432]
+        options: >-
+          --health-cmd "pg_isready -U br_admin -d bragging_rights"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate disposable test keys
+        run: |
+          for name in BR_VAULT_DEV_KEY BR_DEV_AUTH_SECRET BR_EVIDENCE_DEV_KEY; do
+            value=$(openssl rand -hex 32)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+          echo "BR_EVIDENCE_DEV_DIR=$RUNNER_TEMP/br-evidence-dev" >> "$GITHUB_ENV"
+      - name: D-16 / Q3 persistence suite, 50 runs per race ordering (fresh database, migrations 0001–0038)
+        timeout-minutes: 170
+        env:
+          ONCF_P03_RACE_RUNS: '50'
+        run: >-
+          pnpm exec vitest run --project integration packages/persistence/src/oncf-p0-3.int.test.ts
+          --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/q3.json"
+      - name: Every test passed and every race ran 50 times per ordering
+        run: |
+          node --input-type=module - "$RUNNER_TEMP/q3.json" <<'JS'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const tests = report.testResults.flatMap((file) => file.assertionResults);
+          const notPassed = tests.filter((t) => t.status !== 'passed');
+          if (tests.length === 0 || notPassed.length > 0)
+            throw new Error(`not passed: ${notPassed.map((t) => `${t.status} ${t.fullName}`).join('; ') || 'no tests'}`);
+          const races = tests.filter((t) => /\(50 runs( each)?\)/.test(t.title));
+          for (const id of ['AUTH-09', 'Q3-08 a demotion', 'Q3-08 (R1)', 'Q3-11 (R2)', 'Q3-12 (R3)', 'Q3-13 (R4)', 'AUTH-12'])
+            if (!races.some((t) => t.title.startsWith(id))) throw new Error(`race ${id} did not run at 50 runs`);
+          console.log(`${tests.length} tests passed; ${races.length} race tests at 50 runs per ordering`);
+          JS
+      - name: Database read-back (migration 0038 applied, bindings written, no deadlock)
+        env:
+          PGPASSWORD: br_admin_dev_only
+        run: |
+          set -euo pipefail
+          row=$(psql -h localhost -p 55432 -U br_admin -d bragging_rights_test -v ON_ERROR_STOP=1 -tA -F ' ' -c "
+            SELECT (SELECT count(*) FROM br_migrations.applied WHERE name LIKE '0038\_%'),
+                   (SELECT count(*) FROM competition.result_grant_eligibility),
+                   (SELECT count(*) FROM competition.result_grant_eligibility b
+                     WHERE NOT EXISTS (SELECT 1 FROM authority.authority_grant g
+                                       WHERE g.id = b.grant_id AND g.parent_grant_id IS NULL)),
+                   (SELECT deadlocks FROM pg_stat_database WHERE datname = 'bragging_rights_test')")
+          echo "migration_0038 bindings non_root_or_orphan deadlocks: $row"
+          read -r applied bindings bad deadlocks <<< "$row"
+          test "$applied" -eq 1
+          test "$bindings" -gt 0
+          test "$bad" -eq 0
+          test "$deadlocks" -eq 0
