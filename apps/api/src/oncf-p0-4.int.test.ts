@@ -22,6 +22,7 @@ import {
   ownerDb,
   uniqueSlug,
 } from '@br/testkit';
+import { CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDevTokenAuth, mintDevToken } from './auth';
@@ -133,6 +134,7 @@ const v: Record<string, string> = {};
 beforeAll(async () => {
   const identity = new IdentityStore(db);
   const op = (await newTestAccount(identity, { withPerson: false, label: 'operator' })).accountId;
+  v['op'] = op;
   const tennisV2 = CANONICAL_CATALOG.sports
     .flatMap((s) => s.disciplines)
     .find((d) => d.code === 'tennis.singles')?.specs[1] as DisciplineVersionSpec;
@@ -152,17 +154,30 @@ beforeAll(async () => {
           name: 'SE',
           versions: [{ engineId: 'single-elimination', engineVersion: 2 }],
         },
+        {
+          code: `gk-${tag}`,
+          name: 'Groups knockout',
+          versions: [{ engineId: 'groups-knockout', engineVersion: 1 }],
+        },
       ],
       rulesets: RULESET_TEMPLATES.filter((t) => t.code === 'sets-bo3-tiebreak').map((t) => ({
         code: `q${tag}-${t.code}`,
         name: t.name,
         versions: [{ spec: t.spec, basis: t.basis }],
       })),
-      advancementPolicies: ADVANCEMENT_POLICY_TEMPLATES.map((t) => ({
-        code: t.code,
-        name: t.name,
-        versions: [{ spec: t.spec, basis: t.basis }],
-      })),
+      advancementPolicies: [
+        ...ADVANCEMENT_POLICY_TEMPLATES.map((t) => ({
+          code: t.code,
+          name: t.name,
+          versions: [{ spec: t.spec, basis: t.basis }],
+        })),
+        // D-13B: a version owned by this file alone, retired after it is pinned.
+        ...ADVANCEMENT_POLICY_TEMPLATES.filter((t) => t.code === 'official-confirmed').map((t) => ({
+          code: `r${tag}-retired`,
+          name: t.name,
+          versions: [{ spec: t.spec, basis: t.basis }],
+        })),
+      ],
       schedulingProfiles: SCHEDULING_PROFILE_TEMPLATES.filter(
         (t) => t.code === 'tennis-court-match',
       ).map((t) => ({
@@ -171,6 +186,13 @@ beforeAll(async () => {
         versions: [{ spec: t.spec, basis: t.basis }],
       })),
     },
+    classificationTemplates: CLASSIFICATION_TEMPLATES.filter((t) =>
+      ['itf_rr', 'ibf_bowling_rr'].includes(t.code),
+    ).map((t) => ({
+      code: `c${tag}_${t.code}`,
+      name: t.name,
+      versions: [{ spec: t.spec, basis: t.basis }],
+    })),
   });
   expect(report.conflicts).toEqual([]);
   const listed = await new CompetitionReader(db).catalog();
@@ -178,10 +200,16 @@ beforeAll(async () => {
     if (d.discipline.code === `w${tag}.tennis`) v['tennis'] = d.disciplineVersionId;
   for (const f of listed.formatVersions)
     if (f.format.code === `se-${tag}`) v['se'] = f.formatVersionId;
+    else if (f.format.code === `gk-${tag}`) v['gk'] = f.formatVersionId;
   for (const r of listed.rulesetVersions)
     if (r.code === `q${tag}-sets-bo3-tiebreak`) v['rs'] = r.versionId;
   for (const p of listed.advancementPolicyVersions)
     if (p.code === 'official-confirmed') v['ap'] = p.versionId;
+    else if (p.code === 'groups-wins-games') v['apGroups'] = p.versionId;
+    else if (p.code === `r${tag}-retired`) v['apRetired'] = p.versionId;
+  for (const t of listed.classificationTemplateVersions)
+    if (t.code === `c${tag}_itf_rr`) v['ctItf'] = t.versionId;
+    else if (t.code === `c${tag}_ibf_bowling_rr`) v['ctBowling'] = t.versionId;
   for (const p of listed.schedulingProfileVersions)
     if (p.code.startsWith(`s${tag}-`)) v['sp'] = p.versionId;
 }, 240_000);
@@ -192,7 +220,22 @@ type Org = Awaited<ReturnType<typeof organizer>>;
 async function category(
   A: Org,
   eventSlug: string,
-  options: { count?: number; policy?: boolean; lock?: boolean; scoring?: boolean } = {},
+  options: {
+    count?: number;
+    policy?: boolean;
+    lock?: boolean;
+    scoring?: boolean;
+    /** D-13B: groups → knockout instead of the default single elimination. */
+    groups?: Record<string, unknown>;
+    /** Single-elimination format configuration (e.g. an explicit drawSize). */
+    config?: Record<string, unknown>;
+    /** Scoring fields replacing the default pin body (ruleset is always set). */
+    pin?: Record<string, unknown>;
+    /** Confirmed entries when fewer than the capacity (`count`). */
+    registered?: number;
+    /** false: stop with registration still open. */
+    close?: boolean;
+  } = {},
 ) {
   const ev = await call(
     'POST',
@@ -201,8 +244,8 @@ async function category(
     {
       slug: eventSlug,
       disciplineVersionId: v['tennis'],
-      formatVersionId: v['se'],
-      formatConfig: {},
+      formatVersionId: options.groups === undefined ? v['se'] : v['gk'],
+      formatConfig: options.groups ?? options.config ?? {},
       settings: {
         name: `Singles ${eventSlug}`,
         capacity: options.count ?? 2,
@@ -219,14 +262,16 @@ async function category(
       { ...A.h, ...idem() },
       {
         rulesetVersionId: v['rs'],
-        schedulingProfileVersionId: v['sp'],
-        ...(options.policy ? { advancementPolicyVersionId: v['ap'] } : {}),
+        ...(options.pin ?? {
+          schedulingProfileVersionId: v['sp'],
+          ...(options.policy ? { advancementPolicyVersionId: v['ap'] } : {}),
+        }),
       },
     );
     expect(pinned.status, pinned.text).toBe(200);
   }
   expect((await call('POST', `/v1/events/${eventId}/open-registration`, A.h)).status).toBe(200);
-  for (let i = 0; i < (options.count ?? 2); i++) {
+  for (let i = 0; i < (options.registered ?? options.count ?? 2); i++) {
     const a = await athlete(`l6-${eventSlug}-p${i}`);
     expect(
       (
@@ -239,6 +284,7 @@ async function category(
       ).status,
     ).toBe(201);
   }
+  if (options.close === false) return { eventId, contestId: '', players: [] as string[] };
   expect((await call('POST', `/v1/events/${eventId}/close-registration`, A.h)).status).toBe(200);
   if (options.lock === false) return { eventId, contestId: '', players: [] as string[] };
   expect(
@@ -595,5 +641,146 @@ describe('D-13 advancement preflight API and four-player tennis acceptance', () 
     );
     expect(frozen.status).toBe(409);
     expect(frozen.body?.error.reason).toBe('RESULTS_FROZEN');
+  }, 180_000);
+});
+
+describe('D-13B ranked-stage classification, retired pins and exact lock readiness', () => {
+  const participants = async (eventId: string) =>
+    (
+      await sql<{
+        n: number;
+      }>`SELECT count(*)::int AS n FROM competition.participant WHERE event_id = ${eventId}`.execute(
+        owner,
+      )
+    ).rows[0]?.n;
+  const refusedLock = async (A: Org, eventId: string, reason: string) => {
+    const refused = await call('POST', `/v1/events/${eventId}/lock-field`, { ...A.h, ...idem() });
+    expect(refused.status, refused.text).toBe(409);
+    expect(refused.body?.error.reason).toBe(reason);
+    expect(await participants(eventId)).toBe(0);
+  };
+  const lock = async (A: Org, eventId: string, n: number) => {
+    const locked = await call('POST', `/v1/events/${eventId}/lock-field`, { ...A.h, ...idem() });
+    expect(locked.status, locked.text).toBe(200);
+    expect(await participants(eventId)).toBe(n);
+  };
+  const repin = async (A: Org, eventId: string, body: Record<string, unknown>) => {
+    const pinned = await call(
+      'PUT',
+      `/v1/events/${eventId}/scoring`,
+      { ...A.h, ...idem() },
+      { rulesetVersionId: v['rs'], ...body },
+    );
+    expect(pinned.status, pinned.text).toBe(200);
+  };
+
+  it('refuses a ranked group stage without a classification template, then locks with a stage override', async () => {
+    const A = await organizer('p04b-template');
+    const { eventId } = await category(A, 'groups', {
+      count: 4,
+      lock: false,
+      groups: { groupCount: 2, qualifiersPerGroup: 1 },
+      pin: { advancementPolicyVersionId: v['ap'] },
+    });
+    const ready = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(ready.body?.advancement.countBasis).toBe('EXACT');
+    expect(ready.body?.advancement.required).toBe(true);
+    expect(ready.body?.blockers).toContain('CLASSIFICATION_TEMPLATE_REQUIRED');
+    await refusedLock(A, eventId, 'CLASSIFICATION_TEMPLATE_REQUIRED');
+    // The ranked stage's own override satisfies the dependency without an event-wide template.
+    await repin(A, eventId, {
+      advancementPolicyVersionId: v['ap'],
+      stageOverrides: { s1: { classificationTemplateVersionId: v['ctItf'] } },
+    });
+    const fixed = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(fixed.body?.advancement.blockers).toEqual([]);
+    await lock(A, eventId, 4);
+  }, 180_000);
+
+  it('checks the cross-group order against the effective stage override, not the event template', async () => {
+    const A = await organizer('p04b-override');
+    const { eventId } = await category(A, 'groups', {
+      count: 6,
+      lock: false,
+      groups: { groupCount: 3, qualifiersPerGroup: 1, bestRankedExtra: 1 },
+      pin: {
+        classificationTemplateVersionId: v['ctItf'],
+        advancementPolicyVersionId: v['apGroups'],
+        stageOverrides: { s1: { classificationTemplateVersionId: v['ctBowling'] } },
+      },
+    });
+    await refusedLock(A, eventId, 'CLASSIFICATION_TEMPLATE_INCOMPATIBLE');
+    await repin(A, eventId, {
+      classificationTemplateVersionId: v['ctItf'],
+      advancementPolicyVersionId: v['apGroups'],
+    });
+    await lock(A, eventId, 6);
+  }, 180_000);
+
+  it('keeps an already-pinned policy usable after retirement and refuses it as a new selection', async () => {
+    const A = await organizer('p04b-retired');
+    const { eventId } = await category(A, 'singles', {
+      count: 4,
+      lock: false,
+      pin: { schedulingProfileVersionId: v['sp'], advancementPolicyVersionId: v['apRetired'] },
+    });
+    await new CatalogStore(operator).setScoringVersionStatus({
+      operatorAccountId: v['op'] as string,
+      kind: 'advancement-policy',
+      versionId: v['apRetired'] as string,
+      status: 'RETIRED',
+    });
+    const ready = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(ready.body?.advancement.countBasis).toBe('EXACT');
+    // A direct knockout ranks no stage: no classification template is needed.
+    expect(ready.body?.advancement.blockers).toEqual([]);
+    expect(ready.body?.advancement.compatiblePolicyVersionIds).not.toContain(v['apRetired']);
+    const B = await organizer('p04b-retired-new');
+    const fresh = await category(B, 'singles', { count: 4, lock: false, scoring: false });
+    const selected = await call(
+      'PUT',
+      `/v1/events/${fresh.eventId}/scoring`,
+      { ...B.h, ...idem() },
+      { rulesetVersionId: v['rs'], advancementPolicyVersionId: v['apRetired'] },
+    );
+    expect(selected.status).toBe(400);
+    await lock(A, eventId, 4);
+  }, 180_000);
+
+  it('assesses lock readiness on the exact confirmed field once registration closes', async () => {
+    const A = await organizer('p04b-exact');
+    const { eventId } = await category(A, 'singles', {
+      count: 4,
+      registered: 1,
+      lock: false,
+      close: false,
+      policy: true,
+    });
+    // Before close the preflight is setup guidance from a feasible estimate, never lock-ready.
+    const open = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(open.body?.advancement.countBasis).toBe('ESTIMATE');
+    expect(open.body?.advancement.blockers).not.toContain('ADVANCEMENT_PLAN_INVALID');
+    expect((await call('POST', `/v1/events/${eventId}/close-registration`, A.h)).status).toBe(200);
+    const closed = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(closed.body?.advancement.countBasis).toBe('EXACT');
+    expect(closed.body?.advancement.participantCount).toBe(1);
+    expect(closed.body?.blockers).toContain('ADVANCEMENT_PLAN_INVALID');
+    await refusedLock(A, eventId, 'ADVANCEMENT_PLAN_INVALID');
+  }, 180_000);
+
+  it('never substitutes a feasible count for three confirmed entrants in an explicit two-player draw', async () => {
+    const A = await organizer('p04b-draw');
+    const { eventId } = await category(A, 'singles', {
+      count: 3,
+      config: { drawSize: 2 },
+      lock: false,
+      policy: true,
+    });
+    const ready = await call('GET', `/v1/events/${eventId}/readiness`, A.h);
+    expect(ready.status).toBe(200);
+    expect(ready.body?.advancement.countBasis).toBe('EXACT');
+    expect(ready.body?.advancement.participantCount).toBe(3);
+    expect(ready.body?.advancement.blockers).toContain('ADVANCEMENT_PLAN_INVALID');
+    await refusedLock(A, eventId, 'ADVANCEMENT_PLAN_INVALID');
   }, 180_000);
 });

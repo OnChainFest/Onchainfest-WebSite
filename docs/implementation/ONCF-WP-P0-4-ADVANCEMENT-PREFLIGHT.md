@@ -145,3 +145,38 @@ separate release gates. This delivery alone does not authorize an official tourn
 - `packages/testkit/src/advancement-fixture.ts`
 - `packages/testkit/src/index.ts`
 - `tooling/d13-deployment.test.ts`
+
+## D-13B — post-merge correction (after PR #43)
+
+A read-only review of the merged implementation confirmed three gaps; this section records their
+correction. No migration, no historical plan/spec hash change and no new lock or transaction step.
+
+1. **Ranking dependency (P1).** `advancementRequirements` now derives `classificationStages` from
+   the ephemeral plan: the stage of every `RANK_FROM_STAGE` / `BEST_RANKED_FROM_STAGE` slot and the
+   source stage of every transition (group crossover, heat qualifiers, cuts). For each, the
+   preflight resolves the effective template (stage override, else the event template) and the
+   effective ruleset, and blocks the lock with `CLASSIFICATION_TEMPLATE_REQUIRED` when none is
+   pinned, or `CLASSIFICATION_TEMPLATE_INCOMPATIBLE` when the template family does not fit that
+   ruleset or a best-ranked stage's standings lack a value the pinned cross-group order compares.
+   A direct knockout ranks no stage and needs no template.
+2. **Retired pins (P2).** The pinned advancement policy version is read by id and checked for
+   compatibility whatever its current catalog status. Published-only filtering still applies to
+   the compatible list, the suggestion and `pinScoring` (a retired version cannot be newly chosen).
+3. **Exact entrant count (P2).** The preflight takes an explicit count basis. Field lock and locked
+   readiness pass the authoritative count; readiness of a `REGISTRATION_CLOSED` event uses the exact
+   confirmed count with no substitute; only earlier states and pin-time suggestions use the
+   estimate (and the feasible-size fallback). Readiness reports `countBasis`, the lock refuses
+   anything but `EXACT`, and the organizer page shows the lock command only for an `EXACT`, blocker-
+   free assessment (absent or estimated assessments keep it withheld).
+
+The testkit fixture also provisions a classification template when a ranked stage has none, so the
+older v2 structure tests stay operable; existing pins and policies are preserved.
+
+Coverage (written; CI-only): pure stage derivation (knockout, groups, best-ranked, heats, cut); API
+refusal without a template and acceptance via a stage override; a stage override whose standings
+cannot feed the cross-group order refused although the event template could; pin → retire → lock
+accepted while a new selection of the retired version is refused; closed registration below the
+format minimum reports `EXACT` and `ADVANCEMENT_PLAN_INVALID` (before close: `ESTIMATE`); three
+confirmed entrants in an explicit two-player draw (`drawSize: 2`) report `ADVANCEMENT_PLAN_INVALID`
+at the exact count instead of a feasible substitute, and the lock refuses the same; SSR lock
+withholding for estimated, unassessed and template-blocked readiness.

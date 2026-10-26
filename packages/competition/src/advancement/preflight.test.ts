@@ -89,4 +89,42 @@ describe('D-13 format-derived advancement requirements', () => {
       advancementCompatibility(requirements, { ...official.spec, heatSemantics: 'OVERALL' }),
     ).toContain('HEAT_PLACE_QUALIFICATION_REQUIRED');
   });
+
+  it('derives the ranked stages that need a classification from the plan (WP-P0-4B)', () => {
+    const tennis = discipline('tennis.singles');
+    const knockout = advancementRequirements(formatEngine('single-elimination', 2)!, tennis, {}, 4);
+    expect(knockout.required).toBe(true);
+    expect(knockout.classificationStages).toEqual([]);
+    const groups = advancementRequirements(
+      formatEngine('groups-knockout', 1)!,
+      tennis,
+      { groupCount: 2, qualifiersPerGroup: 1 },
+      4,
+    );
+    expect(groups.classificationStages).toEqual(['s1']);
+    expect(groups.crossGroupStages).toEqual([]);
+    const crossGroup = advancementRequirements(
+      formatEngine('groups-knockout', 1)!,
+      tennis,
+      { groupCount: 3, qualifiersPerGroup: 1, bestRankedExtra: 1 },
+      6,
+    );
+    expect(crossGroup.classificationStages).toEqual(['s1']);
+    expect(crossGroup.crossGroupStages).toEqual(['s1']);
+    const pool = discipline('swimming.pool');
+    const heats = formatEngine('heats-final', 1)!;
+    expect(advancementRequirements(heats, pool, {}, 8).classificationStages).toEqual([]);
+    expect(
+      advancementRequirements(heats, pool, { qualifyByPlace: 1, qualifyByTime: 6 }, 16)
+        .classificationStages,
+    ).toHaveLength(1);
+    const cut = advancementRequirements(
+      formatEngine('multi-round', 1)!,
+      discipline('golf.individual'),
+      { rounds: 4, cutAfterRound: 2, cutTopN: 65 },
+      144,
+    );
+    expect(cut.classificationStages.length).toBeGreaterThan(0);
+    expect(cut.crossGroupStages).toEqual([]);
+  });
 });

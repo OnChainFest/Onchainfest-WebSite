@@ -3,24 +3,30 @@ import {
   RULESET_TEMPLATES,
   advancementCompatibility,
   advancementRequirements,
+  crossGroupKeysUsed,
   formatEngine,
+  type AdvancementPolicySpec,
   type DisciplineVersionSpec,
 } from '@br/competition';
 import { newId } from '@br/domain';
 import {
   CatalogStore,
   CompetitionReader,
+  HEAD_TO_HEAD_FAMILIES,
   IdentityStore,
   ModuleRole,
   ScoringStore,
   inTransaction,
+  standingsValueKeys,
   type Db,
 } from '@br/persistence';
+import { CLASSIFICATION_TEMPLATES } from '@br/rankings';
 import { sql } from 'kysely';
 import { newTestAccount, operatorDb } from './index';
 
 /** Explicit setup for older structure/scheduling tests: new scored fields must be operable.
- * Never used by product code or the D-13 refusal tests. Existing scoring pins are preserved.
+ * Never used by product code or the D-13 refusal tests. Existing scoring pins are preserved; a
+ * classification template is added only when a ranked stage has none (WP-P0-4B).
  */
 export async function configureAdvancementFixture(db: Db, actorAccountId: string, eventId: string) {
   const row = await inTransaction(db, ModuleRole.competition, async (ctx) => {
@@ -47,7 +53,14 @@ export async function configureAdvancementFixture(db: Db, actorAccountId: string
   const requirements = advancementRequirements(engine, row.spec, row.format_config, row.n);
   const scoring = new ScoringStore(db);
   const pin = await scoring.scoring({ actorAccountId, eventId });
-  if (pin.pinned && (!requirements.required || pin.advancementPolicy !== null)) return;
+  const p = pin.pinned ? pin : undefined;
+  const unranked = requirements.classificationStages.some(
+    (stage) =>
+      (p?.stageOverrides[stage]?.classificationTemplateVersionId ??
+        p?.classificationTemplate?.versionId ??
+        null) === null,
+  );
+  if (pin.pinned && (!requirements.required || pin.advancementPolicy !== null) && !unranked) return;
   const policy = ADVANCEMENT_POLICY_TEMPLATES.find(
     (p) => advancementCompatibility(requirements, p.spec).length === 0,
   );
@@ -56,6 +69,16 @@ export async function configureAdvancementFixture(db: Db, actorAccountId: string
   );
   if (policy === undefined || ruleset === undefined)
     throw new Error('fixture has no compatible scoring');
+  const family = p?.ruleset?.family ?? ruleset.spec.family;
+  const policySpec = (p?.advancementPolicy?.spec ?? policy.spec) as AdvancementPolicySpec;
+  const template = unranked
+    ? CLASSIFICATION_TEMPLATES.find(
+        (t) =>
+          (t.spec.family === 'STANDINGS') === HEAD_TO_HEAD_FAMILIES.has(family) &&
+          crossGroupKeysUsed(policySpec).every((k) => standingsValueKeys(t.spec).has(k)),
+      )
+    : undefined;
+  if (unranked && template === undefined) throw new Error('fixture has no compatible template');
   const operator = operatorDb();
   const tag = newId().replaceAll('-', '').slice(-8);
   const op = await newTestAccount(new IdentityStore(db), { withPerson: false, label: 'operator' });
@@ -80,25 +103,41 @@ export async function configureAdvancementFixture(db: Db, actorAccountId: string
           },
         ],
       },
+      ...(template === undefined
+        ? {}
+        : {
+            classificationTemplates: [
+              {
+                code: `fx_ct_${tag}`,
+                name: template.name,
+                versions: [{ spec: template.spec, basis: template.basis }],
+              },
+            ],
+          }),
     });
     if (result.conflicts.length > 0) throw new Error('fixture catalog conflict');
   } finally {
     await operator.destroy();
   }
   const catalog = await new CompetitionReader(db).catalog();
-  const p = 'ruleset' in pin ? pin : undefined;
   await scoring.pinScoring({
     actorAccountId,
     eventId,
     rulesetVersionId:
       p?.ruleset?.versionId ??
       catalog.rulesetVersions.find((v) => v.code === `fx-rs-${tag}`)!.versionId,
-    classificationTemplateVersionId: p?.classificationTemplate?.versionId ?? null,
+    classificationTemplateVersionId:
+      p?.classificationTemplate?.versionId ??
+      (template === undefined
+        ? null
+        : catalog.classificationTemplateVersions.find((v) => v.code === `fx_ct_${tag}`)!.versionId),
     schedulingProfileVersionId: p?.schedulingProfile?.versionId ?? null,
     stageOverrides: p?.stageOverrides ?? {},
-    advancementPolicyVersionId: requirements.required
-      ? catalog.advancementPolicyVersions.find((v) => v.code === `fx-ap-${tag}`)!.versionId
-      : null,
+    advancementPolicyVersionId:
+      p?.advancementPolicy?.versionId ??
+      (requirements.required
+        ? catalog.advancementPolicyVersions.find((v) => v.code === `fx-ap-${tag}`)!.versionId
+        : null),
     idempotencyKey: `fixture-${newId()}`,
   });
 }

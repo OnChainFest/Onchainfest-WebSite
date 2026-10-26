@@ -20,17 +20,21 @@ const evaluate = (expression: string, context: Record<string, string>) =>
   });
 
 describe('D-13 CI-only deployment isolation', () => {
-  const branch = 'fix/oncf-wp-p0-4-advancement-preflight';
-  it('never runs preview or production for this branch push or PR creation/update', () => {
-    for (const event of ['push', 'pull_request']) {
-      const context = {
-        'github.event_name': event,
-        'github.head_ref': event === 'pull_request' ? branch : '',
-        'github.ref': event === 'push' ? `refs/heads/${branch}` : 'refs/pull/123/merge',
-      };
-      expect(evaluate(condition('preview'), context)).toBe(false);
-      expect(evaluate(condition('production'), context)).toBe(false);
-    }
+  const branches = [
+    'fix/oncf-wp-p0-4-advancement-preflight',
+    'fix/oncf-d13b-advancement-corrective',
+  ];
+  it('never runs preview or production for these branches on push or PR creation/update', () => {
+    for (const branch of branches)
+      for (const event of ['push', 'pull_request']) {
+        const context = {
+          'github.event_name': event,
+          'github.head_ref': event === 'pull_request' ? branch : '',
+          'github.ref': event === 'push' ? `refs/heads/${branch}` : 'refs/pull/123/merge',
+        };
+        expect(evaluate(condition('preview'), context), branch).toBe(false);
+        expect(evaluate(condition('production'), context), branch).toBe(false);
+      }
   });
   it('preserves other previews and the existing production guard', () => {
     expect(

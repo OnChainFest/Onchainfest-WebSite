@@ -651,7 +651,13 @@ export class StructureStore {
         WHERE e.id = ${e.id}`.execute(ctx.trx);
       const r = rows[0];
       if (r === undefined) throw new DomainError(DomainErrorCode.NOT_FOUND, 'event not found');
-      const advancement = await advancementPreflight(ctx, e, r.participants ?? undefined);
+      // Once registration has closed, readiness assesses the exact confirmed field (what a lock
+      // would lock); an earlier estimate is setup guidance only.
+      const advancement = await advancementPreflight(
+        ctx,
+        e,
+        r.participants ?? (e.status === 'REGISTRATION_CLOSED' ? 'CONFIRMED' : 'ESTIMATE'),
+      );
       const blockers: string[] = r.field_version === null ? [...advancement.blockers] : [];
       const warnings: string[] = [];
       if (r.field_version === null) blockers.push('FIELD_NOT_LOCKED');

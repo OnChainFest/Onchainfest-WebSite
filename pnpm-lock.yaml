@@ -356,6 +356,9 @@ importers:
       '@br/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@br/rankings':
+        specifier: workspace:*
+        version: link:../rankings
       '@br/records':
         specifier: workspace:*
         version: link:../records

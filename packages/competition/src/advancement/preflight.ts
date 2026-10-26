@@ -33,6 +33,22 @@ export function advancementRequirements(
     (v2?.rounds.some((round) => round.dynamicEntry !== undefined) ?? false);
   const crossGroup = sources.includes('BEST_RANKED_FROM_STAGE');
   const grouped = v2?.rounds.some((round) => round.groupKey !== undefined) ?? false;
+  // Stages whose ranked standings advancement reads (WP-P0-4B): rank and best-ranked slots, and the
+  // source stage of every transition (cut, heat qualifiers, crossovers). A direct knockout has none.
+  const slots = plan.rounds.flatMap((round) =>
+    round.contests.flatMap((contest) => contest.slots),
+  ) as readonly { source: string; stageKey?: string }[];
+  const rankedFrom = (kinds: readonly string[]) =>
+    slots.flatMap((s) =>
+      kinds.includes(s.source) && s.stageKey !== undefined ? [s.stageKey] : [],
+    );
+  const classificationStages = [
+    ...new Set([
+      ...rankedFrom(['RANK_FROM_STAGE', 'BEST_RANKED_FROM_STAGE']),
+      ...transitions.map((t) => t.fromStage),
+    ]),
+  ].sort();
+  const crossGroupStages = [...new Set(rankedFrom(['BEST_RANKED_FROM_STAGE']))].sort();
   const heatPlaces = transitions.some(
     (t) => t.kind === 'QUALIFY_BY_PLACE_AND_TIME' && Number(t.params['qualifyByPlace'] ?? 0) > 0,
   );
@@ -41,6 +57,8 @@ export function advancementRequirements(
     crossGroup,
     grouped,
     heatPlaces,
+    classificationStages,
+    crossGroupStages,
     // An engine explicitly opts in. A policy-free final never gets a default.
     defaultPolicyCode:
       required &&

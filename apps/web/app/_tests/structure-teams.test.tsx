@@ -201,6 +201,14 @@ function readiness(o: Partial<{ locked: boolean; seeded: boolean; planned: boole
       ? { engine: 'heats-final/1', planVersion: 2, stages: 2, contests: 4, dynamicRounds: 0 }
       : null,
     contestsScheduled: { scheduled: 0, total: o.planned ? 4 : 0 },
+    advancement: {
+      participantCount: 3,
+      countBasis: 'EXACT',
+      required: false,
+      compatiblePolicyVersionIds: [],
+      defaultPolicyVersionId: null,
+      blockers: [],
+    },
     blockers: !o.locked
       ? ['FIELD_NOT_LOCKED']
       : !o.seeded
@@ -733,7 +741,7 @@ describe('organizer structure page', () => {
 
   it('offers the field lock after registration closes', async () => {
     const page = html(await Structure(cat()));
-    expect(page).toContain('Lock the field');
+    expect(page).toContain('Lock the field (');
     expect(page).toContain('Readiness');
     expect(page).not.toContain('Seed the field');
   });
@@ -753,6 +761,32 @@ describe('organizer structure page', () => {
     const page = html(await Structure(cat()));
     expect(page).toContain('Choose advancement before locking');
     expect(page).toContain('Configure scoring and advancement');
+    expect(page).not.toContain('Lock the field (');
+  });
+
+  it('withholds the field lock unless readiness was assessed on the exact confirmed field (D-13B)', async () => {
+    const estimate = { ...readiness().advancement, countBasis: 'ESTIMATE' };
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, { ...readiness(), advancement: estimate });
+    let page = html(await Structure(cat()));
+    expect(page).toContain('Readiness has not been checked on the confirmed field yet');
+    expect(page).not.toContain('Lock the field (');
+    const { advancement: _omitted, ...unassessed } = readiness();
+    routes[`GET /v1/events/${EVENT}/readiness`] = () => json(200, unassessed);
+    page = html(await Structure(cat()));
+    expect(page).toContain('Readiness has not been checked on the confirmed field yet');
+    expect(page).not.toContain('Lock the field (');
+    routes[`GET /v1/events/${EVENT}/readiness`] = () =>
+      json(200, {
+        ...readiness(),
+        advancement: {
+          ...readiness().advancement,
+          required: true,
+          blockers: ['CLASSIFICATION_TEMPLATE_REQUIRED'],
+        },
+      });
+    page = html(await Structure(cat()));
+    expect(page).toContain('Choose a classification before locking');
     expect(page).not.toContain('Lock the field (');
   });
 
