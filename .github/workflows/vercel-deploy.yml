@@ -35,7 +35,7 @@ jobs:
     name: vercel preview
     # These implementation branches are qualified in CI without publishing a preview.
     # prettier-ignore
-    if: github.event_name == 'pull_request' && github.head_ref != 'fix/oncf-wp-p0-4-advancement-preflight' && github.head_ref != 'fix/oncf-d13b-advancement-corrective'
+    if: github.event_name == 'pull_request' && github.head_ref != 'fix/oncf-wp-p0-4-advancement-preflight' && github.head_ref != 'fix/oncf-d13b-advancement-corrective' && github.head_ref != 'fix/oncf-wp-p0-3-scorer-authority'
     runs-on: ubuntu-latest
     concurrency:
       group: vercel-preview-${{ github.event.pull_request.number }}
