@@ -4,13 +4,13 @@ import {
   SCHEDULING_PROFILE_TEMPLATES,
   type DisciplineVersionSpec,
 } from '@br/competition';
-import { newId, type Uuid } from '@br/domain';
+import { newId } from '@br/domain';
 import {
-  AuthorityStore,
   CatalogStore,
   CompetitionReader,
   IdentityStore,
   ResourceStore,
+  ResultAuthorityGovernance,
   ScheduleStore,
 } from '@br/persistence';
 import {
@@ -43,7 +43,8 @@ const app = buildServer({
   resultConflictChecker: declaredNoParticipation,
   auth: (identity: IdentityStore) => createDevTokenAuth(identity, { secret: SECRET }),
 });
-const authority = new AuthorityStore(db, { conflictChecker: declaredNoParticipation });
+const governance = new ResultAuthorityGovernance(db);
+let platformPrincipalId: string | undefined;
 const resources = new ResourceStore(db);
 const schedule = new ScheduleStore(db);
 afterAll(async () => {
@@ -278,36 +279,30 @@ async function scheduleOnCourt(A: Org, contestId: string) {
   });
 }
 
-/** The organizer's own PERSON principal holds the four result capabilities (fixture anchor). */
+/**
+ * The ADR-0077 operator act: the organizer's own PERSON principal receives the four result
+ * capabilities, bound to its current OWNER eligibility (ADR-0079 §2.3).
+ */
 async function grant(A: Org) {
-  const principal = await call('POST', `/v1/persons/${A.personId}/principal`, A.h);
-  expect(principal.status, principal.text).toBe(200);
-  const platform = await authority.registerPrincipal({
-    principalType: 'PLATFORM',
-    label: 'platform (P0-1 api)',
+  platformPrincipalId ??= (
+    await governance.bootstrapPlatformAnchor({
+      governanceDecisionRef: `gov:p01-api:anchor:${newId()}`,
+      basisRef: 'basis:p01-api:charter',
+    })
+  ).platformPrincipalId;
+  const g = await governance.grantCompetitionResultAuthority({
+    platformPrincipalId,
+    competitionId: A.competitionId,
+    granteeAccountId: A.accountId,
+    governanceDecisionRef: `gov:p01-api:${newId()}`,
   });
-  await authority.recognizeTrustAnchor({
-    principalId: platform.id,
-    recognitionScope: { recognitionLevel: ['PLATFORM'] },
-    basisRef: 'fixture',
-    governanceDecisionRef: `fx-${newId()}`,
-  });
-  await authority.issueGrant({
-    actorPrincipalId: platform.id,
-    grantorPrincipalId: platform.id,
-    granteePrincipalId: principal.body?.principalId as Uuid,
-    capabilities: ['SUBMIT_RESULT', 'ACCEPT_RESULT', 'DECLARE_OFFICIAL', 'CORRECT_RESULT'],
-    scope: { recognitionLevel: ['PLATFORM'], competition: [A.competitionId as Uuid] },
-    delegation: { allowed: false, maxDepth: 0, capabilitiesDelegable: [] },
-  });
-  // Authority is evaluated as of the database clock, measured stepping back by up to ~1.5 s
-  // locally: wait until it is safely past the recording before the first use.
-  const id = principal.body?.principalId as string;
+  // Authority is evaluated as of the transaction time (the database clock), which the local
+  // Docker clock has been measured stepping back by up to ~1.5 s: wait until it is safely past
+  // the grant's recording before the first use (no assertion is relaxed).
   for (;;) {
     const { rows } = await sql<{ ok: boolean }>`
-      SELECT now() > greatest(p.recorded_at, max(g.recorded_at), max(g.effective_from)) + interval '2 seconds' AS ok
-      FROM authority.principal p LEFT JOIN authority.authority_grant g ON g.grantee_principal_id = p.id
-      WHERE p.id = ${id} GROUP BY p.recorded_at`.execute(owner);
+      SELECT now() > greatest(recorded_at, effective_from) + interval '2 seconds' AS ok
+      FROM authority.authority_grant WHERE id = ${g.grantId}`.execute(owner);
     if (rows[0]?.ok === true) return;
     await new Promise((r) => setTimeout(r, 250));
   }

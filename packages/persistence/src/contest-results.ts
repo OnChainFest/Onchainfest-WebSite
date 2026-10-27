@@ -19,7 +19,6 @@ import {
 } from './competition-participation';
 import { loadCompetition, loadEvent, requireCompPermission } from './competition-support';
 import type { Db } from './db';
-import type { ResultLedger } from './result-ledger';
 import type { ScoringStore } from './scoring-store';
 import { inTransaction, ModuleRole } from './tx';
 
@@ -41,7 +40,7 @@ import { inTransaction, ModuleRole } from './tx';
 export class ContestResultService {
   private readonly db: Db;
   private readonly scoring: ScoringStore;
-  private readonly ledger: ResultLedger;
+  private readonly conflictChecker: ConflictOfInterestChecker | undefined;
   private readonly resolver: CompetitionHierarchyResolver;
   private readonly participationIndex: boolean;
 
@@ -52,10 +51,7 @@ export class ContestResultService {
   ) {
     this.db = db;
     this.scoring = scoring;
-    this.ledger = createCompetitionResultLedger(
-      db,
-      options.conflictChecker === undefined ? {} : { conflictChecker: options.conflictChecker },
-    );
+    this.conflictChecker = options.conflictChecker;
     this.resolver = new CompetitionHierarchyResolver(db);
     this.participationIndex =
       options.conflictChecker === undefined && options.participationIndex === true;
@@ -95,19 +91,24 @@ export class ContestResultService {
         reason: 'NO_PERSON_PRINCIPAL',
       });
     const principalId = self.p as Uuid;
-    let ledger = this.ledger;
+    let conflictChecker = this.conflictChecker;
     if (this.participationIndex) {
       const participates = await inTransaction(this.db, ModuleRole.competition, (ctx) =>
         personParticipatesInCompetition(ctx, self.person_id, contest.competition_id),
       );
-      ledger = createCompetitionResultLedger(this.db, {
-        conflictChecker: competitionParticipationChecker({
-          principalId,
-          competitionId: contest.competition_id,
-          participates,
-        }),
+      conflictChecker = competitionParticipationChecker({
+        principalId,
+        competitionId: contest.competition_id,
+        participates,
       });
     }
+    // WP-P0-3 (D-16): every command's ledger is bound to this account, so the ledger re-checks
+    // its current OWNER / ADMIN role inside the write transaction (ADR-0079). COMP_VIEW_PRIVATE
+    // above only keeps non-staff out early; it is not the result-staff check.
+    const ledger = createCompetitionResultLedger(this.db, {
+      ...(conflictChecker === undefined ? {} : { conflictChecker }),
+      actorAccountId: accountId,
+    });
     return { principalId, disciplineRef: contest.discipline_ref, ledger };
   }
 
@@ -133,7 +134,7 @@ export class ContestResultService {
     return v;
   }
 
-  private async resultId(contestId: string): Promise<Uuid> {
+  private async resultId(contestId: string, actorAccountId: string): Promise<Uuid> {
     const existing = await inTransaction(this.db, ModuleRole.results, async (ctx) => {
       const { rows } = await sql<{ id: string }>`
         SELECT id FROM results.result WHERE scope_type = 'CONTEST' AND scope_target_id = ${contestId}`.execute(
@@ -142,8 +143,12 @@ export class ContestResultService {
       return rows[0]?.id;
     });
     if (existing !== undefined) return existing as Uuid;
+    // The stable Result identity (idempotent per contest): no version, no decision, no grant.
     return (
-      await this.ledger.createResult({ scopeType: 'CONTEST', scopeTargetId: contestId as Uuid })
+      await createCompetitionResultLedger(this.db, { actorAccountId }).createResult({
+        scopeType: 'CONTEST',
+        scopeTargetId: contestId as Uuid,
+      })
     ).id;
   }
 
@@ -158,7 +163,7 @@ export class ContestResultService {
     const v = await this.validated(input.actorAccountId, input.contestId, input.sheet);
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
-    const resultId = await this.resultId(input.contestId);
+    const resultId = await this.resultId(input.contestId, input.actorAccountId);
     const { draftId } = await a.ledger.saveDraft({
       resultId,
       authorPrincipalId: a.principalId,
@@ -225,7 +230,7 @@ export class ContestResultService {
     const v = await this.validated(input.actorAccountId, input.contestId, input.sheet);
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
-    const resultId = await this.resultId(input.contestId);
+    const resultId = await this.resultId(input.contestId, input.actorAccountId);
     const { draftId } = await a.ledger.saveDraft({
       resultId,
       authorPrincipalId: a.principalId,

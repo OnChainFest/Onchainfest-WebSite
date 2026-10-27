@@ -153,15 +153,39 @@ The organizer asks the platform to enable results for a tournament. The operator
    - `NOT_A_PLATFORM_PRINCIPAL`;
    - `GOVERNANCE_DECISION_USED` (re-granting after a revocation needs a new decision).
 
-   A repeated grant returns the existing one (`created: false`).
+   A repeated grant returns the existing one (`created: false`) while it is still bound to the grantee's current eligibility. The grant is bound at issuance to the exact staff rows and memberships that made the person OWNER / ADMIN ([ADR-0079](../adr/ADR-0079-result-authority-requires-current-result-staff.md) §2.3).
 4. **Revoke when a person stops running results** (role removed, staff ended, end of event):
 
    ```sh
    pnpm authority:results revoke --competition <uuid> --account <uuid> --governance-ref gov:… --reason "…"
    ```
 
-   Revocation is prospective. Ending a staff role already stops that person's result actions over the API at once, but the grant stays until revoked, so always revoke.
+   Revocation is prospective. Losing the OWNER / ADMIN role (demoted to SCHEDULER or REGISTRATION_MANAGER, staff ended, or organization role demoted) stops that person's result actions at once, because every result command re-checks the current role inside its transaction ([ADR-0079](../adr/ADR-0079-result-authority-requires-current-result-staff.md)). The grant stays until revoked, so always revoke. A person made OWNER / ADMIN again cannot use an earlier grant (`GRANT_ELIGIBILITY_STALE`): issue a fresh one with `grant` under a **new** `--governance-ref` (the command revokes the stale grant and records it in the audit). The same applies, even though the person never stopped being eligible, after:
+   - an organization role change ADMIN → OWNER (the membership is replaced);
+   - a handoff from explicit competition staff to an organization role (or back), when the grant was issued before the second role existed;
+   - a membership or the organization suspended and reactivated.
+
+   A grant issued while the person held two roles keeps working while either of them is unchanged.
 5. **Know what the grant allows.** It covers submit, accept, declare official and correct for every contest of **that competition only**. It is never delegable. Accept, declare and correct are refused while the person participates in the competition (`CONFLICT_OF_INTEREST`).
+6. **First deploy with migration 0038 (result grant eligibility binding).** Every result grant issued before it has no binding and is refused from deploy until re-issued (fail closed):
+   1. Before deploy, list the active grants (read-only) and the people who must keep acting: `pnpm authority:results list --competition <uuid>`.
+   2. Apply migration 0038 through the reviewed migration procedure (`db-migrate`, separately authorized per environment), then deploy the API.
+   3. For each person who must keep acting, run `grant` under a **new** `--governance-ref`. It revokes the old, unbound grant (audited as `authority.result-grant.stale-revoked`) and issues a bound one.
+   4. Until step 3 is done for a person, their result commands return 403 `AUTHORITY_DENIED` (`GRANT_ELIGIBILITY_STALE`); nothing is written. Schedule the deploy outside live result entry.
+7. **Recover from an interrupted grant** (the grant was issued but its eligibility binding was not stored). The grant is created first and its binding is written afterwards, in a separate transaction. If `grant` fails between the two (it exits with an error other than a refusal: lost connection, crash, failed commit), `list` can show a new ACTIVE grant that has no `authority.result-grant.issued` audit row.
+   - **That grant stays unusable.** Every result command authorized by it is refused with 403 `GRANT_ELIGIBILITY_STALE`, and nothing is written.
+   - **Re-running `grant` with the same `--governance-ref` is refused** (`GOVERNANCE_DECISION_USED`). The decision reference is spent and cannot be reused.
+
+   To recover:
+   1. **Inspect, read-only:** run `pnpm authority:results list --competition <uuid>`, and read the `platform.audit_event` rows `authority.result-grant.*` for the competition. Identify the unbound grant and the reference that was spent on it.
+   2. **Record a new governance decision** outside the platform, as in step 1, noting that it replaces the interrupted issuance.
+   3. **Run `grant` again under the new `--governance-ref`.** It revokes the unbound grant (audited as `authority.result-grant.stale-revoked`) and issues a fresh grant, then binds it.
+   4. **Before result entry resumes, verify:**
+      - `grant` exited 0 with `created: true`;
+      - an `authority.result-grant.issued` audit row exists for the new `grantId`;
+      - a read-only query shows exactly one `competition.result_grant_eligibility` row for that `grant_id`.
+
+   **Never insert, edit or delete binding rows by hand.** The table is append-only. A binding is valid only when the grant command writes it, under the eligibility locks.
 
 ## 7. Rollback
 
