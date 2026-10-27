@@ -24,6 +24,8 @@ describe('D-13 CI-only deployment isolation', () => {
     'fix/oncf-wp-p0-4-advancement-preflight',
     'fix/oncf-d13b-advancement-corrective',
     'fix/oncf-wp-p0-3-scorer-authority',
+    'fix/oncf-dp1-proxy-public-origin',
+    'qa/oncf-local-pilot-01',
   ];
   it('never runs preview or production for these branches on push or PR creation/update', () => {
     for (const branch of branches)

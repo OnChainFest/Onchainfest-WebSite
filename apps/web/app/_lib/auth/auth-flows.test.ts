@@ -408,28 +408,30 @@ describe('email link landing (callback / confirm)', () => {
   it('expired recovery link → forgot-password with link_expired', async () => {
     const res = await callback(
       new Request(
-        'https://app.test/auth/callback?flow=recovery&error=access_denied&error_code=otp_expired',
+        'https://app.onchainfest.test/auth/callback?flow=recovery&error=access_denied&error_code=otp_expired',
       ),
     );
-    expect(location(res)).toBe('https://app.test/forgot-password?error=link_expired');
+    expect(location(res)).toBe('https://app.onchainfest.test/forgot-password?error=link_expired');
     expect(h.auth.exchangeCodeForSession).not.toHaveBeenCalled();
   });
 
   it('recovery code → reset screen only', async () => {
     h.auth.exchangeCodeForSession.mockResolvedValue(session());
     const res = await callback(
-      new Request('https://app.test/auth/callback?flow=recovery&code=abc'),
+      new Request('https://app.onchainfest.test/auth/callback?flow=recovery&code=abc'),
     );
-    expect(location(res)).toBe('https://app.test/reset-password');
+    expect(location(res)).toBe('https://app.onchainfest.test/reset-password');
   });
 
   it('verified sign-up → data-derived onboarding with the lane hint and a success notice', async () => {
     h.auth.exchangeCodeForSession.mockResolvedValue(session('new-user-token'));
     const res = await callback(
-      new Request('https://app.test/auth/callback?flow=signup&path=organization&code=abc'),
+      new Request(
+        'https://app.onchainfest.test/auth/callback?flow=signup&path=organization&code=abc',
+      ),
     );
     expect(location(res)).toBe(
-      'https://app.test/app/onboarding?path=organization&notice=email_verified',
+      'https://app.onchainfest.test/app/onboarding?path=organization&notice=email_verified',
     );
     expect(apiCalls.every((c) => c.headers.authorization === 'Bearer new-user-token')).toBe(true);
   });
@@ -441,46 +443,61 @@ describe('email link landing (callback / confirm)', () => {
       location(
         await callback(
           new Request(
-            `https://app.test/auth/callback?flow=signup&path=athlete&next=${next}&code=abc`,
+            `https://app.onchainfest.test/auth/callback?flow=signup&path=athlete&next=${next}&code=abc`,
           ),
         ),
       ),
-    ).toBe(`https://app.test/app/onboarding?path=athlete&next=${next}&notice=email_verified`);
+    ).toBe(
+      `https://app.onchainfest.test/app/onboarding?path=athlete&next=${next}&notice=email_verified`,
+    );
     expect(
       location(
         await callback(
           new Request(
-            'https://app.test/auth/callback?flow=signup&path=athlete&next=https%3A%2F%2Fevil.example&code=abc',
+            'https://app.onchainfest.test/auth/callback?flow=signup&path=athlete&next=https%3A%2F%2Fevil.example&code=abc',
           ),
         ),
       ),
-    ).toBe('https://app.test/app/onboarding?path=athlete&notice=email_verified');
+    ).toBe('https://app.onchainfest.test/app/onboarding?path=athlete&notice=email_verified');
   });
 
   it('missing code, foreign-browser code and junk are rejected with fixed codes', async () => {
-    expect(location(await callback(new Request('https://app.test/auth/callback')))).toBe(
-      'https://app.test/signin?error=link_invalid',
-    );
+    expect(
+      location(await callback(new Request('https://app.onchainfest.test/auth/callback'))),
+    ).toBe('https://app.onchainfest.test/signin?error=link_invalid');
     h.auth.exchangeCodeForSession.mockResolvedValue({
       data: { session: null },
       error: authError('bad_code_verifier'),
     });
-    expect(location(await callback(new Request('https://app.test/auth/callback?code=x')))).toBe(
-      'https://app.test/signin?error=link_other_browser',
-    );
+    expect(
+      location(await callback(new Request('https://app.onchainfest.test/auth/callback?code=x'))),
+    ).toBe('https://app.onchainfest.test/signin?error=link_other_browser');
   });
 
   it('token-hash recovery links verify the OTP and go to the reset screen', async () => {
     h.auth.verifyOtp.mockResolvedValue(session());
     const res = await confirm(
-      new Request('https://app.test/auth/confirm?type=recovery&token_hash=th'),
+      new Request('https://app.onchainfest.test/auth/confirm?type=recovery&token_hash=th'),
     );
     expect(h.auth.verifyOtp).toHaveBeenCalledWith({ type: 'recovery', token_hash: 'th' });
-    expect(location(res)).toBe('https://app.test/reset-password');
+    expect(location(res)).toBe('https://app.onchainfest.test/reset-password');
     const bad = await confirm(
-      new Request('https://app.test/auth/confirm?type=magic&token_hash=th'),
+      new Request('https://app.onchainfest.test/auth/confirm?type=magic&token_hash=th'),
     );
-    expect(location(bad)).toBe('https://app.test/signin?error=link_invalid');
+    expect(location(bad)).toBe('https://app.onchainfest.test/signin?error=link_invalid');
+  });
+
+  it('behind a reverse proxy, redirects use NEXT_PUBLIC_SITE_URL, never the bind address', async () => {
+    // `next start --hostname 0.0.0.0` behind Caddy sees request.url = https://0.0.0.0:3000/…
+    h.auth.exchangeCodeForSession.mockResolvedValue(session('new-user-token'));
+    const ok = await callback(
+      new Request('https://0.0.0.0:3000/auth/callback?flow=signup&path=athlete&code=abc'),
+    );
+    expect(location(ok)).toBe(
+      'https://app.onchainfest.test/app/onboarding?path=athlete&notice=email_verified',
+    );
+    const bad = await confirm(new Request('https://0.0.0.0:3000/auth/confirm?type=signup'));
+    expect(location(bad)).toBe('https://app.onchainfest.test/signin?error=link_invalid');
   });
 });
 
@@ -496,7 +513,7 @@ describe('sign out is POST-only', () => {
 
   it('cross-origin POST is refused', async () => {
     const res = await signout.POST(
-      new Request('https://app.test/auth/signout', {
+      new Request('https://app.onchainfest.test/auth/signout', {
         method: 'POST',
         headers: { origin: 'https://evil.example' },
       }),
@@ -510,16 +527,34 @@ describe('sign out is POST-only', () => {
     h.cookies.set('unrelated', 'keep');
     h.auth.signOut.mockRejectedValue(new Error('down'));
     const res = await signout.POST(
-      new Request('https://app.test/auth/signout', {
+      new Request('https://app.onchainfest.test/auth/signout', {
         method: 'POST',
-        headers: { origin: 'https://app.test' },
+        headers: { origin: 'https://app.onchainfest.test' },
       }),
     );
     expect(res.status).toBe(303);
-    expect(location(res)).toBe('https://app.test/signin?notice=signed_out');
+    expect(location(res)).toBe('https://app.onchainfest.test/signin?notice=signed_out');
     const cleared = res.headers.getSetCookie().join('\n');
     expect(cleared).toMatch(/sb-abcdefghijklmnop-auth-token\.0=;/);
     expect(cleared).not.toMatch(/unrelated/);
+  });
+
+  it('behind a reverse proxy, a same-origin POST is accepted and redirected to the site URL', async () => {
+    const res = await signout.POST(
+      new Request('https://0.0.0.0:3000/auth/signout', {
+        method: 'POST',
+        headers: { origin: 'https://app.onchainfest.test' },
+      }),
+    );
+    expect(res.status).toBe(303);
+    expect(location(res)).toBe('https://app.onchainfest.test/signin?notice=signed_out');
+    const forged = await signout.POST(
+      new Request('https://0.0.0.0:3000/auth/signout', {
+        method: 'POST',
+        headers: { origin: 'https://0.0.0.0:3000' },
+      }),
+    );
+    expect(forged.status).toBe(403);
   });
 });
 
