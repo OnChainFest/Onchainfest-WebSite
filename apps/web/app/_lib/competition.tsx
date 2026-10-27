@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ResultContent } from './results';
 
 /** Public competition DTO shapes (subset used by the pages; mirrors @br/competition dto.ts). */
 export type EntrantDisplay =
@@ -293,6 +294,8 @@ export interface PublicEventOutcome {
       outcome: string | null;
       score: { key: string; value: string }[];
     }[];
+    /** D-P4 (absent on older API builds): the official result's marks under its ruleset family. */
+    scoring?: { family: string; content: ResultContent };
   }[];
   notes: ('TIE_UNBROKEN_LOT' | 'GROUPS_NO_CHAMPION')[];
 }

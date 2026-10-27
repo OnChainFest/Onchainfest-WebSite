@@ -847,12 +847,18 @@ export class ScoringStore {
    * ONCF-05D: the current result of each contest, re-validated under its pinned ruleset (the same
    * fail-closed read-back as classification). `admissible` at the floor; `below` = the status of a
    * current version that exists but is below the floor (e.g. PROVISIONAL when OFFICIAL is required).
-   * NOT authorization-checked (AdvancementStore only).
+   * `contents` holds the stored canonical content of each admissible version (D-P4: the public
+   * score line is formatted from it; advancement reads only `admissible`). NOT authorization-checked
+   * (AdvancementStore and EventOutcomeStore only).
    */
   async contestEvidence(
     contestIds: readonly string[],
     floorStatus: 'OFFICIAL' | 'PROVISIONAL',
-  ): Promise<{ admissible: Map<string, ContestEvidence>; below: Map<string, string> }> {
+  ): Promise<{
+    admissible: Map<string, ContestEvidence>;
+    below: Map<string, string>;
+    contents: Map<string, ResultVersionContent>;
+  }> {
     const contexts = await this.tx(async (ctx) => {
       const out = new Map<string, Awaited<ReturnType<ScoringStore['contestContext']>>>();
       for (const id of contestIds) out.set(id, await this.contestContext(ctx, id));
@@ -878,6 +884,7 @@ export class ScoringStore {
     });
     const admissible = new Map<string, ContestEvidence>();
     const below = new Map<string, string>();
+    const contents = new Map<string, ResultVersionContent>();
     for (const r of rows) {
       if (admissible.has(r.contest_id) || below.has(r.contest_id)) continue;
       if (!floor.includes(r.status)) {
@@ -899,7 +906,8 @@ export class ScoringStore {
         status: r.status,
         result: read.result,
       });
+      contents.set(r.contest_id, r.content);
     }
-    return { admissible, below };
+    return { admissible, below, contents };
   }
 }

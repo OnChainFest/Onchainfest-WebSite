@@ -465,6 +465,23 @@ export function scoreLine(
 }
 
 /**
+ * D-P4: a public official result's score line, read from the winner's side ("6–3 4–6 7–6 (7–5)")
+ * when there is a winner. Null when the family has no score line here (field events, unknown
+ * families): the caller keeps its generic rendering. Formatting only, like `scoreLine`.
+ */
+export function officialScore(
+  scoring: { family: string; content: ResultContent } | undefined,
+  sides: readonly string[],
+): { order: readonly [string, string]; line: ScoreLine } | null {
+  if (scoring === undefined || sides.length !== 2) return null;
+  const [a, b] = sides as [string, string];
+  const line = scoreLine(scoring.family, scoring.content, [a, b]);
+  if (line === null || line.winner !== 1) return line === null ? null : { order: [a, b], line };
+  const flipped = scoreLine(scoring.family, scoring.content, [b, a]);
+  return flipped === null ? null : { order: [b, a], line: flipped };
+}
+
+/**
  * Stored content → the form's field values, so a correction starts from what is recorded. Inverse
  * of `sheetFromForm` over the same marks `scoreLine` reads; the organizer changes what was wrong.
  */

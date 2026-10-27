@@ -4,7 +4,7 @@ import type {
   NormalizedContestResult,
   PublicEntrantDisplay,
 } from '@br/competition';
-import { DomainError, DomainErrorCode } from '@br/domain';
+import { DomainError, DomainErrorCode, type Mark, type ResultVersionContent } from '@br/domain';
 import {
   eventOutcome,
   podium,
@@ -166,6 +166,8 @@ export interface DerivedEventOutcome {
     readonly status: ContestStatus;
     readonly occupants: readonly (string | null)[];
     readonly official?: NormalizedContestResult;
+    /** D-P4: the stored canonical content of that official result (formatting only). */
+    readonly officialContent?: ResultVersionContent;
   }[];
 }
 
@@ -223,9 +225,52 @@ export interface PublicEventOutcomeV1 {
       readonly outcome: string | null;
       readonly score: readonly { readonly key: string; readonly value: string }[];
     }[];
+    /**
+     * D-P4: the official result's canonical marks under its ruleset family, for a sport's own score
+     * line (sets and tie-breaks, periods, holes…). Formatting input only; outcomes stay above.
+     */
+    readonly scoring?: PublicMatchScoring;
   }[];
   /** Outcome notes a reader needs (a tie no lot separated; groups without a champion). */
   readonly notes: readonly ('TIE_UNBROKEN_LOT' | 'GROUPS_NO_CHAMPION')[];
+}
+
+export interface PublicMatchScoring {
+  readonly family: string;
+  readonly content: {
+    readonly entries: readonly {
+      readonly participantId: string;
+      readonly outcome: string;
+      readonly primaryMark?: Mark;
+    }[];
+    readonly performances: readonly {
+      readonly participantId: string;
+      readonly ordinal: number;
+      readonly mark: Mark;
+    }[];
+  };
+}
+
+/** D-P4: public marks of a canonical result — participants and marks only (no athlete ids). */
+export function publicMatchScoring(
+  family: string,
+  content: ResultVersionContent,
+): PublicMatchScoring {
+  return {
+    family,
+    content: {
+      entries: content.entries.map((e) => ({
+        participantId: e.participantId,
+        outcome: e.outcome,
+        ...(e.primaryMark === undefined ? {} : { primaryMark: e.primaryMark }),
+      })),
+      performances: (content.performances ?? []).map((p) => ({
+        participantId: p.participantId,
+        ordinal: p.ordinal,
+        mark: p.mark,
+      })),
+    },
+  };
 }
 
 export interface PublicCompetitionOutcomeV1 {
@@ -396,10 +441,10 @@ export class EventOutcomeStore {
   /** Current OFFICIAL / FINAL evidence; an event without pinned scoring has none. */
   private async evidence(contestIds: readonly string[]) {
     try {
-      return (await this.scoring.contestEvidence(contestIds, 'OFFICIAL')).admissible;
+      return await this.scoring.contestEvidence(contestIds, 'OFFICIAL');
     } catch (err) {
       if (err instanceof DomainError && err.details.reason === 'SCORING_NOT_PINNED')
-        return new Map();
+        return { admissible: new Map(), below: new Map(), contents: new Map() };
       throw err;
     }
   }
@@ -469,7 +514,7 @@ export class EventOutcomeStore {
     const ids = s.contests
       .filter((c) => !SETTLED_CONTEST.has(c.status) && !UNPLAYED_CONTEST.has(c.status))
       .map((c) => c.id);
-    const evidence = await this.evidence(ids);
+    const { admissible: evidence, contents } = await this.evidence(ids);
     const classifications = await this.classifications(s);
     // Fail closed: every result read is the contest's current OFFICIAL / FINAL version of the
     // settlement (a correction or declaration in between is a concurrency conflict, never mixed).
@@ -562,6 +607,9 @@ export class EventOutcomeStore {
             status: c.status,
             occupants: c.occupants,
             ...(ev === undefined ? {} : { official: ev.result }),
+            ...(ev === undefined || !contents.has(c.id)
+              ? {}
+              : { officialContent: contents.get(c.id) as ResultVersionContent }),
           };
         })
         .sort((a, b) => a.roundSequence - b.roundSequence || a.sequence - b.sequence),
@@ -756,6 +804,9 @@ export function publicEventOutcome(
                     .map((key) => ({ key, value: e.metrics[key] as string })),
           };
         }),
+        ...(c.official === undefined || c.officialContent === undefined
+          ? {}
+          : { scoring: publicMatchScoring(c.official.family, c.officialContent) }),
       };
     }),
     notes: doc.reasons
