@@ -442,9 +442,9 @@ async function official(accountId: string, contestId: string) {
 }
 
 /**
- * Every result fact of a contest and its outbox events. `ResultCreated` is left out: a refused
- * first submission still creates the contest's stable Result identity (before WP-P0-3 too) — an
- * identity, never a version, transition or decision.
+ * Every result fact of a contest and its outbox events. `ResultCreated` is left out: the contest's
+ * stable Result identity is not a decision (since D-P3 a refused command does not create it either;
+ * `persisted` below counts it).
  */
 const facts = async (contestId: string) =>
   (
@@ -464,6 +464,53 @@ const facts = async (contestId: string) =>
       owner,
     )
   ).rows[0];
+
+/**
+ * D-P3: every persistent row a result command can leave for a contest — the Result identity and its
+ * state, drafts, versions, transitions, ledger entries of the Result stream, and every outbox event
+ * of the Result or its versions (ResultCreated included).
+ */
+const persisted = async (contestId: string) =>
+  (
+    await sql<{
+      results: number;
+      states: number;
+      drafts: number;
+      versions: number;
+      transitions: number;
+      entries: number;
+      outbox: number;
+    }>`
+      WITH r AS (SELECT id FROM results.result WHERE scope_type = 'CONTEST' AND scope_target_id = ${contestId}),
+           v AS (SELECT id FROM results.result_version WHERE result_id IN (SELECT id FROM r))
+      SELECT (SELECT count(*)::int FROM r) AS results,
+             (SELECT count(*)::int FROM results.result_state WHERE result_id IN (SELECT id FROM r)) AS states,
+             (SELECT count(*)::int FROM results.result_draft WHERE result_id IN (SELECT id FROM r)) AS drafts,
+             (SELECT count(*)::int FROM v) AS versions,
+             (SELECT count(*)::int FROM results.result_status_transition
+              WHERE result_version_id IN (SELECT id FROM v)) AS transitions,
+             (SELECT count(*)::int FROM platform.ledger_entry WHERE stream_id IN (SELECT id FROM r)) AS entries,
+             (SELECT count(*)::int FROM platform.outbox_event
+              WHERE aggregate_id IN (SELECT id FROM r UNION ALL SELECT id FROM v)) AS outbox`.execute(
+      owner,
+    )
+  ).rows[0];
+const NOTHING = {
+  results: 0,
+  states: 0,
+  drafts: 0,
+  versions: 0,
+  transitions: 0,
+  entries: 0,
+  outbox: 0,
+};
+/** Idempotency records of the given command keys (a refused command must not record one). */
+const idempotencyRecords = async (keys: readonly string[]) =>
+  (
+    await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM platform.command_idempotency
+      WHERE idempotency_key = ANY(${keys}::text[])`.execute(owner)
+  ).rows[0]?.n ?? 0;
 
 const advancementDecisions = async (eventId: string) =>
   (
@@ -1500,6 +1547,145 @@ describe('WP-P0-3 · a demotion and a result command serialize on the staff key 
           'GRANT_REVOKED',
         );
         expect(await facts(f.contestId)).toEqual(before);
+      }
+    },
+    RACE_TIMEOUT,
+  );
+});
+
+describe('D-P3 · a refused result command leaves no persistent state', () => {
+  let comp: Comp;
+  beforeAll(async () => {
+    comp = await competition();
+  }, 240_000);
+
+  it('DP3-01 a demoted scorer (no role left, or SCHEDULER) creates no result, draft, version or transition', async () => {
+    const gone = await staffer(comp, ['ADMIN']);
+    const lower = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await grant(comp, gone.accountId);
+    await grant(comp, lower.accountId);
+    await end(comp, gone.staffIds.ADMIN);
+    await end(comp, lower.staffIds.ADMIN);
+    const f = await playedFinal(comp);
+    const keys = [k(), k()];
+    await refusal(submit(gone.accountId, f.contestId, keys[0]), DomainErrorCode.FORBIDDEN);
+    await notResultStaff(submit(lower.accountId, f.contestId, keys[1]));
+    expect(await persisted(f.contestId)).toEqual(NOTHING);
+    expect(await idempotencyRecords(keys)).toBe(0);
+  }, 300_000);
+
+  it('DP3-02 / DP3-03 a stale grant (and no grant at all) persists nothing, however often it is retried', async () => {
+    const s = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await grant(comp, s.accountId);
+    await end(comp, s.staffIds.ADMIN);
+    await assign(comp, s, 'ADMIN');
+    const ungranted = await staffer(comp, ['ADMIN']);
+    const f = await playedFinal(comp);
+    const keys: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const staleKey = k();
+      const noGrantKey = k();
+      keys.push(staleKey, noGrantKey);
+      await stale(submit(s.accountId, f.contestId, staleKey));
+      await refusal(submit(ungranted.accountId, f.contestId, noGrantKey), 'AUTHORITY_DENIED');
+    }
+    // The refused principal's own retry with the same key is refused again, still writing nothing.
+    await stale(submit(s.accountId, f.contestId, keys[0] as string));
+    expect(await persisted(f.contestId)).toEqual(NOTHING);
+    expect(await idempotencyRecords(keys)).toBe(0);
+  }, 300_000);
+
+  it('DP3-04 / DP3-05 after a governed re-grant the first submission creates the identity with its version; the result goes official', async () => {
+    const s = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await grant(comp, s.accountId);
+    await end(comp, s.staffIds.ADMIN);
+    await assign(comp, s, 'ADMIN');
+    const f = await playedFinal(comp);
+    await stale(submit(s.accountId, f.contestId));
+    expect(await persisted(f.contestId)).toEqual(NOTHING);
+
+    const fresh = await grant(comp, s.accountId);
+    expect(fresh.created).toBe(true);
+    expect(await grantStatuses(comp, s.accountId)).toEqual(['REVOKED', 'ACTIVE']);
+    const key = k();
+    const sub = await submit(s.accountId, f.contestId, key);
+    expect(sub.status).toBe('SUBMITTED');
+    await transition(s.accountId, sub.resultVersionId, 'PROVISIONAL');
+    await transition(s.accountId, sub.resultVersionId, 'OFFICIAL');
+    expect(await persisted(f.contestId)).toMatchObject({
+      results: 1,
+      states: 1,
+      drafts: 1,
+      versions: 1,
+      transitions: 3,
+    });
+    expect((await facts(f.contestId))?.states).toBe('OFFICIAL');
+    expect(await idempotencyRecords([key])).toBe(1);
+    // F1 (deploy/staging/sql/f1-foreign-result-grants.sql) for this competition: every ACTIVE
+    // result grant is bound to eligibility rows.
+    const active = (await governance.listCompetitionResultAuthority(comp.competitionId)).filter(
+      (g) => g.status === 'ACTIVE',
+    );
+    expect(active.length).toBeGreaterThan(0);
+    for (const g of active) expect((await bindingsOf(g.grantId)).length).toBeGreaterThan(0);
+  }, 300_000);
+
+  it('DP3-06 refused corrections leave an existing official result and its rows exactly as they were', async () => {
+    const s = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+    await grant(comp, s.accountId);
+    const f = await playedFinal(comp);
+    const rv = await official(s.accountId, f.contestId);
+    const before = await persisted(f.contestId);
+    const outcome = JSON.stringify(await outcomes.publicEvent(f.eventId, new Map()));
+    await end(comp, s.staffIds.ADMIN);
+    await notResultStaff(correct(s.accountId, f.contestId, rv));
+    await notResultStaff(correct(s.accountId, f.contestId, rv));
+    await assign(comp, s, 'ADMIN');
+    await stale(correct(s.accountId, f.contestId, rv));
+    expect(await persisted(f.contestId)).toEqual(before);
+    expect((await facts(f.contestId))?.states).toBe('OFFICIAL');
+    expect(JSON.stringify(await outcomes.publicEvent(f.eventId, new Map()))).toBe(outcome);
+    await grant(comp, s.accountId);
+    expect((await correct(s.accountId, f.contestId, rv)).status).toBe('PROVISIONAL');
+    expect(await persisted(f.contestId)).toMatchObject({
+      results: 1,
+      drafts: (before?.drafts ?? 0) + 1,
+      versions: 2,
+    });
+  }, 300_000);
+
+  it(
+    `DP3-07 a demotion racing a first submission, both orders (${RUNS} runs each): refused leaves nothing, committed is complete`,
+    async () => {
+      for (let run = 0; run < RUNS; run++) {
+        for (const demotionFirst of [true, false]) {
+          const s = await staffer(comp, ['ADMIN', 'SCHEDULER']);
+          await grant(comp, s.accountId);
+          const f = await playedFinal(comp);
+          const key = `competition-staff:${comp.competitionId}:${s.personId}`;
+          const demote = () => end(comp, s.staffIds.ADMIN);
+          const first = () => submit(s.accountId, f.contestId);
+          const [a, b] = demotionFirst
+            ? await ordered(key, demote, first)
+            : await ordered(key, first, demote);
+          const [dem, sub] = demotionFirst ? [a, b] : [b, a];
+          const label = `run ${run} demotionFirst=${demotionFirst}`;
+          expect(reasonOf(dem), label).toBe('fulfilled');
+          if (demotionFirst) {
+            expect(reasonOf(sub), label).toBe('NOT_RESULT_STAFF');
+            expect(await persisted(f.contestId), label).toEqual(NOTHING);
+          } else {
+            expect(reasonOf(sub), label).toBe('fulfilled');
+            expect(await persisted(f.contestId), label).toMatchObject({
+              results: 1,
+              drafts: 1,
+              versions: 1,
+              transitions: 1,
+            });
+            await notResultStaff(submit(s.accountId, f.contestId, k(), false));
+            expect(await persisted(f.contestId), label).toMatchObject({ drafts: 1, versions: 1 });
+          }
+        }
       }
     },
     RACE_TIMEOUT,

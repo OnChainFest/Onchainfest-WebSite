@@ -134,24 +134,6 @@ export class ContestResultService {
     return v;
   }
 
-  private async resultId(contestId: string, actorAccountId: string): Promise<Uuid> {
-    const existing = await inTransaction(this.db, ModuleRole.results, async (ctx) => {
-      const { rows } = await sql<{ id: string }>`
-        SELECT id FROM results.result WHERE scope_type = 'CONTEST' AND scope_target_id = ${contestId}`.execute(
-        ctx.trx,
-      );
-      return rows[0]?.id;
-    });
-    if (existing !== undefined) return existing as Uuid;
-    // The stable Result identity (idempotent per contest): no version, no decision, no grant.
-    return (
-      await createCompetitionResultLedger(this.db, { actorAccountId }).createResult({
-        scopeType: 'CONTEST',
-        scopeTargetId: contestId as Uuid,
-      })
-    ).id;
-  }
-
   /** Validates a score sheet and submits it as a new version (T2, SUBMIT_RESULT). */
   async submit(input: {
     actorAccountId: string;
@@ -163,15 +145,15 @@ export class ContestResultService {
     const v = await this.validated(input.actorAccountId, input.contestId, input.sheet);
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
-    const resultId = await this.resultId(input.contestId, input.actorAccountId);
-    const { draftId } = await a.ledger.saveDraft({
-      resultId,
+    // D-P3: the contest's Result identity, the draft and T2 commit together or not at all, so a
+    // refused caller (no current OWNER / ADMIN role, no or a stale grant, closed or unplayed
+    // contest) leaves nothing behind.
+    const out = await a.ledger.submitContent({
+      scopeType: 'CONTEST',
+      scopeTargetId: input.contestId as Uuid,
       authorPrincipalId: a.principalId,
       disciplineVersionRef: a.disciplineRef,
       content: v.content,
-    });
-    const out = await a.ledger.submitDraft({
-      draftId,
       actorPrincipalId: a.principalId,
       scope,
       idempotencyKey: input.idempotencyKey,
@@ -230,15 +212,13 @@ export class ContestResultService {
     const v = await this.validated(input.actorAccountId, input.contestId, input.sheet);
     const a = await this.actor(input.actorAccountId, input.contestId);
     const scope = await this.scope(input.contestId, input.recognitionLevel);
-    const resultId = await this.resultId(input.contestId, input.actorAccountId);
-    const { draftId } = await a.ledger.saveDraft({
-      resultId,
+    // D-P3: as for `submit`, nothing persists unless the correction itself commits.
+    const out = await a.ledger.correctContent({
+      scopeType: 'CONTEST',
+      scopeTargetId: input.contestId as Uuid,
       authorPrincipalId: a.principalId,
       disciplineVersionRef: a.disciplineRef,
       content: v.content,
-    });
-    const out = await a.ledger.correct({
-      draftId,
       supersedesVersionId: input.supersedesVersionId as Uuid,
       actorPrincipalId: a.principalId,
       scope,
