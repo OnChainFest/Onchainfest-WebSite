@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { appContext } from '../../_lib/app-context';
 import { validateContinuationRoute } from '../../_lib/auth/continuation';
 import { parseOnboardingHint } from '../../_lib/auth/onboarding';
-import { ORGANIZATION_TYPES } from '../../_lib/onboarding-input';
+import { ORGANIZATION_TYPES, sportOptions } from '../../_lib/onboarding-input';
+import { tournamentCatalog } from '../../_lib/tournaments';
 import { one, type SearchParams } from '../../_lib/search-params';
 import { Flash } from '../../_product/flash';
 import { SetupSteps } from '../../_product/setup-steps';
@@ -27,6 +28,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
   // Keys are fixed per rendered form, so a retried submission never creates duplicates.
   const personKey = `oc-person-${randomUUID()}`;
   const profileKey = `oc-profile-${randomUUID()}`;
+  // D-P2: the athlete picks a catalog sport (its id is what the profile stores).
+  const catalog = path === 'athlete' ? await tournamentCatalog() : undefined;
+  const sports = catalog?.kind === 'ok' ? sportOptions(catalog.data) : [];
 
   return (
     <>
@@ -80,7 +84,14 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
             </label>
             <label className="field">
               <span>Primary sport · optional</span>
-              <input name="sport" maxLength={40} placeholder="Padel, tennis, running…" />
+              <select name="sport" defaultValue="">
+                <option value="">No primary sport</option>
+                {sports.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="field">
               <span>Country · optional</span>

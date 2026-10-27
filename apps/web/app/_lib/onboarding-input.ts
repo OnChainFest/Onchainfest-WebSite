@@ -22,6 +22,29 @@ export function isOrganizationType(value: string): value is OrganizationTypeCode
   return ORGANIZATION_TYPES.some(([code]) => code === value);
 }
 
+/** D-P2: a primary-sport choice — the catalog's sport id (what the API stores) and its name. */
+export interface SportOption {
+  readonly code: string;
+  readonly name: string;
+}
+
+/** Every sport of the published catalog, once each, by name. */
+export function sportOptions(catalog: {
+  readonly disciplineVersions: readonly { readonly sport: { code: string; name: string } }[];
+}): SportOption[] {
+  const out = new Map<string, SportOption>();
+  for (const d of catalog.disciplineVersions)
+    out.set(d.sport.code, { code: d.sport.code, name: d.sport.name });
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The posted sport: '' (none chosen) or one of `options`' ids; null for anything else. */
+export function sportChoice(value: string, options: readonly SportOption[]): string | null {
+  const v = value.trim();
+  if (v === '') return '';
+  return options.some((o) => o.code === v) ? v : null;
+}
+
 /** A readable profile address from a display name, with a random suffix to avoid collisions. */
 export function slugFromName(name: string): string {
   const base = name

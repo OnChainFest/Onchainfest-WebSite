@@ -94,6 +94,15 @@ function me(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** D-P2: the published catalog's sports (the fields the onboarding sport choice reads). */
+const CATALOG = {
+  disciplineVersions: [
+    { sport: { code: 'padel', name: 'Padel' } },
+    { sport: { code: 'tennis', name: 'Tennis' } },
+  ],
+  formatVersions: [],
+};
+
 let seq = 0;
 beforeEach(() => {
   seq += 1;
@@ -565,13 +574,14 @@ describe('onboarding persists through the real platform API', () => {
     signedIn();
     apiRoutes['POST /v1/persons'] = () => json(201, { personId: 'p-new' });
     apiRoutes['POST /v1/athletes'] = () => json(201, { athleteId: 'a-new', slug: 'ana-runner' });
+    apiRoutes['GET /v1/catalog'] = () => json(200, CATALOG);
     const to = await redirectOf(() =>
       createAthleteProfileAction(
         form({
           displayName: 'Ana Runner',
           slug: 'Ana-Runner',
           country: 'cr',
-          sport: 'Padel',
+          sport: 'padel',
           personKey: 'oc-person-key-1',
           profileKey: 'oc-profile-key-1',
         }),
@@ -586,7 +596,7 @@ describe('onboarding persists through the real platform API', () => {
         body: {
           personId: 'p-new',
           slug: 'ana-runner',
-          profile: { displayName: 'Ana Runner', homeCountry: 'CR', preferredSports: ['Padel'] },
+          profile: { displayName: 'Ana Runner', homeCountry: 'CR', preferredSports: ['padel'] },
         },
       }),
     ]);
@@ -596,6 +606,36 @@ describe('onboarding persists through the real platform API', () => {
     ]);
     expect(writes.every((c) => c.headers.authorization === 'Bearer access-token-1')).toBe(true);
     expect(h.auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('D-P2: a sport that is not a catalog id is refused with its own message and nothing is written', async () => {
+    signedIn();
+    apiRoutes['GET /v1/catalog'] = () => json(200, CATALOG);
+    for (const sport of ['Tennis', 'running', '<script>']) {
+      apiCalls = [];
+      const to = await redirectOf(() =>
+        createAthleteProfileAction(
+          form({ displayName: 'Ana Runner', sport, personKey: 'oc-p-12345678' }),
+        ),
+      );
+      expect(to).toBe('/app/onboarding?path=athlete&error=sport_invalid');
+      expect(apiCalls.filter((c) => c.method === 'POST')).toEqual([]);
+    }
+  });
+
+  it('D-P2: no sport chosen stores none (and needs no catalog read)', async () => {
+    signedIn();
+    apiRoutes['POST /v1/persons'] = () => json(201, { personId: 'p-new' });
+    apiRoutes['POST /v1/athletes'] = () => json(201, { athleteId: 'a-new', slug: 'ana-runner' });
+    const to = await redirectOf(() =>
+      createAthleteProfileAction(form({ displayName: 'Ana Runner', sport: '' })),
+    );
+    expect(to).toBe('/app?notice=athlete_created');
+    const athlete = apiCalls.find((c) => c.path === '/v1/athletes');
+    expect((athlete?.body as { profile: Record<string, unknown> }).profile).not.toHaveProperty(
+      'preferredSports',
+    );
+    expect(apiCalls.some((c) => c.path === '/v1/catalog')).toBe(false);
   });
 
   it('organization: reuses an existing person; slug conflicts are reported', async () => {
