@@ -1,0 +1,22 @@
+# STG-01A · Staging edge. Caddy obtains and renews the Let's Encrypt certificate for
+# STAGING_DOMAIN automatically (ports 80 and 443 must reach the VM, and the DNS record must point
+# at it). HTTP redirects to HTTPS. Only the web app is routed: the API, worker and database are
+# never reachable from the internet. Access logs go to stdout (`docker compose logs caddy`); Caddy
+# redacts Cookie and Authorization headers in them.
+{
+	email {$ACME_EMAIL}
+}
+
+{$STAGING_DOMAIN} {
+	encode zstd gzip
+	header {
+		# Staging must never be indexed.
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	reverse_proxy web:3000
+	log {
+		output stdout
+		format json
+	}
+}

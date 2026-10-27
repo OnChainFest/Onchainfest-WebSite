@@ -1,0 +1,258 @@
+name: staging-infra
+
+# STG-01A · Qualifies the isolated staging stack (deploy/staging) without deploying anything.
+# It renders a throwaway environment with per-run random credentials and placeholder public
+# values, checks the preflight and the Compose policy (private database, single public entry,
+# no development or production markers, no start-up migrations), builds the api, worker and web
+# images, then runs the whole stack on the runner: bootstrap, migrations, readiness, TLS edge,
+# backup and restore, and the F1/F3 read-only preflights. It uses no repository secret, pushes no
+# image and contacts no hosted environment (docs/operations/STG-01A-STAGING-RUNBOOK.md).
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/staging/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'apps/**'
+      - 'packages/**'
+      - 'db/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/staging-infra.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/staging/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'apps/**'
+      - 'packages/**'
+      - 'db/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/staging-infra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-infra-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE: docker compose -f deploy/staging/compose.yml --env-file deploy/staging/.env
+
+jobs:
+  qualify:
+    name: staging stack qualification
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render a throwaway CI environment (random per run, never a real value)
+        run: |
+          set -euo pipefail
+          f=deploy/staging/.env
+          cp deploy/staging/.env.example "$f"
+          chmod 600 "$f"
+          set_value() { sed -i -E "s|^$1=.*|$1=$2|" "$f"; }
+          for name in $(sed -nE 's/^([A-Z0-9_]+_PASSWORD)=.*/\1/p' "$f"); do
+            value=$(openssl rand -hex 32)
+            echo "::add-mask::$value"
+            set_value "$name" "$value"
+          done
+          set_value STAGING_IMAGE_TAG "${GITHUB_SHA::12}"
+          set_value STAGING_DOMAIN localhost
+          set_value ACME_EMAIL ci@example.com
+          set_value STAGING_SUPABASE_URL https://ci-placeholder.supabase.co
+          set_value STAGING_SUPABASE_ANON_KEY sb_publishable_ci_placeholder
+          sed -E 's/=.+$/=<set>/' "$f" | grep -vE '^(#|$)'
+
+      - name: Preflight accepts the CI environment
+        env:
+          STG_PREFLIGHT_ALLOW_LOCALHOST: '1'
+        run: deploy/staging/preflight.sh deploy/staging/.env
+
+      - name: Preflight refuses unsafe environments
+        env:
+          STG_PREFLIGHT_ALLOW_LOCALHOST: '1'
+        run: |
+          set -uo pipefail
+          good=deploy/staging/.env
+          bad=$(mktemp)
+          b64() { printf '%s' "$1" | base64 -w0 | tr '+/' '-_' | tr -d '='; }
+          service_jwt="$(b64 '{"alg":"HS256"}').$(b64 '{"role":"service_role"}').sig"
+          refuse() {
+            local label=$1
+            chmod 600 "$bad"
+            if deploy/staging/preflight.sh "$bad" >/dev/null 2>&1; then
+              echo "::error::preflight accepted: $label"; exit 1
+            fi
+            echo "refused as expected: $label"
+          }
+          variant() { cp "$good" "$bad"; sed -i -E "$1" "$bad"; refuse "$2"; }
+          cp deploy/staging/.env.example "$bad"; refuse 'the unfilled template'
+          cp "$good" "$bad"; echo 'BR_DEV_AUTH=1' >>"$bad"; refuse 'development auth'
+          cp "$good" "$bad"; echo 'STRIPE_SECRET_KEY=x' >>"$bad"; refuse 'a payment credential'
+          cp "$good" "$bad"; echo 'BR_SIGNATURE_AUDIENCE=bragging-rights:prod' >>"$bad"; refuse 'an unknown variable'
+          variant 's|^STAGING_DOMAIN=.*|STAGING_DOMAIN=www.onchainfest.xyz|' 'the marketing domain'
+          variant 's|^BR_API_PASSWORD=.*|BR_API_PASSWORD=short|' 'a short password'
+          variant 's|^BR_API_PASSWORD=.*|BR_API_PASSWORD=br_api_padding_padding_dev_only|' 'a development password'
+          pw=$(sed -nE 's/^BR_OWNER_PASSWORD=(.*)/\1/p' "$good")
+          variant "s|^BR_API_PASSWORD=.*|BR_API_PASSWORD=$pw|" 'a reused password'
+          variant 's|^STAGING_SUPABASE_ANON_KEY=.*|STAGING_SUPABASE_ANON_KEY=sb_secret_x|' 'a secret key'
+          variant "s|^STAGING_SUPABASE_ANON_KEY=.*|STAGING_SUPABASE_ANON_KEY=$service_jwt|" 'a service-role JWT'
+          variant 's|^STAGING_IMAGE_TAG=.*|STAGING_IMAGE_TAG=latest|' 'a floating image tag'
+          variant 's|^STAGING_SUPABASE_URL=.*|STAGING_SUPABASE_URL=http://example.supabase.co|' 'a non-https auth URL'
+          cp "$good" "$bad"; chmod 600 "$bad"; chmod 644 "$bad"
+          if deploy/staging/preflight.sh "$bad" >/dev/null 2>&1; then echo '::error::preflight accepted mode 644'; exit 1; fi
+          echo 'refused as expected: a world-readable file'
+          rm -f "$bad"
+
+      - name: Compose configuration is valid and refuses a missing secret
+        run: |
+          set -euo pipefail
+          $COMPOSE config --quiet
+          missing=$(mktemp)
+          grep -v '^BR_API_PASSWORD=' deploy/staging/.env >"$missing"
+          if docker compose -f deploy/staging/compose.yml --env-file "$missing" config --quiet 2>/dev/null; then
+            echo '::error::compose accepted an environment without BR_API_PASSWORD'; exit 1
+          fi
+          rm -f "$missing"
+
+      - name: Compose policy (isolation, single public entry, no start-up operations)
+        run: |
+          set -euo pipefail
+          # The `ops` profile is enabled here only so its definition is checked as well.
+          cfg=$($COMPOSE --profile ops config --format json)
+          check() {
+            if [ "$(jq -r "$1" <<<"$cfg")" != true ]; then echo "::error::policy failed: $2"; exit 1; fi
+            echo "ok: $2"
+          }
+          check '[.services | to_entries[] | select(.value.ports != null) | .key] == ["caddy"]' 'only caddy publishes ports'
+          check '.services.postgres.networks | keys == ["data"]' 'postgres is only on the data network'
+          check '.services.worker.networks | keys == ["data"]' 'worker is only on the data network'
+          check '.services.ops.networks | keys == ["data"]' 'ops is only on the data network'
+          check '.services.caddy.networks | keys == ["edge"]' 'caddy reaches only the web network'
+          check '.networks.data.internal == true and .networks.app.internal == true' 'data and app networks have no egress'
+          check '.services.ops.profiles == ["ops"]' 'ops runs only when invoked explicitly'
+          check '[.services | to_entries[] | select(.key != "ops" and .key != "postgres" and .key != "caddy") | .value.command // [] | join(" ") | test("migrate|bootstrap|authority|provision")] | any | not' 'no service migrates, bootstraps or grants on start'
+          check '[.services[] | .environment // {} | keys[] | test("^BR_DEV_|_DEV_KEY$|_DEV_DIR$|STRIPE|SERVICE_ROLE")] | any | not' 'no development, payment or service-role variable'
+          check '[.services.api, .services.worker, .services.web, .services.ops] | all(.environment.NODE_ENV == "production")' 'every application process runs in production mode'
+          check '.services.api.environment.BR_SIGNATURE_AUDIENCE == "bragging-rights:staging" and .services.api.environment.BR_AUTH_PROVIDER == "supabase"' 'staging audience and Supabase auth'
+          check '[.services[] | .environment // {} | to_entries[] | select(.key | endswith("_DATABASE_URL")) | .value | test("@postgres:5432/")] | all' 'every database URL targets the in-stack postgres'
+          check '[.services[] | .image] | all(test(":[0-9a-f]{7,40}$|:[0-9]+\\.[0-9]+(\\.[0-9]+)?-alpine$"))' 'every image tag is pinned'
+          check '[.services.api, .services.worker, .services.web, .services.caddy, .services.ops] | all(.cap_drop == ["ALL"])' 'application containers drop all capabilities'
+          docker compose -f deploy/staging/compose.yml --env-file deploy/staging/.env config --services | sort | tr '\n' ' ' | grep -qx 'api caddy postgres web worker ' \
+            || { echo '::error::default services must be exactly api caddy postgres web worker'; exit 1; }
+
+      - name: No committed secret and no deployment path
+        run: |
+          set -euo pipefail
+          node tooling/check-no-key-material.mjs
+          # The template holds placeholders or empty values only.
+          if grep -vE '^(#|$)' deploy/staging/.env.example | grep -vE '^[A-Z0-9_]+=(__REPLACE__)?$'; then
+            echo '::error::deploy/staging/.env.example contains a value'; exit 1
+          fi
+          if git ls-files deploy/staging | grep -E '(^|/)\.env$|backups/'; then
+            echo '::error::a filled environment or a dump is tracked'; exit 1
+          fi
+          # Nothing in the repository deploys this stack: no workflow pushes images, opens a remote
+          # shell or reads a secret for it.
+          for wf in .github/workflows/*.yml; do
+            if grep -q 'deploy/staging' "$wf" && grep -nE 'secrets[.]|docker[ ]push|docker[ ]login|ssh[ ]|scp[ ]' "$wf"; then
+              echo "::error::$wf could deploy the staging stack"; exit 1
+            fi
+          done
+          grep -q '"deploymentEnabled": false' vercel.json
+
+      - name: Build the api, worker and web images
+        run: $COMPOSE build
+
+      - name: Images run as a non-root user
+        run: |
+          set -euo pipefail
+          tag=${GITHUB_SHA::12}
+          for t in api worker web; do
+            user=$(docker image inspect -f '{{.Config.User}}' "onchainfest-staging-$t:$tag")
+            echo "$t: user=$user"
+            [ "$user" = node ] || { echo "::error::$t image runs as '$user'"; exit 1; }
+          done
+          docker image ls --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -E 'onchainfest-staging|REPOSITORY' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 'Smoke: database, bootstrap and migrations (ops, explicit)'
+        run: |
+          set -euo pipefail
+          $COMPOSE up -d --wait postgres
+          $COMPOSE run --rm ops node --import tsx packages/persistence/src/cli/bootstrap.ts
+          $COMPOSE run --rm ops node --import tsx packages/persistence/src/cli/migrate.ts
+          $COMPOSE run --rm --no-deps worker node --import tsx apps/worker/src/main.ts --check
+
+      - name: 'Smoke: start the stack'
+        run: $COMPOSE up -d --wait --wait-timeout 300
+
+      - name: 'Smoke: edge, isolation and readiness'
+        run: |
+          set -euo pipefail
+          page=$(curl -sS --fail -k --resolve localhost:443:127.0.0.1 -D headers.txt https://localhost/)
+          grep -qi '^x-robots-tag: noindex' headers.txt || { echo '::error::missing X-Robots-Tag'; exit 1; }
+          grep -q 'API: ok' <<<"$page" || { echo '::error::web did not reach the API'; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ -H 'Host: localhost')
+          case "$code" in 30[0-9]) echo "http redirects ($code)" ;; *) echo "::error::http answered $code"; exit 1 ;; esac
+          for port in 5432 8080 3000; do
+            if curl -s --max-time 3 "http://127.0.0.1:$port/" >/dev/null 2>&1 || (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+              echo "::error::port $port is reachable from the host"; exit 1
+            fi
+          done
+          echo 'database, API and web ports are not reachable from the host'
+          probe() { $COMPOSE exec -T api node -e "fetch('http://127.0.0.1:8080$1').then(r=>{console.log(r.status);process.exit(0)},()=>process.exit(1))"; }
+          [ "$(probe /ready)" = 200 ] || { echo '::error::/ready is not 200'; exit 1; }
+          [ "$(probe /v1/me)" = 401 ] || { echo '::error::/v1/me without a token is not 401'; exit 1; }
+          if $COMPOSE exec -T worker node -e "fetch('https://example.com',{signal:AbortSignal.timeout(10000)}).then(()=>process.exit(0),()=>process.exit(1))"; then
+            echo '::error::the worker has internet egress'; exit 1
+          fi
+          echo 'worker has no egress'
+          sleep 10
+          restarts=$(docker inspect -f '{{.Name}} {{.RestartCount}}' $($COMPOSE ps -q))
+          echo "$restarts"
+          if awk '$2 != 0 { bad = 1 } END { exit !bad }' <<<"$restarts"; then echo '::error::a service restarted'; exit 1; fi
+
+      - name: 'Smoke: F1 and F3 read-only preflights'
+        run: |
+          set -euo pipefail
+          psql() { $COMPOSE exec -T postgres psql -U br_admin -d onchainfest -v ON_ERROR_STOP=1 -X "$@"; }
+          psql < deploy/staging/sql/f1-foreign-result-grants.sql | tee f1.txt
+          [ "$(grep -m1 -oE '\([0-9]+ rows?\)' f1.txt)" = '(0 rows)' ] || { echo '::error::F1 found unbound result grants'; exit 1; }
+          psql < deploy/staging/sql/f3-timeouts.sql
+
+      - name: 'Smoke: backup and restore'
+        run: |
+          set -euo pipefail
+          $COMPOSE exec -T postgres pg_dump -U br_admin -Fc onchainfest >staging.dump
+          $COMPOSE run --rm -e BR_DATABASE_NAME=onchainfest_restore_check ops \
+            node --import tsx packages/persistence/src/cli/bootstrap.ts
+          $COMPOSE exec -T postgres pg_restore -U br_admin -d onchainfest_restore_check --exit-on-error <staging.dump
+          count() { $COMPOSE exec -T postgres psql -U br_admin -d "$1" -tAX -c 'SELECT count(*) FROM br_migrations.applied'; }
+          migrations=$(ls db/migrations/*.sql | wc -l)
+          echo "migrations: files=$migrations live=$(count onchainfest) restored=$(count onchainfest_restore_check)"
+          [ "$(count onchainfest)" = "$migrations" ] && [ "$(count onchainfest_restore_check)" = "$migrations" ]
+
+      - name: Resource usage at idle
+        run: |
+          {
+            echo '### Staging stack at idle (GitHub runner)'
+            echo '```'
+            docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Service logs on failure
+        if: failure()
+        run: $COMPOSE --profile ops logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE --profile ops down -v --remove-orphans || true
