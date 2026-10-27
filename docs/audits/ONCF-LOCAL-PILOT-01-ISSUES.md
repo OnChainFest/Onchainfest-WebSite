@@ -7,7 +7,7 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
 | ID | Severity | Area | Summary | Workaround used in the pilot |
 | --- | --- | --- | --- | --- |
 | D-P2 | S3 | Web onboarding / validation | Athlete onboarding "Primary sport" suggests free text ("Padel, tennis, running…") but the API accepts only lowercase sport ids; `Tennis` is rejected and the user sees only the generic "Check the highlighted details". | Enter `tennis` |
-| D-P3 | P3 | Result integrity hygiene | A result submission refused by the result-authority gate still persists the per-contest result identity and a result draft. | None needed |
+| D-P3 | P3 | Result integrity hygiene | A result submission refused by the result-authority gate still persists the per-contest result identity and a result draft. **Fixed** in `fix/oncf-dp3-authorize-before-draft` (see below). | None needed |
 | D-P4 | S4 | Public results presentation | Public official results show raw metrics (`gamesWon 12, setsWon 2, …`) instead of the tennis score (`6-4 6-3`). | None |
 | D-P5 | S4 | Auth operations | The sign-up limiter (5 per IP per hour, in memory per web instance) blocks a group signing up from one address (one office, one event desk, the local pilot). | Restart of the pilot `web` container |
 
@@ -34,6 +34,10 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
 - **Impact:** low. Drafts are not visible or attestable and the result identity is idempotent per
   contest, but a staff member without valid authority can cause repeated writes. A caller without a
   staff role is refused earlier (403 `FORBIDDEN`) and writes nothing.
+- **Fix (ONCF-DP3-01):** the contest result path now writes the Result identity (found or created),
+  the draft and the submission or correction in ONE `br_results` transaction
+  (`ResultLedger.submitContent` / `correctContent`). Every existing gate still runs inside it, so any
+  refusal rolls the identity and the draft back. Regression: `oncf-p0-3.int.test.ts` DP3-01…07.
 
 ## D-P4 · Score rendered as metrics on public pages
 
