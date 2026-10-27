@@ -1,0 +1,6 @@
+# ONCF-LOCAL-PILOT-01 · state, credentials and evidence live outside the repository
+# (~/.local/state/oncf-local-pilot-01); nothing generated may be committed here.
+*.env
+.env*
+tls/
+evidence/
