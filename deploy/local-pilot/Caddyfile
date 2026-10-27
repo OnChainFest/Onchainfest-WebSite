@@ -1,0 +1,73 @@
+# ONCF-LOCAL-PILOT-01 · Loopback-only edge (published on 127.0.0.1:8443, see compose.yml).
+#
+# Two sites over TLS from the throwaway pilot CA (init-state.sh); no ACME, no public DNS. Browsers
+# resolve *.localhost to the loopback address; containers reach this Caddy through network aliases.
+#   - https://oncf-pilot.localhost:8443       → web:3000 (as in staging)
+#   - https://auth.oncf-pilot.localhost:8443  → local Supabase Auth under /auth/v1 (GoTrue). Its admin
+#     API is not routed, so accounts exist only through sign-up plus email confirmation.
+#
+# The redacted_log_format snippet is a verbatim copy of deploy/staging/Caddyfile (STG-01B);
+# pilot.sh check refuses to run if the two copies differ.
+(redacted_log_format) {
+	format filter {
+		request>uri query {
+			replace token_hash REDACTED
+			replace code REDACTED
+			replace token REDACTED
+			replace access_token REDACTED
+			replace refresh_token REDACTED
+			# The sign-in continuation embeds the original path and query (an invitation token).
+			replace next REDACTED
+		}
+		request>headers>Referer delete
+		request>headers>Cookie delete
+		request>headers>Authorization delete
+		request>headers>Proxy-Authorization delete
+		resp_headers>Set-Cookie delete
+		# Redirects to sign-in carry the same continuation.
+		resp_headers>Location delete
+		wrap json
+	}
+}
+
+{
+	https_port 8443
+	auto_https off
+	log default {
+		output stderr
+		import redacted_log_format
+	}
+}
+
+https://{$PILOT_SITE_HOST}:8443 {
+	tls /etc/caddy/tls/site.crt /etc/caddy/tls/site.key
+	encode zstd gzip
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	reverse_proxy web:3000
+	log {
+		output stdout
+		import redacted_log_format
+	}
+}
+
+https://{$PILOT_AUTH_HOST}:8443 {
+	tls /etc/caddy/tls/site.crt /etc/caddy/tls/site.key
+	header -Server
+	@admin path /auth/v1/admin /auth/v1/admin/*
+	handle @admin {
+		respond 403
+	}
+	handle_path /auth/v1/* {
+		reverse_proxy auth:9999
+	}
+	handle {
+		respond 404
+	}
+	log {
+		output stdout
+		import redacted_log_format
+	}
+}
