@@ -3,6 +3,7 @@ import { validateContinuationRoute } from './continuation';
 import { authErrorCode, type AuthErrorCode } from './messages';
 import { parseOnboardingHint } from './onboarding';
 import { postAuthDestination } from './post-auth';
+import { publicOrigin } from './request-meta';
 
 /**
  * Shared landing logic for email links (/auth/callback with a PKCE code, /auth/confirm with a
@@ -17,7 +18,7 @@ export function linkFlow(value: string | null): LinkFlow {
 
 export function failureRedirect(request: Request, flow: LinkFlow, code: AuthErrorCode) {
   const path = flow === 'recovery' ? '/forgot-password' : '/signin';
-  return NextResponse.redirect(new URL(`${path}?error=${code}`, request.url), 303);
+  return NextResponse.redirect(new URL(`${path}?error=${code}`, publicOrigin(request)), 303);
 }
 
 /** Supabase reports link failures as query parameters on the redirect target. */
@@ -36,14 +37,14 @@ export async function successRedirect(
   accessToken: string,
 ) {
   if (flow === 'recovery') {
-    return NextResponse.redirect(new URL('/reset-password', request.url), 303);
+    return NextResponse.redirect(new URL('/reset-password', publicOrigin(request)), 303);
   }
   const destination = await postAuthDestination(accessToken, {
     requested: validateContinuationRoute(url.searchParams.get('next')),
     hint: parseOnboardingHint(url.searchParams.get('path')),
     ...(flow === 'signup' ? { notice: 'email_verified' } : {}),
   });
-  return NextResponse.redirect(new URL(destination, request.url), 303);
+  return NextResponse.redirect(new URL(destination, publicOrigin(request)), 303);
 }
 
 export function linkErrorCode(err: unknown): AuthErrorCode {
