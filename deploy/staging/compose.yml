@@ -1,0 +1,218 @@
+# STG-01A · Isolated single-VM staging for the OnChainFest tournament platform.
+#
+# Procedure, prerequisites, backups and the F1/F3 preflights:
+# docs/operations/STG-01A-STAGING-RUNBOOK.md. Always run through deploy/staging/preflight.sh first.
+#
+# - Every secret comes from deploy/staging/.env (git-ignored, mode 0600; template .env.example).
+# - Database URLs are composed here and always point at the in-stack `postgres` service, so no
+#   service can be pointed at another environment's database. The signature audience is fixed to
+#   staging.
+# - Only `caddy` publishes ports. `postgres` sits on the internal `data` network only; the API is
+#   reachable from the web app (internal `app` network) and from operators, never from browsers.
+# - Nothing migrates, bootstraps or issues grants on start. The `ops` service (profile `ops`) runs
+#   operator commands only when invoked explicitly with `docker compose run --rm ops …`.
+name: onchainfest-staging
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: br_admin
+      POSTGRES_PASSWORD: ${BR_ADMIN_PASSWORD:?set in deploy/staging/.env}
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql
+    networks:
+      - data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U br_admin -d postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 1g
+    logging: *logging
+
+  api:
+    image: onchainfest-staging-api:${STAGING_IMAGE_TAG:?set in deploy/staging/.env}
+    build:
+      context: ../..
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BR_API_DATABASE_URL: postgres://br_api:${BR_API_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_VAULT_DATABASE_URL: postgres://br_api_vault:${BR_VAULT_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_AUTH_PROVIDER: supabase
+      BR_SUPABASE_URL: ${STAGING_SUPABASE_URL:?set in deploy/staging/.env}
+      BR_SIGNATURE_AUDIENCE: bragging-rights:staging
+    networks:
+      - data
+      - app
+      - api-egress
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Readiness, not liveness: healthy only once the database is reachable and every migration is
+    # applied, so the web app and worker never start against a pending schema.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    logging: *logging
+
+  worker:
+    image: onchainfest-staging-worker:${STAGING_IMAGE_TAG:?set in deploy/staging/.env}
+    build:
+      context: ../..
+      target: worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BR_WORKER_DATABASE_URL: postgres://br_worker_app:${BR_WORKER_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_ACHIEVEMENT_WORKER_DATABASE_URL: postgres://br_achievement_worker_app:${BR_ACHIEVEMENT_WORKER_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_RECORD_WORKER_DATABASE_URL: postgres://br_record_worker_app:${BR_RECORD_WORKER_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_RANKING_WORKER_DATABASE_URL: postgres://br_ranking_worker_app:${BR_RANKING_WORKER_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_WORKER_REQUIRED_CONSUMERS: achievements.derive,records.evaluate,rankings.react
+    networks:
+      - data
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    logging: *logging
+
+  web:
+    image: onchainfest-staging-web:${STAGING_IMAGE_TAG:?set in deploy/staging/.env}
+    build:
+      context: ../..
+      target: web
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${STAGING_SUPABASE_URL:?set in deploy/staging/.env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${STAGING_SUPABASE_ANON_KEY:?set in deploy/staging/.env}
+        NEXT_PUBLIC_SITE_URL: https://${STAGING_DOMAIN:?set in deploy/staging/.env}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BR_API_URL: http://api:8080
+      NEXT_PUBLIC_SUPABASE_URL: ${STAGING_SUPABASE_URL:?set in deploy/staging/.env}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${STAGING_SUPABASE_ANON_KEY:?set in deploy/staging/.env}
+      NEXT_PUBLIC_SITE_URL: https://${STAGING_DOMAIN:?set in deploy/staging/.env}
+    networks:
+      - edge
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    logging: *logging
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?set in deploy/staging/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set in deploy/staging/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    depends_on:
+      web:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 128m
+    logging: *logging
+
+  # Operator commands (bootstrap, migrations, catalog, result authority). Never started by `up`.
+  ops:
+    image: onchainfest-staging-api:${STAGING_IMAGE_TAG:?set in deploy/staging/.env}
+    profiles:
+      - ops
+    environment:
+      NODE_ENV: production
+      BR_DATABASE_NAME: onchainfest
+      BR_ADMIN_DATABASE_URL: postgres://br_admin:${BR_ADMIN_PASSWORD:?set in deploy/staging/.env}@postgres:5432/postgres
+      BR_OWNER_DATABASE_URL: postgres://br_owner:${BR_OWNER_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_API_DATABASE_URL: postgres://br_api:${BR_API_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_OPERATOR_DATABASE_URL: postgres://br_operator_app:${BR_OPERATOR_PASSWORD:?set in deploy/staging/.env}@postgres:5432/onchainfest
+      BR_CATALOG_OPERATOR_ACCOUNT_ID: ${BR_CATALOG_OPERATOR_ACCOUNT_ID:-}
+      BR_PLATFORM_PRINCIPAL_ID: ${BR_PLATFORM_PRINCIPAL_ID:-}
+      # Bootstrap only: one password per login (each ≥ 24 characters).
+      BR_OWNER_PASSWORD: ${BR_OWNER_PASSWORD:?set in deploy/staging/.env}
+      BR_API_PASSWORD: ${BR_API_PASSWORD:?set in deploy/staging/.env}
+      BR_VAULT_PASSWORD: ${BR_VAULT_PASSWORD:?set in deploy/staging/.env}
+      BR_WORKER_PASSWORD: ${BR_WORKER_PASSWORD:?set in deploy/staging/.env}
+      BR_MAINTENANCE_PASSWORD: ${BR_MAINTENANCE_PASSWORD:?set in deploy/staging/.env}
+      BR_OPERATOR_PASSWORD: ${BR_OPERATOR_PASSWORD:?set in deploy/staging/.env}
+      BR_VERIFICATION_OPERATOR_PASSWORD: ${BR_VERIFICATION_OPERATOR_PASSWORD:?set in deploy/staging/.env}
+      BR_ACHIEVEMENT_OPERATOR_PASSWORD: ${BR_ACHIEVEMENT_OPERATOR_PASSWORD:?set in deploy/staging/.env}
+      BR_ACHIEVEMENT_WORKER_PASSWORD: ${BR_ACHIEVEMENT_WORKER_PASSWORD:?set in deploy/staging/.env}
+      BR_RECORD_OPERATOR_PASSWORD: ${BR_RECORD_OPERATOR_PASSWORD:?set in deploy/staging/.env}
+      BR_RECORD_WORKER_PASSWORD: ${BR_RECORD_WORKER_PASSWORD:?set in deploy/staging/.env}
+      BR_RANKING_OPERATOR_PASSWORD: ${BR_RANKING_OPERATOR_PASSWORD:?set in deploy/staging/.env}
+      BR_RANKING_WORKER_PASSWORD: ${BR_RANKING_WORKER_PASSWORD:?set in deploy/staging/.env}
+    networks:
+      - data
+    command:
+      - node
+      - -e
+      - "console.error('ops: pass a command (docs/operations/STG-01A-STAGING-RUNBOOK.md)'); process.exit(64)"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *logging
+
+networks:
+  # Browser-facing: Caddy ↔ web. Web also uses it for egress to Supabase Auth.
+  edge: {}
+  # Web → API only. No egress.
+  app:
+    internal: true
+  # Postgres and its clients only. No egress, no published port.
+  data:
+    internal: true
+  # API egress to the Supabase JWKS endpoint. Nothing else joins it.
+  api-egress: {}
+
+volumes:
+  pgdata: {}
+  caddy-data: {}
+  caddy-config: {}

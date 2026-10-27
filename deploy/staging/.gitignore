@@ -1,0 +1,3 @@
+# STG-01A · Never commit the filled environment or database dumps.
+.env
+backups/
