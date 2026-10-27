@@ -172,6 +172,20 @@ The organizer asks the platform to enable results for a tournament. The operator
    2. Apply migration 0038 through the reviewed migration procedure (`db-migrate`, separately authorized per environment), then deploy the API.
    3. For each person who must keep acting, run `grant` under a **new** `--governance-ref`. It revokes the old, unbound grant (audited as `authority.result-grant.stale-revoked`) and issues a bound one.
    4. Until step 3 is done for a person, their result commands return 403 `AUTHORITY_DENIED` (`GRANT_ELIGIBILITY_STALE`); nothing is written. Schedule the deploy outside live result entry.
+7. **Recover from an interrupted grant** (the grant was issued but its eligibility binding was not stored). The grant is created first and its binding is written afterwards, in a separate transaction. If `grant` fails between the two (it exits with an error other than a refusal: lost connection, crash, failed commit), `list` can show a new ACTIVE grant that has no `authority.result-grant.issued` audit row.
+   - **That grant stays unusable.** Every result command authorized by it is refused with 403 `GRANT_ELIGIBILITY_STALE`, and nothing is written.
+   - **Re-running `grant` with the same `--governance-ref` is refused** (`GOVERNANCE_DECISION_USED`). The decision reference is spent and cannot be reused.
+
+   To recover:
+   1. **Inspect, read-only:** run `pnpm authority:results list --competition <uuid>`, and read the `platform.audit_event` rows `authority.result-grant.*` for the competition. Identify the unbound grant and the reference that was spent on it.
+   2. **Record a new governance decision** outside the platform, as in step 1, noting that it replaces the interrupted issuance.
+   3. **Run `grant` again under the new `--governance-ref`.** It revokes the unbound grant (audited as `authority.result-grant.stale-revoked`) and issues a fresh grant, then binds it.
+   4. **Before result entry resumes, verify:**
+      - `grant` exited 0 with `created: true`;
+      - an `authority.result-grant.issued` audit row exists for the new `grantId`;
+      - a read-only query shows exactly one `competition.result_grant_eligibility` row for that `grant_id`.
+
+   **Never insert, edit or delete binding rows by hand.** The table is append-only. A binding is valid only when the grant command writes it, under the eligibility locks.
 
 ## 7. Rollback
 
