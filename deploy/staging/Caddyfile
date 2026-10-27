@@ -1,10 +1,44 @@
 # STG-01A · Staging edge. Caddy obtains and renews the Let's Encrypt certificate for
 # STAGING_DOMAIN automatically (ports 80 and 443 must reach the VM, and the DNS record must point
 # at it). HTTP redirects to HTTPS. Only the web app is routed: the API, worker and database are
-# never reachable from the internet. Access logs go to stdout (`docker compose logs caddy`); Caddy
-# redacts Cookie and Authorization headers in them.
+# never reachable from the internet. Access logs go to stdout (`docker compose logs caddy`).
+#
+# STG-01B · Logs never record credentials. Auth links and invitations carry one-time bearer
+# values in the query string (`/auth/confirm?token_hash=`, `/auth/callback?code=`,
+# `/app/invitations?token=`), and the app sends full same-origin referrers, so:
+#   - those query parameters, and `next` (the sign-in continuation embeds the original query),
+#     are kept as keys but their values are replaced by REDACTED;
+#   - Referer, Cookie, Authorization and Proxy-Authorization request headers and the Set-Cookie
+#     and Location response headers are dropped from log entries.
+# The same filter applies to Caddy's own error log. CI (staging-infra) proves it with sentinels.
+(redacted_log_format) {
+	format filter {
+		request>uri query {
+			replace token_hash REDACTED
+			replace code REDACTED
+			replace token REDACTED
+			replace access_token REDACTED
+			replace refresh_token REDACTED
+			# The sign-in continuation embeds the original path and query (an invitation token).
+			replace next REDACTED
+		}
+		request>headers>Referer delete
+		request>headers>Cookie delete
+		request>headers>Authorization delete
+		request>headers>Proxy-Authorization delete
+		resp_headers>Set-Cookie delete
+		# Redirects to sign-in carry the same continuation.
+		resp_headers>Location delete
+		wrap json
+	}
+}
+
 {
 	email {$ACME_EMAIL}
+	log default {
+		output stderr
+		import redacted_log_format
+	}
 }
 
 {$STAGING_DOMAIN} {
@@ -17,6 +51,6 @@
 	reverse_proxy web:3000
 	log {
 		output stdout
-		format json
+		import redacted_log_format
 	}
 }

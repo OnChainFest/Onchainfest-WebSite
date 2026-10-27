@@ -113,7 +113,7 @@ Run everything on the VM from the repository root, as an operator. Each step is 
 | Task | Command (`stg` alias from §4.3) |
 |---|---|
 | Status | `stg ps` |
-| Logs | `stg logs --tail 200 -f <service>` (operators on the VM only; rotated, 5 × 10 MB per service). Caddy access logs redact Cookie and Authorization. Never paste `stg config` output or `.env` into tickets. |
+| Logs | `stg logs --tail 200 -f <service>` (operators on the VM only; rotated, 5 × 10 MB per service). Caddy logs (access and error) never record credentials (STG-01B): the values of `token_hash`, `code`, `token`, `access_token`, `refresh_token` and `next` are replaced by `REDACTED`, and the Referer, Cookie, Authorization, Proxy-Authorization, Set-Cookie and Location headers are dropped. `staging-infra` proves it on every run with random sentinels. Never paste `stg config` output or `.env` into tickets. |
 | Stop / start | `stg stop` / `stg up -d --wait` (data stays in the `pgdata` volume) |
 | Shut down | `stg down` (keeps volumes). **Never** `down -v` unless the environment is being destroyed: it deletes the database. |
 | Deploy a new commit | Check it out, update `STAGING_IMAGE_TAG`, preflight, `stg build`, take a backup (§6), run migrations through `ops` if the commit ships new ones, then `stg up -d --wait`. Schedule outside live result entry. |

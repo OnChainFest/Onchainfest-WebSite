@@ -5,7 +5,8 @@ name: staging-infra
 # values, checks the preflight and the Compose policy (private database, single public entry,
 # no development or production markers, no start-up migrations), builds the api, worker and web
 # images, then runs the whole stack on the runner: bootstrap, migrations, readiness, TLS edge,
-# backup and restore, and the F1/F3 read-only preflights. It uses no repository secret, pushes no
+# credential redaction in logs (STG-01B), backup and restore, and the F1/F3 read-only preflights.
+# It uses no repository secret, pushes no
 # image and contacts no hosted environment (docs/operations/STG-01A-STAGING-RUNBOOK.md).
 
 on:
@@ -219,6 +220,46 @@ jobs:
           restarts=$(docker inspect -f '{{.Name}} {{.RestartCount}}' $($COMPOSE ps -q))
           echo "$restarts"
           if awk '$2 != 0 { bad = 1 } END { exit !bad }' <<<"$restarts"; then echo '::error::a service restarted'; exit 1; fi
+
+      - name: 'Smoke: logs never record credentials (STG-01B)'
+        run: |
+          set -euo pipefail
+          # A random sentinel per run is sent in every place a credential can travel. No service log
+          # may contain it; the access log must still record each request with the values redacted.
+          s=$(openssl rand -hex 12)
+          req() { curl -s -o /dev/null -k --resolve localhost:443:127.0.0.1 "$@" || true; }
+          req "https://localhost/auth/confirm?token_hash=th$s&type=signup"
+          req "https://localhost/auth/callback?code=co$s&flow=signup"
+          req "https://localhost/app/invitations?token=tk$s"
+          req "https://localhost/signin?next=%2Fapp%2Finvitations%3Ftoken%3Dnx$s"
+          req "https://localhost/?access_token=at$s&refresh_token=rt$s"
+          req -H "Referer: https://localhost/auth/confirm?token_hash=rf$s" -H "Cookie: sb-staging-auth-token=ck$s" \
+            -H "Authorization: Bearer au$s" -H "Proxy-Authorization: Basic pa$s" https://localhost/hall-of-fame
+          curl -s -o /dev/null -H 'Host: localhost' "http://127.0.0.1/auth/confirm?token_hash=hp$s&type=signup" || true
+          sleep 3
+          $COMPOSE logs --no-color >all-services.log 2>&1
+          if grep -c "$s" all-services.log; then
+            grep -o "\"[^\"]*$s[^\"]*\"" all-services.log | sort -u | head -20
+            echo '::error::a credential sentinel reached the service logs'; exit 1
+          fi
+          echo "no sentinel in $(wc -l <all-services.log) log lines of every service"
+          $COMPOSE logs --no-color caddy >caddy.log 2>&1
+          expect() {
+            grep -qF "$1" caddy.log || { echo "::error::access log is missing: $1"; exit 1; }
+            echo "logged: $1"
+          }
+          expect '"uri":"/auth/confirm?token_hash=REDACTED&type=signup"'
+          expect '"uri":"/auth/callback?code=REDACTED&flow=signup"'
+          expect '"uri":"/app/invitations?token=REDACTED"'
+          expect '"uri":"/signin?next=REDACTED"'
+          expect '"uri":"/?access_token=REDACTED&refresh_token=REDACTED"'
+          expect '"uri":"/hall-of-fame"'
+          for h in Referer Cookie Authorization Proxy-Authorization Set-Cookie Location; do
+            if grep -q "\"$h\":" caddy.log; then echo "::error::$h is logged"; exit 1; fi
+          done
+          echo 'Referer, Cookie, Authorization, Proxy-Authorization, Set-Cookie and Location are not logged'
+          grep -q '"status":' caddy.log && grep -q '"duration":' caddy.log && grep -q '"User-Agent":' caddy.log
+          echo 'status, duration and user agent are still logged'
 
       - name: 'Smoke: F1 and F3 read-only preflights'
         run: |
