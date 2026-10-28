@@ -22,6 +22,7 @@ export const ERROR_MESSAGES = {
   profile_address_taken: 'That profile address is taken. Try another.',
   profile_address_invalid: 'Use 3–50 lowercase letters, numbers and single hyphens.',
   profile_invalid: 'Check the highlighted details and try again.',
+  sport_invalid: 'Choose your primary sport from the list, or leave it empty.',
   platform_unavailable: 'OnChainFest is temporarily unavailable. Your progress is safe — retry.',
   not_permitted: 'Your role in this organization doesn’t allow that.',
   athlete_not_found: 'No public athlete profile has that address.',

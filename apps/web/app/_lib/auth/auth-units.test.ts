@@ -6,6 +6,8 @@ import {
   normalizeSlugInput,
   slugFromName,
   SLUG_RE,
+  sportChoice,
+  sportOptions,
 } from '../onboarding-input';
 import { authErrorCode, errorMessage, noticeMessage } from './messages';
 import { RateLimiter } from './rate-limit';
@@ -91,6 +93,27 @@ describe('onboarding input shaping', () => {
     expect(countryInput('CRI')).toBeNull();
     expect(idempotencyKey('oc-person-1234')).toBe('oc-person-1234');
     expect(idempotencyKey('bad key!')).toMatch(/^oc-[0-9a-f]{32}$/);
+  });
+
+  it('D-P2: primary sport choices are the catalog sports (id + name), once each, by name', () => {
+    const catalog = {
+      disciplineVersions: [
+        { sport: { code: 'tennis', name: 'Tennis' } },
+        { sport: { code: 'padel', name: 'Padel' } },
+        { sport: { code: 'tennis', name: 'Tennis' } },
+      ],
+    };
+    const options = sportOptions(catalog);
+    expect(options).toEqual([
+      { code: 'padel', name: 'Padel' },
+      { code: 'tennis', name: 'Tennis' },
+    ]);
+    expect(sportChoice('tennis', options)).toBe('tennis');
+    expect(sportChoice('  ', options)).toBe('');
+    // A display name, another casing, an unknown id or markup is never stored.
+    for (const bad of ['Tennis', 'TENNIS', 'running', '<b>tennis</b>', 'tennis,padel'])
+      expect(sportChoice(bad, options)).toBeNull();
+    expect(errorMessage('sport_invalid')).toMatch(/from the list/);
   });
 
   it('Sponsor is not an onboarding organization type (separate later phase)', () => {

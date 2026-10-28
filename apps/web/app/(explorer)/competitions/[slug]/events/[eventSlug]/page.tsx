@@ -17,6 +17,7 @@ import {
   type StructureRound,
 } from '../../../../../_lib/competition';
 import { RegistrationCtaPanel } from '../../../../../_lib/registration-cta';
+import { officialScore } from '../../../../../_lib/score-sheet';
 import { Unavailable } from '../../../../../_lib/trust';
 
 export const dynamic = 'force-dynamic';
@@ -347,22 +348,45 @@ function OutcomeSection({
             <p style={muted}>No official results yet.</p>
           ) : (
             <ul style={{ fontSize: '0.85rem' }}>
-              {official.map((m) => (
-                <li key={m.contestId}>
-                  <small style={muted}>{m.roundLabel} · </small>
-                  {m.entrants.map((x, i) => (
-                    <span key={x.participantId}>
-                      {i > 0 && ' · '}
-                      <Entrant display={x.display} />{' '}
+              {official.map((m) => {
+                const scored = officialScore(
+                  m.scoring,
+                  m.entrants.map((x) => x.participantId),
+                );
+                const byId = new Map(m.entrants.map((x) => [x.participantId, x]));
+                const [first, second] =
+                  scored === null ? [] : scored.order.map((id) => byId.get(id));
+                // D-P4: the sport's own score line (sets, tie-breaks…), winner first when decided.
+                if (scored !== null && first !== undefined && second !== undefined)
+                  return (
+                    <li key={m.contestId}>
+                      <small style={muted}>{m.roundLabel} · </small>
+                      <Entrant display={first.display} />
+                      {scored.line.winner === null ? ' – ' : ' d. '}
+                      <Entrant display={second.display} />{' '}
                       <small style={muted}>
-                        {(x.outcome ?? '').toLowerCase().replace(/_/g, ' ')}
-                        {x.score.length > 0 &&
-                          ` (${x.score.map((v) => `${v.key} ${v.value}`).join(', ')})`}
+                        · {scored.line.score}
+                        {scored.line.how !== null && ` (${scored.line.how.toLowerCase()})`}
                       </small>
-                    </span>
-                  ))}
-                </li>
-              ))}
+                    </li>
+                  );
+                return (
+                  <li key={m.contestId}>
+                    <small style={muted}>{m.roundLabel} · </small>
+                    {m.entrants.map((x, i) => (
+                      <span key={x.participantId}>
+                        {i > 0 && ' · '}
+                        <Entrant display={x.display} />{' '}
+                        <small style={muted}>
+                          {(x.outcome ?? '').toLowerCase().replace(/_/g, ' ')}
+                          {x.score.length > 0 &&
+                            ` (${x.score.map((v) => `${v.key} ${v.value}`).join(', ')})`}
+                        </small>
+                      </span>
+                    ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>

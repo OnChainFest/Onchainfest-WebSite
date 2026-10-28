@@ -6,9 +6,9 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
 
 | ID | Severity | Area | Summary | Workaround used in the pilot |
 | --- | --- | --- | --- | --- |
-| D-P2 | S3 | Web onboarding / validation | Athlete onboarding "Primary sport" suggests free text ("Padel, tennis, running…") but the API accepts only lowercase sport ids; `Tennis` is rejected and the user sees only the generic "Check the highlighted details". | Enter `tennis` |
+| D-P2 | S3 | Web onboarding / validation | Athlete onboarding "Primary sport" suggests free text ("Padel, tennis, running…") but the API accepts only lowercase sport ids; `Tennis` is rejected and the user sees only the generic "Check the highlighted details". **Fixed** in `fix/oncf-ux-pilot-01`. | Enter `tennis` |
 | D-P3 | P3 | Result integrity hygiene | A result submission refused by the result-authority gate still persists the per-contest result identity and a result draft. **Fixed** in `fix/oncf-dp3-authorize-before-draft` (see below). | None needed |
-| D-P4 | S4 | Public results presentation | Public official results show raw metrics (`gamesWon 12, setsWon 2, …`) instead of the tennis score (`6-4 6-3`). | None |
+| D-P4 | S4 | Public results presentation | Public official results show raw metrics (`gamesWon 12, setsWon 2, …`) instead of the tennis score (`6-4 6-3`). **Fixed** in `fix/oncf-ux-pilot-01`. | None |
 | D-P5 | S4 | Auth operations | The sign-up limiter (5 per IP per hour, in memory per web instance) blocks a group signing up from one address (one office, one event desk, the local pilot). | Restart of the pilot `web` container |
 
 ## D-P2 · Sport field accepts display names in the form, ids in the API
@@ -19,6 +19,10 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
   400, mapped to `profile_invalid`.
 - **Expected:** the form offers catalog sports (or normalizes the input) and explains a rejection.
 - **Impact:** every athlete who types a capitalized sport fails onboarding with no actionable message.
+- **Fix (ONCF-UX-PILOT-01):** the field is a selection of the published catalog's sports (value = sport
+  id, label = name, "No primary sport" by default). The server action re-checks the posted id against
+  the catalog and answers `sport_invalid` ("Choose your primary sport from the list, or leave it
+  empty."). Existing athletes are unchanged.
 
 ## D-P3 · Refused submission leaves a draft behind
 
@@ -44,6 +48,10 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
 - **Observed:** `/competitions/<slug>/events/<event>` lists "win (gamesLost 7, gamesWon 12, setsLost
   0, setsWon 2)"; the set scores themselves are not shown.
 - **Expected:** the sport's own notation (6-4 6-3; 7-6(5) for tie-breaks).
+- **Fix (ONCF-UX-PILOT-01):** public matches carry the official result's canonical marks
+  (`scoring`: family + entries/performances, no athlete ids; optional, schema unchanged) and the page
+  formats them with the existing per-family `scoreLine` (`6–3 4–6 7–6 (7–5)`, winner first). Families
+  without a score line keep the generic values.
 
 ## D-P5 · Sign-up limiter keyed only by client IP
 

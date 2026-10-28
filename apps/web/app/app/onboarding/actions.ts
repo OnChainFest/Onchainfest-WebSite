@@ -10,8 +10,11 @@ import {
   isOrganizationType,
   normalizeSlugInput,
   slugFromName,
+  sportChoice,
+  sportOptions,
 } from '../../_lib/onboarding-input';
 import { apiRequest, type ApiResult, type MeResponse } from '../../_lib/platform';
+import { tournamentCatalog } from '../../_lib/tournaments';
 
 /**
  * Onboarding persists ONLY through the platform API (ONCF-01, ADR-0052): person → athlete, or
@@ -78,7 +81,17 @@ export async function createAthleteProfileAction(form: FormData): Promise<never>
   const next = validateContinuationRoute(field(form, 'next'));
   if (displayName === '' || displayName.length > 80) back('athlete', 'missing_fields', next);
   if (slugInput === null) back('athlete', 'profile_address_invalid', next);
-  if (country === null || sport.length > 40) back('athlete', 'profile_invalid', next);
+  if (country === null) back('athlete', 'profile_invalid', next);
+  // D-P2: the primary sport is a catalog sport id, checked against the published catalog here
+  // (never trusted from the form); an unknown value gets its own message.
+  let sportId = '';
+  if (sport !== '') {
+    const catalog = await tournamentCatalog();
+    if (catalog.kind !== 'ok') back('athlete', 'platform_unavailable', next);
+    const choice = sportChoice(sport, sportOptions(catalog.data));
+    if (choice === null) back('athlete', 'sport_invalid', next);
+    sportId = choice;
+  }
 
   const token = await session();
   const personId = await ensurePerson(
@@ -99,7 +112,7 @@ export async function createAthleteProfileAction(form: FormData): Promise<never>
         profile: {
           displayName,
           ...(country === undefined ? {} : { homeCountry: country }),
-          ...(sport === '' ? {} : { preferredSports: [sport] }),
+          ...(sportId === '' ? {} : { preferredSports: [sportId] }),
         },
       },
     },

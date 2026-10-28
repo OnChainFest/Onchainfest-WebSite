@@ -861,6 +861,15 @@ describe('WP-P0-1 · advancement and classification never use an unplayed match'
     expect(shown).toMatchObject({ official: false });
     expect(shown?.entrants.every((e) => e.outcome === null && e.score.length === 0)).toBe(true);
     expect(pub.matches.find((m) => m.contestId === sf2)).toMatchObject({ official: true });
+    // D-P4: the official result carries its marks for the public score line; nothing else does.
+    expect(shown).not.toHaveProperty('scoring');
+    const scoring = pub.matches.find((m) => m.contestId === sf2)?.scoring;
+    expect(scoring?.family).toBe('SETS_OF_GAMES');
+    expect(scoring?.content.entries).toHaveLength(2);
+    expect(scoring?.content.performances.some((p) => p.mark.metricId === 'sog.set_games')).toBe(
+      true,
+    );
+    expect(JSON.stringify(scoring)).not.toContain('athleteId');
   }, 300_000);
 });
 

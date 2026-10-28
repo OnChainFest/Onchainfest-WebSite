@@ -701,6 +701,50 @@ describe('public pages · official outcome only', () => {
     expect(out).not.toContain('Not available yet');
   });
 
+  it('D-P4: an official tennis result reads as its set score, winner first, tie-break included', async () => {
+    const outcome = pubOutcome(true);
+    const sets = (id: string, games: number[], tb: number) => [
+      ...games.map((g, i) => ({
+        participantId: id,
+        ordinal: i + 1,
+        mark: { metricId: 'sog.set_games', value: String(g), unit: 'games', precision: 0 },
+      })),
+      {
+        participantId: id,
+        ordinal: 13,
+        mark: { metricId: 'sog.tiebreak_points', value: String(tb), unit: 'points', precision: 0 },
+      },
+    ];
+    // The loser is listed first: the line still reads from the winner's side.
+    outcome.matches[0] = {
+      ...outcome.matches[0]!,
+      entrants: [...outcome.matches[0]!.entrants].reverse(),
+      scoring: {
+        family: 'SETS_OF_GAMES',
+        content: {
+          entries: [
+            { participantId: P(1), outcome: 'WIN' },
+            { participantId: P(2), outcome: 'LOSS' },
+          ],
+          performances: [...sets(P(1), [6, 4, 7], 7), ...sets(P(2), [3, 6, 6], 5)],
+        },
+      },
+    } as unknown as (typeof outcome.matches)[number];
+    publicPlatform('COMPLETED', outcome);
+    const out = await eventPage();
+    expect(out).toMatch(
+      new RegExp(
+        `${NAMES[0]}</a> d\\. <a[^>]*>${NAMES[1]}</a> <small[^>]*>· 6–3 4–6 7–6 \\(7–5\\)`,
+      ),
+    );
+    expect(out).not.toContain('setsWon');
+  });
+
+  it('D-P4: without score marks (older API, other families) the generic values stay', async () => {
+    publicPlatform('COMPLETED', pubOutcome(true));
+    expect(await eventPage()).toContain('(setsWon 2)');
+  });
+
   it('cancelled: no outcome is fabricated; recorded official results are kept as history', async () => {
     publicPlatform('CANCELLED', pubOutcome(false, 'CANCELLED'));
     const out = await eventPage();

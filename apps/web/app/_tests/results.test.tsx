@@ -13,6 +13,7 @@ import { RESULT_STAFF_ROLES, TRANSITIONS, type ResultContent } from '../_lib/res
 import {
   ENTRY_FAMILIES,
   formValues,
+  officialScore,
   scoreLine,
   sheetFromForm,
   sheetLayout,
@@ -564,8 +565,30 @@ describe('score sheets', () => {
       sheet: parsed.sheet,
       again: 'sheet' in again ? again.sheet : again,
       line: scoreLine(family, content, [A, B]),
+      content,
     };
   }
+
+  it('D-P4: the public line reads from the winner, keeps tie-breaks, and declines unknown families', () => {
+    const t = roundTrip('sets-bo3-tiebreak', {
+      set0a: '6',
+      set0b: '7',
+      tb0a: '5',
+      tb0b: '7',
+      set1a: '4',
+      set1b: '6',
+    });
+    const scoring = { family: 'SETS_OF_GAMES', content: t.content };
+    // B won: whichever order the sides come in, the line starts with B's games.
+    expect(officialScore(scoring, [A, B])).toEqual({
+      order: [B, A],
+      line: { winner: 0, score: '7–6 (7–5) 6–4', how: null },
+    });
+    expect(officialScore(scoring, [B, A])?.order).toEqual([B, A]);
+    expect(officialScore(undefined, [A, B])).toBeNull();
+    expect(officialScore({ family: 'STROKES', content: t.content }, [A, B])).toBeNull();
+    expect(officialScore(scoring, [A])).toBeNull();
+  });
 
   it('sets of games: sets, tie-breaks, a match tie-break, retirement and walkover', () => {
     const tb = roundTrip('sets-bo3-tiebreak', {
