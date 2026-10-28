@@ -286,9 +286,13 @@ export class EvidenceStore {
         return { ok: response };
       }
 
+      // No conflict target: evidence.blob has two unique indexes (content_hash, and
+      // (content_hash, byte_length) for the item FK). With only `(content_hash)` as the arbiter, a
+      // concurrent ingest of the same bytes can lose the race on the second index and raise 23505
+      // instead of skipping; without a target every unique index is an arbiter.
       await sql`INSERT INTO evidence.blob (content_hash, byte_length, backend, key_ref, recorded_at)
         VALUES (${blob.contentHash}, ${blob.byteLength}, ${blob.backend}, ${blob.keyId}, ${ctx.txTime})
-        ON CONFLICT (content_hash) DO NOTHING`.execute(ctx.trx);
+        ON CONFLICT DO NOTHING`.execute(ctx.trx);
       await sql`INSERT INTO evidence.item (id, descriptor_version, descriptor, descriptor_hash, content_hash, byte_length,
           media_type, evidence_type, source_kind, source_principal_id, submitted_by_account_id, captured_at, received_at,
           initial_privacy_class, provenance_key, recorded_at)
