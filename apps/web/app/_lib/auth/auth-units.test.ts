@@ -10,7 +10,7 @@ import {
   sportOptions,
 } from '../onboarding-input';
 import { authErrorCode, errorMessage, noticeMessage } from './messages';
-import { RateLimiter } from './rate-limit';
+import { RATE_RULES, RateLimiter, SIGNUP_LIMIT_PER_IP_MAX, signupRule } from './rate-limit';
 import { isRecoverySession } from './recovery';
 
 describe('rate limiter', () => {
@@ -24,6 +24,24 @@ describe('rate limiter', () => {
     expect(rl.attempt('k', rule)).toBe(true);
     rl.reset('k');
     expect([1, 2, 3].every(() => rl.attempt('k', rule))).toBe(true);
+  });
+});
+
+describe('sign-up limit per IP (D-P5)', () => {
+  it('defaults to 5 per hour when AUTH_SIGNUP_LIMIT_PER_IP is unset or empty', () => {
+    expect(signupRule(undefined)).toEqual({ limit: 5, windowMs: 60 * 60_000 });
+    expect(signupRule('')).toBe(RATE_RULES.signup);
+  });
+
+  it('accepts a whole number from 1 to the maximum, keeping the one-hour window', () => {
+    expect(signupRule('10')).toEqual({ limit: 10, windowMs: 60 * 60_000 });
+    expect(signupRule('1')).toEqual({ limit: 1, windowMs: 60 * 60_000 });
+    expect(signupRule(String(SIGNUP_LIMIT_PER_IP_MAX)).limit).toBe(30);
+  });
+
+  it('keeps the default for anything that would disable or widen the limit', () => {
+    for (const bad of ['0', '31', '100', '-1', '10.5', '1e1', ' 10', '10 ', 'ten', '0x0a', '010'])
+      expect(signupRule(bad), bad).toBe(RATE_RULES.signup);
   });
 });
 

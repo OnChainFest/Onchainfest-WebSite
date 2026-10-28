@@ -9,7 +9,7 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
 | D-P2 | S3 | Web onboarding / validation | Athlete onboarding "Primary sport" suggests free text ("Padel, tennis, running…") but the API accepts only lowercase sport ids; `Tennis` is rejected and the user sees only the generic "Check the highlighted details". **Fixed** in `fix/oncf-ux-pilot-01`. | Enter `tennis` |
 | D-P3 | P3 | Result integrity hygiene | A result submission refused by the result-authority gate still persists the per-contest result identity and a result draft. **Fixed** in `fix/oncf-dp3-authorize-before-draft` (see below). | None needed |
 | D-P4 | S4 | Public results presentation | Public official results show raw metrics (`gamesWon 12, setsWon 2, …`) instead of the tennis score (`6-4 6-3`). **Fixed** in `fix/oncf-ux-pilot-01`. | None |
-| D-P5 | S4 | Auth operations | The sign-up limiter (5 per IP per hour, in memory per web instance) blocks a group signing up from one address (one office, one event desk, the local pilot). | Restart of the pilot `web` container |
+| D-P5 | S4 | Auth operations | The sign-up limiter (5 per IP per hour, in memory per web instance) blocks a group signing up from one address (one office, one event desk, the local pilot). **Fixed** in `fix/oncf-dp5-signup-desk-limit` (see below). | Restart of the pilot `web` container |
 
 ## D-P2 · Sport field accepts display names in the form, ids in the API
 
@@ -60,6 +60,14 @@ the isolated local pilot (2026-10-27, main `eef289d`). D-P1 is fixed separately 
   instance (documented), so a restart clears it.
 - **Expected for pilots:** a documented limit sized for a registration desk, or a key that does not
   lump a whole venue together; the per-instance memory remains a known limitation before scale.
+- **Fix:** the per-IP sign-up limit stays 5 per hour by default. An operator can size it for a desk
+  with the server-only `AUTH_SIGNUP_LIMIT_PER_IP` (a whole number 1–30; anything else keeps 5, so a
+  typo can never disable or widen it). Only the local-pilot overlay sets it (10);
+  `tooling/dp5-signup-limit.test.ts` fails if staging, its env template or the Vercel workflow ever
+  does. The key is still the client IP: behind Caddy 2.11 that is the real peer, because Caddy
+  replaces any client-sent `X-Forwarded-For` (verified with a throwaway Caddy 2.11.7: a spoofed
+  `X-Forwarded-For: 6.6.6.6` reaches the app as the peer address). Resend-confirmation and
+  forgot-password keep their own per-IP budget of 5.
 
 ## Also observed (already known)
 
