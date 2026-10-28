@@ -5,7 +5,7 @@ import { validateContinuationRoute } from './continuation';
 import { authErrorCode, type AuthErrorCode } from './messages';
 import { parseOnboardingHint } from './onboarding';
 import { postAuthDestination } from './post-auth';
-import { authRateLimiter, RATE_RULES } from './rate-limit';
+import { authRateLimiter, RATE_RULES, signupRule } from './rate-limit';
 import { isRecoverySession } from './recovery';
 import { clientIp, emailKey, siteUrl } from './request-meta';
 import { createSupabaseServerClient } from './supabase-server';
@@ -80,8 +80,7 @@ export async function signUpAction(form: FormData): Promise<never> {
   if (!EMAIL_RE.test(email)) back('invalid_email');
   const weak = passwordProblem(password);
   if (weak !== null) back(weak);
-  if (!authRateLimiter.attempt(`signup:${await clientIp()}`, RATE_RULES.signup))
-    back('rate_limited');
+  if (!authRateLimiter.attempt(`signup:${await clientIp()}`, signupRule())) back('rate_limited');
 
   const base = siteUrl();
   const supabase = await createSupabaseServerClient();

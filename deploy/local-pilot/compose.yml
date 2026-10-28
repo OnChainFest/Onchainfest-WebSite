@@ -21,6 +21,9 @@
 #   proxy, so it has no internet access at all.
 # - GoTrue's admin endpoints are not routed: accounts are created and confirmed only through the
 #   public sign-up flow and the confirmation email.
+# - The web sign-up limiter allows 10 per IP per hour instead of 5 (D-P5), because all pilot
+#   participants share one address. Caddy replaces any client-sent X-Forwarded-For, so the key is
+#   the real peer.
 name: oncf-local-pilot-01
 
 services:
@@ -45,6 +48,9 @@ services:
         NEXT_PUBLIC_MARKETING_URL: https://${STAGING_DOMAIN:?set in pilot.env}
     environment:
       NODE_EXTRA_CA_CERTS: /run/pilot-ca/ca.crt
+      # D-P5: every pilot participant signs up from the one loopback address. Sized for the
+      # seven-account demonstration plus retries; the app caps it at 30 and staging never sets it.
+      AUTH_SIGNUP_LIMIT_PER_IP: '10'
     volumes:
       - ${PILOT_STATE_DIR:?set in pilot.env}/tls/ca.crt:/run/pilot-ca/ca.crt:ro
 

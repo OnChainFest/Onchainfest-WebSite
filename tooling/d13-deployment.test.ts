@@ -28,6 +28,7 @@ describe('D-13 CI-only deployment isolation', () => {
     'qa/oncf-local-pilot-01',
     'fix/oncf-dp3-authorize-before-draft',
     'fix/oncf-ux-pilot-01',
+    'fix/oncf-dp5-signup-desk-limit',
   ];
   it('never runs preview or production for these branches on push or PR creation/update', () => {
     for (const branch of branches)

@@ -20,6 +20,7 @@ reuses the staging images, networks and hardening, and changes only what a works
 | Auth | hosted Supabase project | local GoTrue (the Supabase CLI image) + its own Postgres + Mailpit, behind the same Caddy at `https://auth.oncf-pilot.localhost:8443/auth/v1` |
 | API auth | `NODE_ENV=production`, JWKS ES256/RS256 | unchanged: same verifier, same production mode |
 | Signature audience | `bragging-rights:staging` | `bragging-rights:local-pilot` |
+| Web sign-ups per IP per hour | 5 (default) | 10 (`AUTH_SIGNUP_LIMIT_PER_IP`, D-P5) |
 | API egress | internet (JWKS) | none (`api-egress` is internal; only the auth proxy) |
 | Email | custom SMTP | Mailpit, `http://127.0.0.1:58025`; nothing is ever delivered |
 | Logs | STG-01B redaction | the same snippet, verbatim (`pilot.sh` refuses to run if it drifts) |
@@ -93,8 +94,10 @@ volumes. Nothing in this runbook removes them.
 
 - **Evidence** (screenshots, read-only SQL, logs) also belongs in the state directory, never in the
   repository; `deploy/local-pilot/.gitignore` blocks `*.env`, `tls/` and `evidence/` as a backstop.
-- Restarting the `web` container resets its in-memory sign-up limiter (5 per IP per hour), which all
-  pilot users share on one loopback address.
+- All pilot users sign up from one loopback address. The overlay sizes the web sign-up limiter for
+  that (D-P5: `AUTH_SIGNUP_LIMIT_PER_IP=10` per hour instead of the default 5; the app accepts 1–30
+  and keeps 5 for anything else). The limiter is in memory per web instance, so restarting `web`
+  also resets it; that is no longer needed for a seven-account tournament.
 
 ## 6. Teardown (only when decided)
 

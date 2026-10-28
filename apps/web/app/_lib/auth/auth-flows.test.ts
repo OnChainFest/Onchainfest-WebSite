@@ -346,6 +346,44 @@ describe('sign up', () => {
     ).toBe('/signup?error=not_configured');
     expect(h.auth.signUp).not.toHaveBeenCalled();
   });
+
+  const signUps = async (count: number) => {
+    const to: string[] = [];
+    for (let i = 0; i < count; i += 1)
+      to.push(
+        await redirectOf(() =>
+          signUpAction(form({ email: `p${i}@b.co`, password: 'secret123', path: 'athlete' })),
+        ),
+      );
+    return to;
+  };
+
+  it('D-P5: by default the sixth sign-up from one IP within the hour never reaches Supabase', async () => {
+    h.auth.signUp.mockResolvedValue({ data: { session: null, user: { id: 'u' } }, error: null });
+    const to = await signUps(6);
+    expect(to.slice(0, 5).every((t) => t === '/signup/confirm-email?path=athlete')).toBe(true);
+    expect(to[5]).toBe('/signup?path=athlete&error=rate_limited');
+    expect(h.auth.signUp).toHaveBeenCalledTimes(5);
+  });
+
+  it('D-P5: a desk-sized AUTH_SIGNUP_LIMIT_PER_IP lets seven people share one IP, then still limits', async () => {
+    vi.stubEnv('AUTH_SIGNUP_LIMIT_PER_IP', '7');
+    h.auth.signUp.mockResolvedValue({ data: { session: null, user: { id: 'u' } }, error: null });
+    const to = await signUps(8);
+    expect(to.slice(0, 7).every((t) => t === '/signup/confirm-email?path=athlete')).toBe(true);
+    expect(to[7]).toBe('/signup?path=athlete&error=rate_limited');
+    expect(h.auth.signUp).toHaveBeenCalledTimes(7);
+    // Another address keeps its own budget.
+    h.ip.value = '10.250.0.1';
+    expect(await signUps(1)).toEqual(['/signup/confirm-email?path=athlete']);
+  });
+
+  it('D-P5: an out-of-range AUTH_SIGNUP_LIMIT_PER_IP keeps the default limit', async () => {
+    vi.stubEnv('AUTH_SIGNUP_LIMIT_PER_IP', '1000');
+    h.auth.signUp.mockResolvedValue({ data: { session: null, user: { id: 'u' } }, error: null });
+    expect((await signUps(6))[5]).toBe('/signup?path=athlete&error=rate_limited');
+    expect(h.auth.signUp).toHaveBeenCalledTimes(5);
+  });
 });
 
 // ───────────────────────────── password reset ─────────────────────────────
