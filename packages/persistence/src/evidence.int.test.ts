@@ -585,4 +585,20 @@ describe('concurrency (real PostgreSQL)', () => {
       ),
     ).toBe(20);
   });
+
+  it('the blob insert skips only same-hash duplicates: every unique index on evidence.blob is keyed by content_hash', async () => {
+    // EvidenceStore inserts blobs with a target-less ON CONFLICT DO NOTHING, so every unique index
+    // (and exclusion constraint) is an arbiter. Today both start with content_hash, the primary key,
+    // so nothing but a duplicate of the same bytes is ever skipped. A new unique index or exclusion
+    // constraint must revisit that statement.
+    const { rows } = await sql<{ def: string }>`
+      SELECT pg_get_indexdef(indexrelid) AS def FROM pg_index
+      WHERE indrelid = 'evidence.blob'::regclass AND (indisunique OR indisexclusion)`.execute(
+      owner,
+    );
+    expect(rows.map((r) => r.def.replace(/^.* USING btree /, '')).sort()).toEqual([
+      '(content_hash)',
+      '(content_hash, byte_length)',
+    ]);
+  });
 });
